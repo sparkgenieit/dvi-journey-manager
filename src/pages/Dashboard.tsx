@@ -1,7 +1,23 @@
-import { Users, Car, UserSquare2, TrendingDown, Calendar, Truck } from "lucide-react";
+import { Users, Car, UserSquare2, TrendingDown, Calendar, Truck, Hotel, Building2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { Carousel, CarouselContent, CarouselItem, CarouselApi } from "@/components/ui/carousel";
+import Autoplay from "embla-carousel-autoplay";
+import { useState, useEffect } from "react";
 
 export default function Dashboard() {
+  const [api, setApi] = useState<CarouselApi>();
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    if (!api) return;
+
+    setCurrent(api.selectedScrollSnap());
+
+    api.on("select", () => {
+      setCurrent(api.selectedScrollSnap());
+    });
+  }, [api]);
+
   return (
     <div className="p-8 space-y-6">
       {/* Welcome Section */}
@@ -107,37 +123,165 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Vehicle Overview */}
-        <Card className="p-6 bg-gradient-to-br from-purple-500 to-pink-500 text-white border-none row-span-2">
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-xl font-bold mb-1">Vehicle Overview</h3>
-              <p className="text-sm text-white/90">Insights into Fleet Performance</p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-2xl font-bold">287</p>
-                <p className="text-xs text-white/90">Total Vehicles</p>
-              </div>
-              <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-2xl font-bold">15</p>
-                <p className="text-xs text-white/90">On Route Vehicles</p>
-              </div>
-              <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-2xl font-bold">273</p>
-                <p className="text-xs text-white/90">Available Vehicles</p>
-              </div>
-              <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                <p className="text-2xl font-bold">15</p>
-                <p className="text-xs text-white/90">Upcoming Vehicles</p>
-              </div>
-            </div>
-            
-            <div className="flex justify-end">
-              <div className="text-8xl opacity-30">🚗</div>
-            </div>
+        {/* Overview Carousel */}
+        <Card className="p-6 bg-gradient-to-br from-purple-500 to-pink-500 text-white border-none row-span-2 relative overflow-hidden">
+          {/* Dot indicators */}
+          <div className="absolute top-4 right-4 flex gap-2 z-10">
+            {[0, 1, 2, 3].map((index) => (
+              <button
+                key={index}
+                onClick={() => api?.scrollTo(index)}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  current === index ? "bg-white w-4" : "bg-white/50"
+                }`}
+                aria-label={`Go to slide ${index + 1}`}
+              />
+            ))}
           </div>
+
+          <Carousel
+            setApi={setApi}
+            opts={{
+              align: "start",
+              loop: true,
+            }}
+            plugins={[
+              Autoplay({
+                delay: 5000,
+              }),
+            ]}
+            className="w-full"
+          >
+            <CarouselContent>
+              {/* Slide 1: Vehicle Overview */}
+              <CarouselItem>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xl font-bold mb-1">Vehicle Overview</h3>
+                    <p className="text-sm text-white/90">Insights into Fleet Performance</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">287</p>
+                      <p className="text-xs text-white/90">Total Vehicles</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">15</p>
+                      <p className="text-xs text-white/90">On Route Vehicles</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">273</p>
+                      <p className="text-xs text-white/90">Available Vehicles</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">15</p>
+                      <p className="text-xs text-white/90">Upcoming Vehicles</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <div className="text-8xl opacity-30">🚗</div>
+                  </div>
+                </div>
+              </CarouselItem>
+
+              {/* Slide 2: Vendor Overview */}
+              <CarouselItem>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xl font-bold mb-1">Vendor Overview</h3>
+                    <p className="text-sm text-white/90">Vendor into Hotel Performance</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">18</p>
+                      <p className="text-xs text-white/90">Total Vendors</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">27</p>
+                      <p className="text-xs text-white/90">Total Branches</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">0</p>
+                      <p className="text-xs text-white/90">In Active Vendors</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <div className="text-8xl opacity-30">🏪</div>
+                  </div>
+                </div>
+              </CarouselItem>
+
+              {/* Slide 3: Driver Overview */}
+              <CarouselItem>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xl font-bold mb-1">Driver Overview</h3>
+                    <p className="text-sm text-white/90">Driver Performance Overview</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">122</p>
+                      <p className="text-xs text-white/90">Active Drivers</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">15</p>
+                      <p className="text-xs text-white/90">On Route Drivers</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">14</p>
+                      <p className="text-xs text-white/90">In-active Drivers</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">108</p>
+                      <p className="text-xs text-white/90">Available Drivers</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <div className="text-8xl opacity-30">🚘</div>
+                  </div>
+                </div>
+              </CarouselItem>
+
+              {/* Slide 4: Hotel Overview */}
+              <CarouselItem>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-xl font-bold mb-1">Hotel Overview</h3>
+                    <p className="text-sm text-white/90">Insights into Hotel Performance</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">584</p>
+                      <p className="text-xs text-white/90">Hotel Count</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">1997</p>
+                      <p className="text-xs text-white/90">Room Count</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">964</p>
+                      <p className="text-xs text-white/90">Amenities Count</p>
+                    </div>
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
+                      <p className="text-2xl font-bold">193</p>
+                      <p className="text-xs text-white/90">Total Bookings</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <div className="text-8xl opacity-30">🏨</div>
+                  </div>
+                </div>
+              </CarouselItem>
+            </CarouselContent>
+          </Carousel>
         </Card>
 
         {/* Total Confirm Bookings */}
