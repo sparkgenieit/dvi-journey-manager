@@ -14,9 +14,7 @@ import {
   UserCircle, 
   FileDown, 
   Settings,
-  ChevronRight,
-  Menu,
-  X
+  ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -70,31 +68,57 @@ interface SidebarProps {
 }
 
 export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPinned, setIsPinned] = useState(false);
+  
+  const isExpanded = !collapsed || isHovered || isPinned;
+  
+  const handleTogglePin = () => {
+    setIsPinned(!isPinned);
+    onToggle();
+  };
+
   return (
     <aside 
       className={cn(
-        "fixed left-0 top-0 h-screen bg-sidebar-background border-r border-sidebar-border transition-all duration-300 z-50 flex flex-col",
-        collapsed ? "w-20" : "w-64"
+        "fixed left-0 top-0 h-screen bg-sidebar-background border-r border-sidebar-border transition-all duration-300 z-50 flex flex-col group",
+        isExpanded ? "w-64" : "w-20"
       )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Logo and Toggle */}
-      <div className="flex items-center justify-between p-4 border-b border-sidebar-border">
+      {/* Logo */}
+      <div className="flex items-center p-4 border-b border-sidebar-border relative">
         <div className="flex items-center gap-3">
           <img 
             src="/assets/img/DVi-Logo1-2048x1860.png" 
             alt="DVi Logo" 
-            className={cn("h-10 object-contain transition-all", collapsed && "h-8")}
+            className="h-10 object-contain transition-all"
           />
-          {!collapsed && (
+          {isExpanded && (
             <span className="font-bold text-lg whitespace-nowrap">DoView Holidays</span>
           )}
         </div>
-        <button
-          onClick={onToggle}
-          className="p-1.5 hover:bg-sidebar-accent rounded-lg transition-colors"
-        >
-          {collapsed ? <Menu className="h-5 w-5" /> : <X className="h-5 w-5" />}
-        </button>
+        
+        {/* Circular Toggle Button - only show when expanded */}
+        {isExpanded && (
+          <button
+            onClick={handleTogglePin}
+            className={cn(
+              "absolute -right-3 top-1/2 -translate-y-1/2",
+              "w-6 h-6 rounded-full",
+              "bg-gradient-to-r from-primary to-pink-500",
+              "flex items-center justify-center",
+              "shadow-lg hover:shadow-xl",
+              "transition-all duration-200",
+              "hover:scale-110"
+            )}
+          >
+            {isPinned && (
+              <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Menu Items */}
@@ -115,9 +139,9 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                   }
                 >
                   {({ isActive }) => (
-                    <>
+                  <>
                       <Icon className={cn("h-5 w-5 flex-shrink-0", isActive && "text-white")} />
-                      {!collapsed && (
+                      {isExpanded && (
                         <>
                           <span className={cn("flex-1 text-sm font-medium", isActive && "text-white")}>
                             {item.title}
@@ -137,18 +161,15 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       </nav>
 
       {/* User Profile */}
-      <div className={cn(
-        "border-t border-sidebar-border p-4",
-        collapsed && "px-2"
-      )}>
+      <div className="border-t border-sidebar-border p-4">
         <div className={cn(
           "flex items-center gap-3",
-          collapsed && "flex-col"
+          !isExpanded && "flex-col"
         )}>
           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center flex-shrink-0">
             <span className="text-white font-medium text-sm">A</span>
           </div>
-          {!collapsed && (
+          {isExpanded && (
             <div className="flex-1 min-w-0">
               <h6 className="text-sm font-semibold truncate">Admindvi</h6>
               <p className="text-xs text-muted-foreground truncate">Super Admin</p>
