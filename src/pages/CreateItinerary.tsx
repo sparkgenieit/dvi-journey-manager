@@ -28,14 +28,14 @@ export const CreateItinerary = () => {
 
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Itinerary Plan</h1>
+        <h1 className="text-xl sm:text-2xl font-bold">Itinerary Plan</h1>
       </div>
 
       <Card>
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <CardContent className="pt-4 sm:pt-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Itinerary Preference */}
             <div className="space-y-2">
               <Label>Itinerary Preference *</Label>
@@ -230,7 +230,7 @@ export const CreateItinerary = () => {
             </div>
             
             {/* Special Instructions */}
-            <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-1">
+            <div className="space-y-2 sm:col-span-2 lg:col-span-1">
               <Label htmlFor="special-instructions">Special Instructions</Label>
               <Textarea id="special-instructions" placeholder="Enter the Special Instruction" />
             </div>
@@ -258,59 +258,63 @@ export const CreateItinerary = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Route Details</CardTitle>
+          <CardTitle className="text-lg sm:text-xl">Route Details</CardTitle>
         </CardHeader>
         <CardContent>
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>DAY</TableHead>
-                    <TableHead>DATE</TableHead>
-                    <TableHead>SOURCE DESTINATION</TableHead>
-                    <TableHead>NEXT DESTINATION</TableHead>
-                    <TableHead>VIA ROUTE</TableHead>
-                    <TableHead>DIRECT DESTINATION VISIT</TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {routeDetails.map((row, index) => (
-                    <TableRow key={index}>
-                        <TableCell>{row.day}</TableCell>
-                        <TableCell><Input type="text" defaultValue={row.date} /></TableCell>
-                        <TableCell><Input type="text" placeholder="Source Location" /></TableCell>
-                        <TableCell>
-                            <Select>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Next Destination" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="dest1">Destination 1</SelectItem>
-                                    <SelectItem value="dest2">Destination 2</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </TableCell>
-                        <TableCell><Button variant="outline" size="icon"><Trash2 className="h-4 w-4" /></Button></TableCell>
-                        <TableCell><Input type="text" /></TableCell>
-                    </TableRow>
-                ))}
-            </TableBody>
-        </Table>
-        <Button onClick={addDay} className="mt-4">+ Add Day</Button>
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <div className="inline-block min-w-full align-middle">
+            <Table>
+              <TableHeader>
+                  <TableRow>
+                      <TableHead className="whitespace-nowrap">DAY</TableHead>
+                      <TableHead className="whitespace-nowrap">DATE</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[150px]">SOURCE DESTINATION</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[150px]">NEXT DESTINATION</TableHead>
+                      <TableHead className="whitespace-nowrap">VIA ROUTE</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[150px]">DIRECT DESTINATION VISIT</TableHead>
+                  </TableRow>
+              </TableHeader>
+              <TableBody>
+                  {routeDetails.map((row, index) => (
+                      <TableRow key={index}>
+                          <TableCell>{row.day}</TableCell>
+                          <TableCell><Input type="text" defaultValue={row.date} className="min-w-[120px]" /></TableCell>
+                          <TableCell><Input type="text" placeholder="Source Location" className="min-w-[150px]" /></TableCell>
+                          <TableCell>
+                              <Select>
+                                  <SelectTrigger className="min-w-[150px]">
+                                      <SelectValue placeholder="Next Destination" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                      <SelectItem value="dest1">Destination 1</SelectItem>
+                                      <SelectItem value="dest2">Destination 2</SelectItem>
+                                  </SelectContent>
+                              </Select>
+                          </TableCell>
+                          <TableCell><Button variant="outline" size="icon"><Trash2 className="h-4 w-4" /></Button></TableCell>
+                          <TableCell><Input type="text" className="min-w-[150px]" /></TableCell>
+                      </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+        <Button onClick={addDay} className="mt-4 w-full sm:w-auto">+ Add Day</Button>
         </CardContent>
       </Card>
       
       <Card>
         <CardHeader>
-          <CardTitle>VEHICLE</CardTitle>
+          <CardTitle className="text-lg sm:text-xl">VEHICLE</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
             {vehicles.map((vehicle, index) => (
-                <div key={vehicle.id} className="p-4 border rounded-lg space-y-4">
+                <div key={vehicle.id} className="p-3 sm:p-4 border rounded-lg space-y-4">
                     <div className="flex justify-between items-center">
-                        <Label>Vehicle #{index + 1}</Label>
+                        <Label className="text-sm sm:text-base">Vehicle #{index + 1}</Label>
                         {vehicles.length > 1 && <Button variant="destructive" size="icon" onClick={() => removeVehicle(vehicle.id)}><Trash2 className="h-4 w-4" /></Button>}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label>Vehicle Type *</Label>
                             <Select>
@@ -332,12 +336,12 @@ export const CreateItinerary = () => {
             ))}
 
 
-            <Button onClick={addVehicle}>+ Add Vehicle</Button>
+            <Button onClick={addVehicle} className="w-full sm:w-auto">+ Add Vehicle</Button>
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button size="lg">Save & Continue</Button>
+      <div className="flex justify-center sm:justify-end">
+        <Button size="lg" className="w-full sm:w-auto">Save & Continue</Button>
       </div>
     </div>
   );
