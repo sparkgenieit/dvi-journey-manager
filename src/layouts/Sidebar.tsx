@@ -19,6 +19,7 @@ import {
   Unlock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 const menuItems = [
   { title: "Dashboard", icon: Home, path: "/" },
@@ -67,9 +68,11 @@ const menuItems = [
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen: boolean;
+  onMobileToggle: () => void;
 }
 
-export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
+export const Sidebar = ({ collapsed, onToggle, mobileOpen, onMobileToggle }: SidebarProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   
@@ -80,15 +83,8 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
     onToggle();
   };
 
-  return (
-    <aside 
-      className={cn(
-        "hidden md:flex fixed left-0 top-0 h-screen bg-white border-r border-sidebar-border transition-all duration-300 z-50 flex-col group",
-        isExpanded ? "w-64" : "w-20"
-      )}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
+  const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
+    <>
       {/* Logo */}
       <div className="flex items-center p-4 border-b border-sidebar-border relative">
         <div className="flex items-center gap-3">
@@ -97,13 +93,13 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
             alt="DVi Logo" 
             className="h-10 object-contain transition-all"
           />
-          {isExpanded && (
+          {(isMobile || isExpanded) && (
             <span className="font-bold text-lg whitespace-nowrap">DoView Holidays</span>
           )}
         </div>
         
-        {/* Circular Toggle Button - only show when expanded */}
-        {isExpanded && (
+        {/* Circular Toggle Button - only show when expanded and not mobile */}
+        {!isMobile && isExpanded && (
           <button
             onClick={handleTogglePin}
             className={cn(
@@ -129,6 +125,7 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
               <li key={item.path}>
                 <NavLink
                   to={item.path}
+                  onClick={isMobile ? () => onMobileToggle() : undefined}
                   className={({ isActive }) =>
                     cn(
                       "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative",
@@ -140,7 +137,7 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
                   {({ isActive }) => (
                   <>
                       <Icon className={cn("h-5 w-5 flex-shrink-0", isActive && "text-white")} />
-                      {isExpanded && (
+                      {(isMobile || isExpanded) && (
                         <>
                           <span className={cn("flex-1 text-sm font-medium", isActive && "text-white")}>
                             {item.title}
@@ -163,12 +160,12 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       <div className="border-t border-sidebar-border p-4">
         <div className={cn(
           "flex items-center gap-3",
-          !isExpanded && "flex-col"
+          !isMobile && !isExpanded && "flex-col"
         )}>
           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center flex-shrink-0">
             <span className="text-white font-medium text-sm">A</span>
           </div>
-          {isExpanded && (
+          {(isMobile || isExpanded) && (
             <div className="flex-1 min-w-0">
               <h6 className="text-sm font-semibold truncate">Admindvi</h6>
               <p className="text-xs text-muted-foreground truncate">Super Admin</p>
@@ -176,6 +173,29 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
           )}
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile Sidebar */}
+      <Sheet open={mobileOpen} onOpenChange={onMobileToggle}>
+        <SheetContent side="left" className="w-64 p-0 md:hidden">
+          <SidebarContent isMobile={true} />
+        </SheetContent>
+      </Sheet>
+
+      {/* Desktop Sidebar */}
+      <aside
+      className={cn(
+        "hidden md:flex fixed left-0 top-0 h-screen bg-white border-r border-sidebar-border transition-all duration-300 z-50 flex-col group",
+        isExpanded ? "w-64" : "w-20"
+      )}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <SidebarContent isMobile={false} />
     </aside>
+    </>
   );
 };
