@@ -11,15 +11,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Trash2 } from "lucide-react";
 
 export const CreateItinerary = () => {
-    const [routeDetails, setRouteDetails] = useState([{ day: 1, date: '''12/12/2024''', source: '''''', next: '''''', via: '''''', directVisit: '''''' }]);
-    const [vehicles, setVehicles] = useState([{ id: 1, type: '''''', count: 1 }]);
+    const [routeDetails, setRouteDetails] = useState([{ day: 1, date: '12/12/2024', source: '', next: '', via: '', directVisit: '' }]);
+    const [vehicles, setVehicles] = useState([{ id: 1, type: '', count: 1 }]);
 
     const addDay = () => {
-        setRouteDetails([...routeDetails, { day: routeDetails.length + 1, date: '''''', source: '''''', next: '''''', via: '''''', directVisit: '''''' }]);
+        setRouteDetails([...routeDetails, { day: routeDetails.length + 1, date: '', source: '', next: '', via: '', directVisit: '' }]);
     };
     
     const addVehicle = () => {
-        setVehicles([...vehicles, { id: vehicles.length + 1, type: '''''', count: 1 }]);
+        setVehicles([...vehicles, { id: vehicles.length + 1, type: '', count: 1 }]);
     };
 
     const removeVehicle = (id: number) => {
@@ -89,7 +89,7 @@ export const CreateItinerary = () => {
                <Select>
                 <SelectTrigger id="departure">
                   <SelectValue placeholder="Choose Location" />
-                </Trigger>
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="location1">Location 1</SelectItem>
                   <SelectItem value="location2">Location 2</SelectItem>
@@ -218,7 +218,7 @@ export const CreateItinerary = () => {
                     </SelectTrigger>
                     <SelectContent>
                         <SelectItem value="india">India</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>geo
+                        <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
