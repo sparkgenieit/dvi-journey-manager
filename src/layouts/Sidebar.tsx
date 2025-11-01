@@ -14,7 +14,9 @@ import {
   UserCircle, 
   FileDown, 
   Settings,
-  ChevronRight
+  ChevronRight,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -105,18 +107,15 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
           <button
             onClick={handleTogglePin}
             className={cn(
-              "absolute -right-3 top-1/2 -translate-y-1/2",
-              "w-6 h-6 rounded-full",
-              "bg-gradient-to-r from-primary to-pink-500",
+              "absolute top-4 right-4",
+              "w-8 h-8 rounded-full",
+              "bg-white",
               "flex items-center justify-center",
-              "shadow-lg hover:shadow-xl",
+              "shadow-md hover:shadow-lg",
               "transition-all duration-200",
-              "hover:scale-110"
             )}
           >
-            {isPinned && (
-              <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
-            )}
+            {isPinned ? <Lock className="w-4 h-4 text-gray-600" /> : <Unlock className="w-4 h-4 text-gray-600" />}
           </button>
         )}
       </div>
