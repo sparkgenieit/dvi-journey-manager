@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { MainLayout } from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary";
+import { LatestItinerary } from "./pages/LatestItinerary";
+
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -19,6 +21,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<MainLayout><Dashboard /></MainLayout>} />
           <Route path="/create-itinerary" element={<MainLayout><CreateItinerary /></MainLayout>} />
+          <Route path="/latest-itinerary" element={<MainLayout><LatestItinerary /></MainLayout>} />
+
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

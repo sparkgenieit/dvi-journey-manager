@@ -11,8 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Trash2 } from "lucide-react";
 
 export const CreateItinerary = () => {
+    const [itineraryPreference, setItineraryPreference] = useState("both");
     const [routeDetails, setRouteDetails] = useState([{ day: 1, date: '12/12/2024', source: '', next: '', via: '', directVisit: '' }]);
     const [vehicles, setVehicles] = useState([{ id: 1, type: '', count: 1 }]);
+    const [rooms, setRooms] = useState([{ id: 1, roomType: '', roomCount: 1, adults: 2, children: 0 }]);
 
     const addDay = () => {
         setRouteDetails([...routeDetails, { day: routeDetails.length + 1, date: '', source: '', next: '', via: '', directVisit: '' }]);
@@ -24,6 +26,14 @@ export const CreateItinerary = () => {
 
     const removeVehicle = (id: number) => {
         setVehicles(vehicles.filter(v => v.id !== id));
+    };
+
+    const addRoom = () => {
+        setRooms([...rooms, { id: rooms.length + 1, roomType: '', roomCount: 1, adults: 2, children: 0 }]);
+    };
+
+    const removeRoom = (id: number) => {
+        setRooms(rooms.filter(r => r.id !== id));
     };
 
 
@@ -39,7 +49,7 @@ export const CreateItinerary = () => {
             {/* Itinerary Preference */}
             <div className="space-y-2">
               <Label>Itinerary Preference *</Label>
-              <RadioGroup defaultValue="both" className="flex space-x-4">
+              <RadioGroup value={itineraryPreference} onValueChange={setItineraryPreference} className="flex space-x-4">
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="vehicle" id="vehicle" />
                   <Label htmlFor="vehicle">Vehicle</Label>
@@ -303,42 +313,93 @@ export const CreateItinerary = () => {
         </CardContent>
       </Card>
       
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg sm:text-xl">VEHICLE</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-            {vehicles.map((vehicle, index) => (
-                <div key={vehicle.id} className="p-3 sm:p-4 border rounded-lg space-y-4">
-                    <div className="flex justify-between items-center">
-                        <Label className="text-sm sm:text-base">Vehicle #{index + 1}</Label>
-                        {vehicles.length > 1 && <Button variant="destructive" size="icon" onClick={() => removeVehicle(vehicle.id)}><Trash2 className="h-4 w-4" /></Button>}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Vehicle Type *</Label>
-                            <Select>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="No vehicle types found" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="type1">Type 1</SelectItem>
-                                    <SelectItem value="type2">Type 2</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Vehicle Count *</Label>
-                            <Input type="number" defaultValue={vehicle.count} />
-                        </div>
-                    </div>
-                </div>
-            ))}
+      {/* Rooms Block - Show when hotel or both is selected */}
+      {(itineraryPreference === "hotel" || itineraryPreference === "both") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg sm:text-xl">ROOMS</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+              {rooms.map((room, index) => (
+                  <div key={room.id} className="p-3 sm:p-4 border rounded-lg space-y-4">
+                      <div className="flex justify-between items-center">
+                          <Label className="text-sm sm:text-base">Room #{index + 1}</Label>
+                          {rooms.length > 1 && <Button variant="destructive" size="icon" onClick={() => removeRoom(room.id)}><Trash2 className="h-4 w-4" /></Button>}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="space-y-2">
+                              <Label>Room Type *</Label>
+                              <Select>
+                                  <SelectTrigger>
+                                      <SelectValue placeholder="Choose Hotel Facilities" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                      <SelectItem value="deluxe">Deluxe</SelectItem>
+                                      <SelectItem value="suite">Suite</SelectItem>
+                                      <SelectItem value="standard">Standard</SelectItem>
+                                  </SelectContent>
+                              </Select>
+                          </div>
+                          <div className="space-y-2">
+                              <Label>Room Count *</Label>
+                              <Input type="number" defaultValue={room.roomCount} />
+                          </div>
+                          <div className="space-y-2">
+                              <Label>Adults *</Label>
+                              <Input type="number" defaultValue={room.adults} />
+                          </div>
+                          <div className="space-y-2">
+                              <Label>Children *</Label>
+                              <Input type="number" defaultValue={room.children} />
+                          </div>
+                      </div>
+                  </div>
+              ))}
+
+              <Button onClick={addRoom} className="w-full sm:w-auto">+ Add Room</Button>
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* Vehicle Block - Show when vehicle or both is selected */}
+      {(itineraryPreference === "vehicle" || itineraryPreference === "both") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg sm:text-xl">VEHICLE</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+              {vehicles.map((vehicle, index) => (
+                  <div key={vehicle.id} className="p-3 sm:p-4 border rounded-lg space-y-4">
+                      <div className="flex justify-between items-center">
+                          <Label className="text-sm sm:text-base">Vehicle #{index + 1}</Label>
+                          {vehicles.length > 1 && <Button variant="destructive" size="icon" onClick={() => removeVehicle(vehicle.id)}><Trash2 className="h-4 w-4" /></Button>}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                              <Label>Vehicle Type *</Label>
+                              <Select>
+                                  <SelectTrigger>
+                                      <SelectValue placeholder="No vehicle types found" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                      <SelectItem value="type1">Type 1</SelectItem>
+                                      <SelectItem value="type2">Type 2</SelectItem>
+                                  </SelectContent>
+                              </Select>
+                          </div>
+                          <div className="space-y-2">
+                              <Label>Vehicle Count *</Label>
+                              <Input type="number" defaultValue={vehicle.count} />
+                          </div>
+                      </div>
+                  </div>
+              ))}
 
 
-            <Button onClick={addVehicle} className="w-full sm:w-auto">+ Add Vehicle</Button>
-        </CardContent>
-      </Card>
+              <Button onClick={addVehicle} className="w-full sm:w-auto">+ Add Vehicle</Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex justify-center sm:justify-end">
         <Button size="lg" className="w-full sm:w-auto">Save & Continue</Button>
