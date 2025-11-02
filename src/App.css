@@ -379,3 +379,16 @@
   color: #a89cc3;
   margin-top: 0.6rem;
 }
+
+.app-brand-text {
+  flex-shrink: 0;
+  opacity: 1;
+  transition: opacity 0.3s ease-in-out;
+  color: gray;
+}
+html:not([dir="rtl"]) .app-brand-text {
+  margin-left: 0.625rem !important;
+}
+[dir="rtl"] .app-brand-text {
+  margin-right: 0.625rem !important;
+}

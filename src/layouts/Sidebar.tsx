@@ -1,3 +1,4 @@
+// src/layouts/Sidebar.tsx
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -86,7 +87,7 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
-  // keep Accounts open by default
+  // keep accounts open by default
   const [openParent, setOpenParent] = useState<string | null>("Accounts");
   const location = useLocation();
 
@@ -99,32 +100,34 @@ export const Sidebar = ({
 
   const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
     <>
-      {/* logo */}
-      <div className="flex items-center p-4 border-b border-sidebar-border relative">
-        <div className="flex items-center gap-3">
+      {/* header / logo */}
+      <div
+        className="relative flex items-center gap-0 px-2 py-2 border-b border-sidebar-border"
+      >
+        {/* left: logo + text */}
+        <div className="flex items-center gap-0 min-w-0">
           <img
             src="/assets/img/DVi-Logo1-2048x1860.png"
             alt="DVi Logo"
-            className="h-10 object-contain transition-all"
+            className="h-10 object-contain"
           />
           {(isMobile || isExpanded) && (
-            <span className="font-bold text-lg whitespace-nowrap">
+            <span className="font-bold text-lg whitespace-nowrap leading-tight app-brand-text">
               DoView Holidays
             </span>
           )}
         </div>
 
+        {/* right: lock/pin absolutely at right */}
         {!isMobile && isExpanded && (
           <button
             onClick={handleTogglePin}
-            className={cn(
-              "absolute top-4 right-4 w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-md hover:shadow-lg transition-all duration-200"
-            )}
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white flex items-center justify-center shadow hover:shadow-md transition"
           >
             {isPinned ? (
-              <Lock className="w-4 h-4 text-gray-600" />
+              <Lock className="w-4 h-4 text-gray-700" />
             ) : (
-              <Unlock className="w-4 h-4 text-gray-600" />
+              <Unlock className="w-4 h-4 text-gray-700" />
             )}
           </button>
         )}
@@ -136,7 +139,6 @@ export const Sidebar = ({
           {menuItems.map((item) => {
             const Icon = item.icon;
 
-            // is this parent or one of its children active?
             const isParentActive =
               location.pathname === item.path ||
               (item.children &&
@@ -161,15 +163,15 @@ export const Sidebar = ({
                       )
                     }
                     className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative",
-                      "hover:bg-sidebar-accent",
-                      // parent active → soft violet, NOT gradient
+                      "w-full flex items-center gap-3 rounded-lg transition-all relative",
+                      "px-3 py-2.5",
+                      "hover:bg-[#f5e8ff]",
                       isParentActive && "bg-[#f5e8ff] text-[#5e3a82] shadow-sm"
                     )}
                   >
                     <Icon
                       className={cn(
-                        "h-5 w-5 flex-shrink-0",
+                        "h-5 w-5 shrink-0",
                         isParentActive && "text-[#5e3a82]"
                       )}
                     />
@@ -177,7 +179,7 @@ export const Sidebar = ({
                       <>
                         <span
                           className={cn(
-                            "flex-1 text-sm font-medium text-left",
+                            "flex-1 text-sm text-left font-medium",
                             isParentActive && "text-[#5e3a82]"
                           )}
                         >
@@ -186,7 +188,6 @@ export const Sidebar = ({
                         <ChevronRight
                           className={cn(
                             "h-4 w-4 transition-transform",
-                            isParentActive && "text-[#5e3a82]",
                             isOpen && "rotate-90"
                           )}
                         />
@@ -194,7 +195,6 @@ export const Sidebar = ({
                     )}
                   </button>
 
-                  {/* submenu */}
                   {isOpen && (
                     <ul className="mt-1 space-y-1">
                       {item.children.map((child) => (
@@ -206,16 +206,13 @@ export const Sidebar = ({
                             }
                             className={({ isActive }) =>
                               cn(
-                                // indent a bit, but keep full-width
-                                "ml-4 mr-1 flex items-center gap-2 px-3 py-2 rounded-lg transition-all",
-                                "hover:bg-[#f2ccff]/60",
-                                // 👇 THIS is the same class as top-level active
+                                "ml-5 mr-2 flex items-center gap-2 rounded-lg px-3 py-2 transition-all",
+                                "hover:bg-[#f2ccff]/50",
                                 isActive &&
-                                  "bg-gradient-to-r from-primary to-pink-500 text-white shadow-lg"
+                                  "bg-gradient-to-r from-primary to-pink-500 text-white shadow"
                               )
                             }
                           >
-                            {/* no dot here */}
                             <span className="text-sm font-medium">
                               {child.title}
                             </span>
@@ -236,10 +233,11 @@ export const Sidebar = ({
                   onClick={isMobile ? () => onMobileToggle() : undefined}
                   className={({ isActive }) =>
                     cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group relative",
-                      "hover:bg-sidebar-accent",
+                      "flex items-center gap-3 rounded-lg transition-all",
+                      "px-3 py-2.5",
+                      "hover:bg-[#f5e8ff]",
                       isActive &&
-                        "bg-gradient-to-r from-primary to-pink-500 text-primary-foreground shadow-lg"
+                        "bg-gradient-to-r from-primary to-pink-500 text-white shadow"
                     )
                   }
                 >
@@ -247,14 +245,14 @@ export const Sidebar = ({
                     <>
                       <Icon
                         className={cn(
-                          "h-5 w-5 flex-shrink-0",
+                          "h-5 w-5 shrink-0",
                           isActive && "text-white"
                         )}
                       />
                       {(isMobile || isExpanded) && (
                         <span
                           className={cn(
-                            "flex-1 text-sm font-medium",
+                            "flex-1 text-sm text-left font-medium truncate",
                             isActive && "text-white"
                           )}
                         >
@@ -270,21 +268,23 @@ export const Sidebar = ({
         </ul>
       </nav>
 
-      {/* user */}
+      {/* bottom user */}
       <div className="border-t border-sidebar-border p-4">
         <div
-          className={cn(
-            "flex items-center gap-3",
-            !isMobile && !isExpanded && "flex-col"
-          )}
-        >
-          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center flex-shrink-0">
+            className={cn(
+              "flex items-center gap-3",
+              !isMobile && !isExpanded && "flex-col items-start"
+            )}
+          >
+          <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center">
             <span className="text-white font-medium text-sm">A</span>
           </div>
           {(isMobile || isExpanded) && (
             <div className="flex-1 min-w-0">
-              <h6 className="text-sm font-semibold truncate">Admindvi</h6>
-              <p className="text-xs text-muted-foreground truncate">
+              <h6 className="text-sm font-semibold leading-tight">
+                Admindvi
+              </h6>
+              <p className="text-xs text-muted-foreground leading-tight">
                 Super Admin
               </p>
             </div>
@@ -306,7 +306,7 @@ export const Sidebar = ({
       {/* desktop */}
       <aside
         className={cn(
-          "hidden md:flex fixed left-0 top-0 h-screen bg-white border-r border-sidebar-border transition-all duration-300 z-50 flex-col group",
+          "hidden md:flex fixed left-0 top-0 h-screen bg-white border-r border-sidebar-border transition-all duration-300 z-50 flex-col",
           isExpanded ? "w-64" : "w-20"
         )}
         onMouseEnter={() => setIsHovered(true)}
