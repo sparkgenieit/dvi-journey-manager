@@ -14,6 +14,7 @@ import "./App.css";
 import NotFound from "./pages/NotFound";
 import { AccountsLedger } from "./pages/AccountsLedger";
 import Hotels from "./pages/Hotels";
+import { HotelFormPage } from "./pages/hotels/HotelFormPage";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,8 @@ const App = () => (
           <Route path="/accounts-manager" element={<MainLayout><AccountsManager /></MainLayout>} />
           <Route path="/accounts-ledger" element={<MainLayout><AccountsLedger /></MainLayout>} />
           <Route path="/hotels" element={<MainLayout><Hotels /></MainLayout>} />
+          <Route path="/hotels/new" element={<MainLayout><HotelFormPage /></MainLayout>} />
+          <Route path="/hotels/:id/edit" element={<MainLayout><HotelFormPage /></MainLayout>} />
 
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
