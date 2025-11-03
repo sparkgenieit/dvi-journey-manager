@@ -1,5 +1,6 @@
 // src/pages/Hotels.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Eye,
   Pencil,
@@ -219,6 +220,8 @@ const arrow = (active: boolean, dir: SortDir) => {
 // COMPONENT
 // ─────────────────────────────────────────────
 const Hotels: React.FC = () => {
+  const navigate = useNavigate();
+  
   // ui
   const [showFilter, setShowFilter] = useState(false);
   const [entries, setEntries] = useState(10); // pageSize
@@ -323,7 +326,12 @@ const Hotels: React.FC = () => {
                 <ChevronDown className="w-4 h-4" />
               )}
             </button>
-            <button className="hotel-add-btn">+ Add Hotel</button>
+            <button 
+              className="hotel-add-btn"
+              onClick={() => navigate("/hotels/new")}
+            >
+              + Add Hotel
+            </button>
             <div className="hotel-pricebook-btn">
               <span>Price Book</span>
               <ChevronDown className="w-4 h-4" />
@@ -512,7 +520,10 @@ const Hotels: React.FC = () => {
                         <button className="hotel-action-circle view">
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button className="hotel-action-circle edit">
+                        <button 
+                          className="hotel-action-circle edit"
+                          onClick={() => navigate(`/hotels/${row.id}/edit`)}
+                        >
                           <Pencil className="w-4 h-4" />
                         </button>
                         <button className="hotel-action-circle del">
