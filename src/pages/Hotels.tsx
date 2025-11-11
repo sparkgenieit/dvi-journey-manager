@@ -11,7 +11,6 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { listHotels, updateHotel, type Hotel } from "@/services/hotels";
-import { useNavigate } from "react-router-dom";
 
 /** ================= UI Types ================= */
 type HotelRow = {
