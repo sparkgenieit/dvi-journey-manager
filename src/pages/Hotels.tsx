@@ -1,5 +1,6 @@
 // src/pages/hotel.tsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Eye,
   Pencil,
@@ -38,9 +39,13 @@ const arrow = (active: boolean, dir: SortDir) =>
     <span className="hotel-sort-active">▼</span>
   );
 
-/** ================= Page ================= */
-const HotelPage: React.FC = () => {
-  // toolbar / filters / paging
+// ─────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────
+const Hotels: React.FC = () => {
+  const navigate = useNavigate();
+  
+  // ui
   const [showFilter, setShowFilter] = useState(false);
   const [entries, setEntries] = useState(10);
   const [search, setSearch] = useState("");
@@ -233,9 +238,9 @@ const HotelPage: React.FC = () => {
                 <ChevronDown className="w-4 h-4" />
               )}
             </button>
-            <button
+            <button 
               className="hotel-add-btn"
-              onClick={() => navigate("/hotels/new")} // <-- open new page in same tab
+              onClick={() => navigate("/hotels/new")}
             >
               + Add Hotel
             </button>
@@ -429,9 +434,9 @@ const HotelPage: React.FC = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
+                        <button 
                           className="hotel-action-circle edit"
-                          title="Edit"
+                          onClick={() => navigate(`/hotels/${row.id}/edit`)}
                         >
                           <Pencil className="w-4 h-4" />
                         </button>
