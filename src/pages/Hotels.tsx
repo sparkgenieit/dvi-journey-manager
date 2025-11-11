@@ -55,8 +55,7 @@ const Hotels: React.FC = () => {
 
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const navigate = useNavigate();
-
+  
   // data
   const [rows, setRows] = useState<HotelRow[]>([]);
   const [total, setTotal] = useState(0);
