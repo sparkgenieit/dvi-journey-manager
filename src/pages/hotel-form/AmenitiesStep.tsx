@@ -23,8 +23,8 @@ export default function AmenitiesStep({
   const [rows, setRows] = useState<AmenityRow[]>([]);
 
   const availabilityOptions = [
-    { id: 1, name: "Always Available" },
-    { id: 2, name: "Time Based" },
+    { id: 1, name: "24/7" },
+    { id: 2, name: "Duration" },
   ];
   const statusOptions = [
     { id: 1, name: "Active" },
