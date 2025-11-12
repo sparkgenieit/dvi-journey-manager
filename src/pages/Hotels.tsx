@@ -141,6 +141,8 @@ function todaySuffix() {
 
 /** ================= Page ================= */
 const HotelPage: React.FC = () => {
+  const navigate = useNavigate(); // ✅ FIX: initialize navigate from React Router
+
   // toolbar / filters / paging
   const [showFilter, setShowFilter] = useState(false);
   const [entries, setEntries] = useState(10);
@@ -865,4 +867,3 @@ const HotelPage: React.FC = () => {
 };
 
 export default HotelPage;
-

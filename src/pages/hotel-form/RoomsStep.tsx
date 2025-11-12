@@ -565,47 +565,56 @@ export default function RoomsStep({
   /* ========= Save ========= */
   const saveMut = useMutation({
     mutationFn: async (items: RoomForm[]) => {
-      const payload = items.map((r) => ({
-        hotel_id: Number(hotelId),
-        room_type: ((): number | null => {
-          const raw = (r as any).room_type;
-          const n = Number(raw);
-          if (Number.isFinite(n) && String(raw).trim() !== "") return n;
-          const typed = String(raw ?? "").trim().toLowerCase();
+      // ✅ Map UI → dvi_hotel_rooms column names & types
+      const payload = items.map((r) => {
+        // Resolve room_type_id from typed text or numeric value
+        const rawType = (r as any).room_type;
+        let room_type_id: number | null = null;
+        const asNum = Number(rawType);
+        if (Number.isFinite(asNum) && String(rawType).trim() !== "") {
+          room_type_id = asNum;
+        } else {
+          const typed = String(rawType ?? "").trim().toLowerCase();
           if (typed && roomTypeNameToId.has(typed)) {
             const id = roomTypeNameToId.get(typed)!;
-            const asNum = Number(id);
-            return Number.isFinite(asNum) ? asNum : null;
+            const n = Number(id);
+            room_type_id = Number.isFinite(n) ? n : null;
           }
-        return null;
-        })(),
-        room_type_name: ((): string | null => {
-          const raw = (r as any).room_type;
-          return isNaN(Number(raw)) && String(raw || "").trim() !== ""
-            ? String(raw).trim()
-            : null;
-        })(),
-        room_title: r.room_title || null,
+        }
 
-        // ✅ API gets comma-separated string
-        preferred_for: Array.isArray(r.preferred_for)
-          ? (r.preferred_for as any[]).map(String).filter(Boolean).join(",")
-          : (r.preferred_for as any) || null,
+        const preferred_for =
+          Array.isArray(r.preferred_for)
+            ? (r.preferred_for as any[]).map(String).filter(Boolean).join(",")
+            : (r as any).preferred_for || null;
 
-        no_of_rooms: Number(r.no_of_rooms || 1),
-        ac_availability: Number(r.ac_availability || 0),
-        status: Number(r.status || 1),
-        max_adult: Number(r.max_adult || 0),
-        max_children: Number(r.max_children || 0),
-        check_in_time: to12h((r as any).check_in_time) || (r as any).check_in_time,
-        check_out_time: to12h((r as any).check_out_time) || (r as any).check_out_time,
-        gst_type: toGstNum((r as any).gst_type),
-        gst_percentage: Number(r.gst_percentage || 0),
-        amenities: (r.amenities ?? []).map((id) => Number(id)),
-        food_breakfast: Boolean(r.food_breakfast),
-        food_lunch: Boolean(r.food_lunch),
-        food_dinner: Boolean(r.food_dinner),
-      }));
+        const inbuilt_amenitiesStr = (r.amenities ?? [])
+          .map((id) => Number(id))
+          .filter((n) => Number.isFinite(n))
+          .join(",");
+
+        return {
+          hotel_id: Number(hotelId),
+          room_type_id,                                    // ← expected by DB
+          room_title: r.room_title || null,
+          preferred_for,                                   // comma string or null
+          no_of_rooms_available: Number(r.no_of_rooms || 1),
+          air_conditioner_availability: Number(r.ac_availability || 0),
+          status: Number(r.status || 1),
+          total_max_adults: Number(r.max_adult || 0),
+          total_max_childrens: Number(r.max_children || 0),
+          check_in_time:
+            to12h((r as any).check_in_time) || (r as any).check_in_time || null,
+          check_out_time:
+            to12h((r as any).check_out_time) || (r as any).check_out_time || null,
+          gst_type: toGstNum((r as any).gst_type),
+          gst_percentage: Number(r.gst_percentage || 0),
+          inbuilt_amenities: inbuilt_amenitiesStr || null, // ← comma list
+          breakfast_included: r.food_breakfast ? 1 : 0,    // ← numeric flags
+          lunch_included: r.food_lunch ? 1 : 0,
+          dinner_included: r.food_dinner ? 1 : 0,
+          // room_ref_code, createdby/createdon/updatedon/deleted are server-side
+        };
+      });
 
       const endpoints = [
         `/api/v1/hotels/${hotelId}/rooms/bulk`,

@@ -1,15 +1,10 @@
-// src/pages/hotel-form/BasicStep.tsx
+// FILE: src/pages/hotel-form/BasicStep.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { HotelForm } from "../HotelForm";
 
-/* ================== Small, local ChipInput ==================
-   - Keyboard: Enter / comma / space adds a chip
-   - Backspace on empty input removes last chip
-   - Shows simple pill chips with an × remove button
-   - Fully controlled via value/onChange (string[])
-==============================================================*/
+/* ================== Small, local ChipInput ================== */
 function ChipInput({
   value,
   onChange,
@@ -32,7 +27,6 @@ function ChipInput({
     if (!items.length) return;
     const next = [...value];
     for (const item of items) {
-      // very light validation
       if (type === "phone") {
         const ph = item.replace(/[^\d+]/g, "");
         if (ph.length < 7) continue;
@@ -60,10 +54,7 @@ function ChipInput({
     }
   };
 
-  const removeAt = (idx: number) => {
-    const next = value.filter((_, i) => i !== idx);
-    onChange(next);
-  };
+  const removeAt = (idx: number) => onChange(value.filter((_, i) => i !== idx));
 
   return (
     <div
@@ -111,6 +102,11 @@ type ApiCtx = {
   token: () => string;
 };
 
+/* ===== helpers for value normalization ===== */
+const S = (v: any) => (v === null || v === undefined ? "" : String(v)); // to string or ""
+const N = (v: any) =>
+  v === "" || v === undefined || v === null ? null : Number(v); // to number or null
+
 export default function BasicStep({
   api,
   isEdit,
@@ -134,10 +130,9 @@ export default function BasicStep({
     formState: { errors, isSubmitting },
   } = useForm<HotelForm & { hotel_mobile_arr: string[]; hotel_email_arr: string[] }>({
     defaultValues: {
-      hotel_status: 1,
-      hotel_powerbackup: 0,
-      hotel_hotspot_status: 0,
-      // arrays for chips
+      hotel_status: 1 as any, // will be string in UI, coerced on submit
+      hotel_powerbackup: 0 as any,
+      hotel_hotspot_status: 0 as any,
       hotel_mobile_arr: [],
       hotel_email_arr: [],
     } as any,
@@ -209,6 +204,25 @@ export default function BasicStep({
     enabled: !!stateId,
   });
 
+  /* ====== FIX: re-apply saved state/city once options load (and coerce to strings) ====== */
+  useEffect(() => {
+    const current = S(watch("hotel_state"));
+    if (!current || !(states as any[]).length) return;
+    const has = (states as any[]).some((s: any) => S(s?.id ?? s?.value ?? s) === current);
+    if (!has) {
+      setValue("hotel_state", current, { shouldValidate: true, shouldDirty: false });
+    }
+  }, [states, setValue, watch]);
+
+  useEffect(() => {
+    const current = S(watch("hotel_city"));
+    if (!current || !(cities as any[]).length) return;
+    const has = (cities as any[]).some((c: any) => S(c?.id ?? c?.value ?? c) === current);
+    if (!has) {
+      setValue("hotel_city", current, { shouldValidate: true, shouldDirty: false });
+    }
+  }, [cities, setValue, watch]);
+
   // GST types & percentages
   const { data: gstTypes = [] } = useQuery({
     queryKey: ["gstTypes"],
@@ -239,27 +253,25 @@ export default function BasicStep({
   });
 
   const gstPercentOptions = useMemo(() => {
-  // Fallback + normalization to numbers
-  const fallback = [5, 18, 12, 0 ];
-  const raw: number[] = (gstPercents as any[]).map((g: any) => {
-    const n =
-      typeof g === "number"
-        ? g
-        : Number(g?.id ?? g?.value ?? String(g?.name ?? "").replace("%", ""));
-    return Number.isFinite(n) ? n : NaN;
-  }).filter((n) => Number.isFinite(n)) as number[];
+    const fallback = [5, 18, 12, 0];
+    const raw: number[] = (gstPercents as any[])
+      .map((g: any) => {
+        const n =
+          typeof g === "number"
+            ? g
+            : Number(g?.id ?? g?.value ?? String(g?.name ?? "").replace("%", ""));
+        return Number.isFinite(n) ? n : NaN;
+      })
+      .filter((n) => Number.isFinite(n)) as number[];
 
-  // Preferred order, then any extra unique values
-  const preferred = fallback.filter((v) => raw.includes(v));
-  const extras = raw.filter((v) => !preferred.includes(v));
-  const final = Array.from(new Set([...preferred, ...extras]));
-
-  // Build the label: "5 % GST - %5"
-  return final.map((v) => ({
-    value: v,
-    label: `${v} % GST - %${v}`,
-  }));
-}, [gstPercents]);
+    const preferred = fallback.filter((v) => raw.includes(v));
+    const extras = raw.filter((v) => !preferred.includes(v));
+    const final = Array.from(new Set([...preferred, ...extras]));
+    return final.map((v) => ({
+      value: String(v), // STRING to match form value
+      label: `${v} % GST - %${v}`,
+    }));
+  }, [gstPercents]);
 
   /* EDIT defaults */
   useEffect(() => {
@@ -275,47 +287,52 @@ export default function BasicStep({
         reset({
           hotel_name: row.hotel_name ?? row.name ?? "",
           hotel_place: row.hotel_place ?? row.place ?? "",
+          // force strings for selects
           hotel_status:
             row.status !== undefined
-              ? Number(row.status)
+              ? (S(Number(row.status)) as any)
               : row.hotel_status !== undefined
-              ? Number(row.hotel_status)
-              : 1,
+              ? (S(Number(row.hotel_status)) as any)
+              : ("1" as any),
+
           // keep original string fields too, but chip UI reads arrays:
           hotel_mobile_no: row.hotel_mobile ?? row.hotel_mobile_no ?? row.phone ?? "",
           hotel_email_id: row.hotel_email ?? row.hotel_email_id ?? row.email ?? "",
           hotel_mobile_arr: phones,
           hotel_email_arr: emails,
 
-          hotel_category: row.hotel_category ?? row.categoryId ?? "",
+          hotel_category: S(row.hotel_category ?? row.categoryId ?? ""),
           hotel_powerbackup:
-            row.hotel_powerbackup !== undefined
-              ? Number(row.hotel_powerbackup)
-              : row.powerBackup
-              ? 1
-              : 0,
-          hotel_country: row.hotel_country ?? row.countryId ?? "",
-          hotel_state: row.hotel_state ?? row.stateId ?? "",
-          hotel_city: row.hotel_city ?? row.cityId ?? "",
+            (S(
+              row.hotel_powerbackup !== undefined
+                ? Number(row.hotel_powerbackup)
+                : row.powerBackup
+                ? 1
+                : 0
+            ) as any),
+          hotel_country: S(row.hotel_country ?? row.countryId ?? ""),
+          hotel_state: S(row.hotel_state ?? row.stateId ?? ""),
+          hotel_city: S(row.hotel_city ?? row.cityId ?? ""),
           hotel_postal_code: row.hotel_pincode ?? row.hotel_postal_code ?? row.pinCode ?? "",
           hotel_code: row.hotel_code ?? row.code ?? "",
-          hotel_margin: row.hotel_margin ?? "",
-          hotel_margin_gst_type: row.hotel_margin_gst_type ?? "",
-          hotel_margin_gst_percentage: row.hotel_margin_gst_percentage ?? "",
+          hotel_margin: S(row.hotel_margin ?? ""),
+          hotel_margin_gst_type: S(row.hotel_margin_gst_type ?? ""),
+          hotel_margin_gst_percentage: S(row.hotel_margin_gst_percentage ?? ""),
           hotel_latitude:
             row.hotel_latitude !== undefined
-              ? String(row.hotel_latitude ?? "")
+              ? S(row.hotel_latitude ?? "")
               : row.latitude !== undefined
-              ? String(row.latitude ?? "")
+              ? S(row.latitude ?? "")
               : "",
           hotel_longitude:
             row.hotel_longitude !== undefined
-              ? String(row.hotel_longitude ?? "")
+              ? S(row.hotel_longitude ?? "")
               : row.longitude !== undefined
-              ? String(row.longitude ?? "")
+              ? S(row.longitude ?? "")
               : "",
-          hotel_hotspot_status:
-            row.hotel_hotspot_status !== undefined ? Number(row.hotel_hotspot_status) : row.hotSpot ? 1 : 0,
+          hotel_hotspot_status: (S(
+            row.hotel_hotspot_status !== undefined ? Number(row.hotel_hotspot_status) : row.hotSpot ? 1 : 0
+          ) as any),
           hotel_address: row.hotel_address ?? row.addressLine1 ?? "",
         } as any);
       })
@@ -353,10 +370,10 @@ export default function BasicStep({
     return () => controller.abort();
   }, [cityWatch, api, setValue]);
 
-  const toNum = (v: any) => (v === "" || v === undefined || v === null ? null : Number(v));
-
   // Join chip arrays to strings for backend compatibility
-  const normalizePayload = (data: HotelForm & { hotel_mobile_arr?: string[]; hotel_email_arr?: string[] }) => {
+  const normalizePayload = (
+    data: HotelForm & { hotel_mobile_arr?: string[]; hotel_email_arr?: string[] }
+  ) => {
     const mobileJoined =
       (data as any).hotel_mobile_arr?.filter(Boolean).join(",") ||
       (data as any).hotel_mobile_no ||
@@ -368,19 +385,21 @@ export default function BasicStep({
 
     return {
       ...data,
-      status: Number((data as any).hotel_status),
-      hotel_status: Number((data as any).hotel_status),
-      hotel_powerbackup: Number((data as any).hotel_powerbackup),
-      hotel_hotspot_status: Number((data as any).hotel_hotspot_status),
-      hotel_country: (data as any).hotel_country,
+      // numbers expected by API
+      status: N((data as any).hotel_status),
+      hotel_status: N((data as any).hotel_status),
+      hotel_powerbackup: N((data as any).hotel_powerbackup),
+      hotel_hotspot_status: N((data as any).hotel_hotspot_status),
+      hotel_country: (data as any).hotel_country, // ids as strings are okay; backend can coerce
       hotel_state: (data as any).hotel_state,
       hotel_city: (data as any).hotel_city,
-      hotel_margin: toNum((data as any).hotel_margin),
-      hotel_margin_gst_type: toNum((data as any).hotel_margin_gst_type),
-      hotel_margin_gst_percentage: toNum((data as any).hotel_margin_gst_percentage),
+      hotel_category: N((data as any).hotel_category) ?? (data as any).hotel_category, // keep numeric if possible
+      hotel_margin: N((data as any).hotel_margin),
+      hotel_margin_gst_type: N((data as any).hotel_margin_gst_type) ?? (data as any).hotel_margin_gst_type,
+      hotel_margin_gst_percentage: N((data as any).hotel_margin_gst_percentage),
       hotel_latitude: (data as any).hotel_latitude === "" ? null : (data as any).hotel_latitude,
       hotel_longitude: (data as any).hotel_longitude === "" ? null : (data as any).hotel_longitude,
-      // map to legacy fields
+      // legacy fields
       hotel_mobile_no: mobileJoined,
       hotel_mobile: mobileJoined,
       hotel_email_id: emailJoined,
@@ -452,7 +471,10 @@ export default function BasicStep({
               className="mt-1 w-full border rounded-lg px-3 py-2"
               {...register("hotel_status", { required: true })}
             >
-              {[{ id: 1, name: "Active" }, { id: 0, name: "In-Active" }].map((s) => (
+              {[
+                { id: "1", name: "Active" },
+                { id: "0", name: "In-Active" },
+              ].map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
@@ -476,10 +498,11 @@ export default function BasicStep({
                 />
               )}
             />
-            {/* keep a hidden string field for compatibility (joined by commas) */}
             <input type="hidden" {...register("hotel_mobile_no")} />
             {errors as any && (errors as any).hotel_mobile_arr && (
-              <p className="text-red-600 text-xs mt-1">{(errors as any).hotel_mobile_arr.message as string}</p>
+              <p className="text-red-600 text-xs mt-1">
+                {(errors as any).hotel_mobile_arr.message as string}
+              </p>
             )}
           </div>
 
@@ -501,17 +524,22 @@ export default function BasicStep({
             />
             <input type="hidden" {...register("hotel_email_id")} />
             {errors as any && (errors as any).hotel_email_arr && (
-              <p className="text-red-600 text-xs mt-1">{(errors as any).hotel_email_arr.message as string}</p>
+              <p className="text-red-600 text-xs mt-1">
+                {(errors as any).hotel_email_arr.message as string}
+              </p>
             )}
           </div>
 
           {/* Category */}
           <div className="col-span-12 md:col-span-4">
             <label className="block text-sm font-medium">Category *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_category", { required: true })}>
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_category", { required: true })}
+            >
               <option value="">Choose Category</option>
               {categories.map((c: any) => (
-                <option key={c.id ?? c.value ?? c} value={c.id ?? c.value ?? c}>
+                <option key={S(c.id ?? c.value ?? c)} value={S(c.id ?? c.value ?? c)}>
                   {c.name ?? c.label ?? String(c)}
                 </option>
               ))}
@@ -521,8 +549,14 @@ export default function BasicStep({
           {/* Power Backup */}
           <div className="col-span-12 md:col-span-4">
             <label className="block text-sm font-medium">Power Backup? *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_powerbackup", { required: true })}>
-              {[{ id: 1, name: "Yes" }, { id: 0, name: "No" }].map((o) => (
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_powerbackup", { required: true })}
+            >
+              {[
+                { id: "1", name: "Yes" },
+                { id: "0", name: "No" },
+              ].map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
                 </option>
@@ -536,7 +570,7 @@ export default function BasicStep({
             <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_country", { required: true })}>
               <option value="">Choose Country</option>
               {countries.map((c: any) => (
-                <option key={c.id ?? c.value ?? c} value={c.id ?? c.value ?? c}>
+                <option key={S(c.id ?? c.value ?? c)} value={S(c.id ?? c.value ?? c)}>
                   {c.name ?? c.label ?? String(c)}
                 </option>
               ))}
@@ -548,7 +582,7 @@ export default function BasicStep({
             <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_state", { required: true })}>
               <option value="">Please Choose State</option>
               {(states as any[]).map((s: any) => (
-                <option key={s.id ?? s.value ?? s} value={s.id ?? s.value ?? s}>
+                <option key={S(s.id ?? s.value ?? s)} value={S(s.id ?? s.value ?? s)}>
                   {s.name ?? s.label ?? String(s)}
                 </option>
               ))}
@@ -560,7 +594,7 @@ export default function BasicStep({
             <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_city", { required: true })}>
               <option value="">Please Choosen City</option>
               {(cities as any[]).map((c: any) => (
-                <option key={c.id ?? c.value ?? c} value={c.id ?? c.value ?? c}>
+                <option key={S(c.id ?? c.value ?? c)} value={S(c.id ?? c.value ?? c)}>
                   {c.name ?? c.label ?? String(c)}
                 </option>
               ))}
@@ -602,9 +636,12 @@ export default function BasicStep({
           {/* GST Type */}
           <div className="col-span-12 md:col-span-4">
             <label className="block text-sm font-medium">Hotel Margin GST Type *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_margin_gst_type", { required: true })}>
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_margin_gst_type", { required: true })}
+            >
               {(gstTypes as any[]).map((g: any) => (
-                <option key={g.id ?? g.value ?? g} value={g.id ?? g.value ?? g}>
+                <option key={S(g.id ?? g.value ?? g)} value={S(g.id ?? g.value ?? g)}>
                   {g.name ?? g.label ?? String(g)}
                 </option>
               ))}
@@ -647,8 +684,14 @@ export default function BasicStep({
           {/* Hotspot */}
           <div className="col-span-12 md:col-span-3">
             <label className="block text-sm font-medium">Hotspot Status *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_hotspot_status", { required: true })}>
-              {statuses.map((s) => (
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_hotspot_status", { required: true })}
+            >
+              {[
+                { id: "1", name: "Active" },
+                { id: "0", name: "In-Active" },
+              ].map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
