@@ -152,8 +152,7 @@ const HotelPage: React.FC = () => {
 
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const navigate = useNavigate();
-
+  
   // data
   const [rows, setRows] = useState<HotelRow[]>([]);
   /** Unfiltered rows (used to build fast, lightweight filter options) */
@@ -704,7 +703,7 @@ const HotelPage: React.FC = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button
+                        <button 
                           className="hotel-action-circle edit"
                           title="Edit"
                           onClick={() => handleEdit(row)}
@@ -866,3 +865,4 @@ const HotelPage: React.FC = () => {
 };
 
 export default HotelPage;
+
