@@ -1,49 +1,8 @@
-// REPLACE WHOLE FILE: src/pages/HotelForm.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// FILE: src/pages/HotelForm.tsx
+import React, { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-
-/* If your project already exports helpers from "@/api", swap these with those imports. */
-const API_BASE_URL = "http://localhost:4000";
-const token = () => localStorage.getItem("accessToken") || "";
-async function apiGet(path: string) {
-  const r = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-  });
-  if (!r.ok) throw new Error(await r.text().catch(() => "GET failed"));
-  return r.json();
-}
-async function apiPost(path: string, body: any) {
-  const r = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(await r.text().catch(() => "POST failed"));
-  return r.json();
-}
-async function apiPatch(path: string, body: any) {
-  const r = await fetch(`${API_BASE_URL}${path}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(await r.text().catch(() => "PATCH failed"));
-  return r.json();
-}
-/** Try a list of endpoints and return the first successful JSON. */
-async function apiGetFirst(paths: string[]) {
-  let lastErr: any;
-  for (const p of paths) {
-    try {
-      return await apiGet(p);
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr || new Error("All fallback endpoints failed");
-}
+import { hotelFormApi, getHotelBackendRow } from "@/services/hotels";
 
 /* ========= Types ========= */
 export type HotelForm = {
@@ -72,13 +31,13 @@ export type RoomForm = {
   room_title: string;
   preferred_for: string;
   no_of_rooms: number | string;
-  ac_availability: number | string; // 1 yes, 0 no
-  status: number | string; // 1 active, 0 inactive
+  ac_availability: number | string;
+  status: number | string;
   max_adult: number | string;
   max_children: number | string;
-  check_in_time: string;  // "hh:mm AM"
-  check_out_time: string; // "hh:mm AM"
-  gst_type: string;       // Included/Excluded
+  check_in_time: string;
+  check_out_time: string;
+  gst_type: string;
   gst_percentage: number | string;
   amenities: (string | number)[];
   food_breakfast: boolean;
@@ -112,8 +71,8 @@ export type ReviewForm = {
   review_description: string;
 };
 
-/* Export helpers for steps */
-export const api = { apiGet, apiPost, apiPatch, apiGetFirst, API_BASE_URL, token };
+/* Export helpers for steps (context shape) */
+export const api = hotelFormApi;
 
 /* ===== Tabs mapping via ?tab=... ===== */
 const tabToStep: Record<string, number> = {
@@ -124,7 +83,15 @@ const tabToStep: Record<string, number> = {
   reviews: 5,
   preview: 6,
 };
-const stepToTab = ["","basic","rooms","amenities","pricebook","reviews","preview"] as const;
+const stepToTab = [
+  "",
+  "basic",
+  "rooms",
+  "amenities",
+  "pricebook",
+  "reviews",
+  "preview",
+] as const;
 
 /* ===== Sub-steps ===== */
 import BasicStep from "./hotel-form/BasicStep";
@@ -148,7 +115,8 @@ export default function HotelFormOrchestrator() {
   const currentTab = (qs.get("tab") || "basic").toLowerCase();
   const activeStep = tabToStep[currentTab] ?? 1;
 
-  const stepEditPath = (id: string | number, tab: string) => `/hotels/${id}/edit?tab=${tab}`;
+  const stepEditPath = (id: string | number, tab: string) =>
+    `/hotels/${id}/edit?tab=${tab}`;
   const goToTab = (tab: string, id?: number | string) => {
     const targetId = id ?? hotelId;
     if (!targetId) return;
@@ -162,12 +130,17 @@ export default function HotelFormOrchestrator() {
 
   /* Load existing hotel in edit mode (for Preview & defaults) */
   useEffect(() => {
-    if (!isEdit) return;
+    if (!isEdit || !hotelId) return;
     let alive = true;
-    apiGet(`/api/v1/hotels/${hotelId}`)
-      .then((row) => { if (!alive || !row) return; setHotelRow(row); })
+    getHotelBackendRow(hotelId)
+      .then((row) => {
+        if (!alive || !row) return;
+        setHotelRow(row);
+      })
       .catch(() => {});
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [isEdit, hotelId]);
 
   const steps = [
@@ -204,13 +177,15 @@ export default function HotelFormOrchestrator() {
               <button
                 type="button"
                 onClick={() => canClick && goToTab(tab)}
-                className={`ml-2 text-sm ${isActive ? "text-purple-600" : "text-gray-400"} ${
-                  canClick ? "hover:underline" : ""
-                }`}
+                className={`ml-2 text-sm ${
+                  isActive ? "text-purple-600" : "text-gray-400"
+                } ${canClick ? "hover:underline" : ""}`}
               >
                 {s.label}
               </button>
-              {i < steps.length - 1 && <div className="mx-3 text-gray-400">{">"}</div>}
+              {i < steps.length - 1 && (
+                <div className="mx-3 text-gray-400">{">"}</div>
+              )}
             </div>
           );
         })}

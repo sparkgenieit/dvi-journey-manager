@@ -1,15 +1,26 @@
 // REPLACE-WHOLE-FILE: src/lib/api.ts
-export const RAW_API_BASE =
-  (import.meta as any)?.env?.VITE_API_URL || "http://localhost:4000";
+/// <reference types="vite/client" />
 
-/** Ensure base ends with /api/v1 (no trailing slash), but don't double-append if already present */
+/**
+ * Reads Vite environment variable correctly and safely.
+ * Make sure .env (at project root) contains:
+ * VITE_API_URL=http://localhost:4000
+ */
+const RAW_FROM_ENV = (import.meta.env.VITE_API_URL ?? "").trim();
+export const RAW_API_BASE = RAW_FROM_ENV || "http://localhost:4006";
+
+/** Normalize base URL (append /api/v1 if missing). */
 function normalizeBase(base: string) {
-  base = base.replace(/\/+$/, ""); // strip trailing slash
+  base = base.replace(/\/+$/, ""); // remove trailing slash
   if (!/\/api\/v1$/i.test(base)) base = `${base}/api/v1`;
   return base;
 }
 
 export const API_BASE_URL = normalizeBase(RAW_API_BASE);
+
+// Debug log to verify if env is loading correctly
+console.log("VITE_API_URL =", import.meta.env.VITE_API_URL);
+console.log("API_BASE_URL =", API_BASE_URL);
 
 type ApiOptions = {
   method?: string;
@@ -29,21 +40,21 @@ export function clearToken() {
   localStorage.removeItem("accessToken");
 }
 
-/** Build full URL. If an absolute URL is passed, use it as-is. Otherwise prefix with API_BASE_URL. */
+/** Build full URL. If an absolute URL is passed, use it as-is. */
 function buildUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path; // absolute URL
+  if (/^https?:\/\//i.test(path)) return path;
   const p = path.startsWith("/") ? path : `/${path}`;
   return `${API_BASE_URL}${p}`;
 }
 
+/** Universal API function */
 export async function api(path: string, opts: ApiOptions = {}) {
   const { method = "GET", auth = true, headers = {}, body } = opts;
 
-  // Do not set JSON header for FormData/Blob/ArrayBuffer
   const isFormLike =
-    typeof FormData !== "undefined" && body instanceof FormData ||
-    typeof Blob !== "undefined" && body instanceof Blob ||
-    typeof ArrayBuffer !== "undefined" && body instanceof ArrayBuffer;
+    (typeof FormData !== "undefined" && body instanceof FormData) ||
+    (typeof Blob !== "undefined" && body instanceof Blob) ||
+    (typeof ArrayBuffer !== "undefined" && body instanceof ArrayBuffer);
 
   const h: Record<string, string> = {
     ...(!isFormLike && body ? { "Content-Type": "application/json" } : {}),

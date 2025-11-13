@@ -2,8 +2,16 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useParams,
+  Outlet,
+} from "react-router-dom";
 import DynamicMeta from "@/components/DynamicMeta";
+import { getToken } from "@/lib/api";
 
 import { MainLayout } from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
@@ -39,6 +47,19 @@ const PreviewRedirect = () => {
   return <Navigate to={`/hotels/${id}/edit?tab=preview`} replace />;
 };
 
+/**
+ * Auth guard: blocks all protected routes when no token is present.
+ * Uses the same accessToken that auth.ts stores via setToken().
+ */
+const RequireAuth = () => {
+  const token = getToken();
+  if (!token) {
+    // Not logged in → send to /login
+    return <Navigate to="/login" replace />;
+  }
+  return <Outlet />;
+};
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -47,39 +68,105 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-       <DynamicMeta />
+        <DynamicMeta />
         <Routes>
-            <Route path="/login" element={<Login />} />
+          {/* Public route */}
+          <Route path="/login" element={<Login />} />
 
-            <Route path="/" element={<MainLayout><Dashboard /></MainLayout>} />
-            <Route path="/create-itinerary" element={<MainLayout><CreateItinerary /></MainLayout>} />
-            <Route path="/latest-itinerary" element={<MainLayout><LatestItinerary /></MainLayout>} />
-            <Route path="/accounts-manager" element={<MainLayout><AccountsManager /></MainLayout>} />
-            <Route path="/accounts-ledger" element={<MainLayout><AccountsLedger /></MainLayout>} />
+          {/* All routes below require auth */}
+          <Route element={<RequireAuth />}>
+            <Route
+              path="/"
+              element={
+                <MainLayout>
+                  <Dashboard />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/create-itinerary"
+              element={
+                <MainLayout>
+                  <CreateItinerary />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/latest-itinerary"
+              element={
+                <MainLayout>
+                  <LatestItinerary />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/accounts-manager"
+              element={
+                <MainLayout>
+                  <AccountsManager />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/accounts-ledger"
+              element={
+                <MainLayout>
+                  <AccountsLedger />
+                </MainLayout>
+              }
+            />
 
             {/* Hotels */}
-            {/* Hotels */}
-<Route path="/hotels" element={<MainLayout><Hotels /></MainLayout>} />
+            <Route
+              path="/hotels"
+              element={
+                <MainLayout>
+                  <Hotels />
+                </MainLayout>
+              }
+            />
 
-{/* Create */}
-<Route path="/hotels/new" element={<MainLayout><HotelForm /></MainLayout>} />
+            {/* Create */}
+            <Route
+              path="/hotels/new"
+              element={
+                <MainLayout>
+                  <HotelForm />
+                </MainLayout>
+              }
+            />
 
-{/* Edit (primary) */}
-<Route path="/hotels/:id/edit" element={<MainLayout><HotelForm /></MainLayout>} />
+            {/* Edit (primary) */}
+            <Route
+              path="/hotels/:id/edit"
+              element={
+                <MainLayout>
+                  <HotelForm />
+                </MainLayout>
+              }
+            />
 
-{/* Edit (alias): allow /hotels/:id to open the same form */}
-<Route path="/hotels/:id" element={<MainLayout><HotelForm /></MainLayout>} />
+            {/* Edit (alias): allow /hotels/:id to open the same form */}
+            <Route
+              path="/hotels/:id"
+              element={
+                <MainLayout>
+                  <HotelForm />
+                </MainLayout>
+              }
+            />
 
-{/* Deep-links for each step */}
-<Route path="/hotels/:id/rooms" element={<RoomsRedirect />} />
-<Route path="/hotels/:id/amenities" element={<AmenitiesRedirect />} />
-<Route path="/hotels/:id/pricebook" element={<PriceBookRedirect />} />
-<Route path="/hotels/:id/reviews" element={<ReviewsRedirect />} />
-<Route path="/hotels/:id/preview" element={<PreviewRedirect />} />
+            {/* Deep-links for each step */}
+            <Route path="/hotels/:id/rooms" element={<RoomsRedirect />} />
+            <Route path="/hotels/:id/amenities" element={<AmenitiesRedirect />} />
+            <Route path="/hotels/:id/pricebook" element={<PriceBookRedirect />} />
+            <Route path="/hotels/:id/reviews" element={<ReviewsRedirect />} />
+            <Route path="/hotels/:id/preview" element={<PreviewRedirect />} />
+          </Route>
 
-            {/* Catch-all */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          {/* Catch-all */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

@@ -14,22 +14,10 @@ import {
   updateHotel,
   deleteHotel,
   type Hotel,
+  listStatesMeta,
+  listCitiesMeta,
 } from "@/services/hotels";
 import { useNavigate } from "react-router-dom";
-
-/* ========= Local API helper (for meta endpoints) ========= */
-const API_BASE_URL = "http://localhost:4000";
-const token = () => localStorage.getItem("accessToken") || "";
-async function apiGet(path: string) {
-  const r = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token()}`,
-    },
-  });
-  if (!r.ok) throw new Error(await r.text().catch(() => "GET failed"));
-  return r.json();
-}
 
 /** ================= UI Types ================= */
 type HotelRow = {
@@ -141,7 +129,7 @@ function todaySuffix() {
 
 /** ================= Page ================= */
 const HotelPage: React.FC = () => {
-  const navigate = useNavigate(); // ✅ FIX: initialize navigate from React Router
+  const navigate = useNavigate();
 
   // toolbar / filters / paging
   const [showFilter, setShowFilter] = useState(false);
@@ -154,7 +142,7 @@ const HotelPage: React.FC = () => {
 
   const [sortKey, setSortKey] = useState<SortKey>("id");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  
+
   // data
   const [rows, setRows] = useState<HotelRow[]>([]);
   /** Unfiltered rows (used to build fast, lightweight filter options) */
@@ -189,14 +177,14 @@ const HotelPage: React.FC = () => {
     };
   }, []);
 
-  // Fetch states & cities once
+  // Fetch states & cities once (FROM SERVICE, not TSX HTTP)
   useEffect(() => {
     let aborted = false;
     (async () => {
       try {
         const [states, cities] = await Promise.all([
-          apiGet("/api/v1/meta/states?all=1").catch(() => []),
-          apiGet("/api/v1/meta/cities?all=1").catch(() => []),
+          listStatesMeta().catch(() => []),
+          listCitiesMeta().catch(() => []),
         ]);
 
         if (aborted) return;
@@ -460,14 +448,12 @@ const HotelPage: React.FC = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [allRows, filterState]);
 
-  // PRICE BOOK item handlers (adjust these routes to your actual pages)
+  // PRICE BOOK item handlers
   const goRoomsPriceBook = () => {
-    // mirror PHP: navigate to rooms price book import page
     navigate("/pricebook/hotels/rooms/import");
     setPbOpen(false);
   };
   const goAmenitiesPriceBook = () => {
-    // mirror PHP: navigate to amenities price book import page
     navigate("/pricebook/hotels/amenities/import");
     setPbOpen(false);
   };
@@ -482,13 +468,22 @@ const HotelPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowFilter((p) => !p)}
-              className={`hotel-filter-btn ${showFilter ? "hotel-filter-btn-active" : ""}`}
+              className={`hotel-filter-btn ${
+                showFilter ? "hotel-filter-btn-active" : ""
+              }`}
             >
               <span>Filter</span>
-              {showFilter ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {showFilter ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
             </button>
 
-            <button className="hotel-add-btn" onClick={() => navigate("/hotels/new")}>
+            <button
+              className="hotel-add-btn"
+              onClick={() => navigate("/hotels/new")}
+            >
               + Add Hotel
             </button>
 
@@ -603,15 +598,27 @@ const HotelPage: React.FC = () => {
 
           <div className="hotel-right-tools">
             <div className="hotel-export-group">
-              <button onClick={handleCopy} className="hotel-copy-btn" title="Copy">
+              <button
+                onClick={handleCopy}
+                className="hotel-copy-btn"
+                title="Copy"
+              >
                 <CopyIcon className="w-4 h-4" />
                 <span>Copy</span>
               </button>
-              <button onClick={handleExcel} className="hotel-excel-btn" title="Excel">
+              <button
+                onClick={handleExcel}
+                className="hotel-excel-btn"
+                title="Excel"
+              >
                 <Download className="w-4 h-4" />
                 <span>Excel</span>
               </button>
-              <button onClick={handleCSV} className="hotel-csv-btn" title="CSV">
+              <button
+                onClick={handleCSV}
+                className="hotel-csv-btn"
+                title="CSV"
+              >
                 <Download className="w-4 h-4" />
                 <span>CSV</span>
               </button>
@@ -686,11 +693,15 @@ const HotelPage: React.FC = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="hotel-empty">Loading...</td>
+                  <td colSpan={8} className="hotel-empty">
+                    Loading...
+                  </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="hotel-empty">No data found</td>
+                  <td colSpan={8} className="hotel-empty">
+                    No data found
+                  </td>
                 </tr>
               ) : (
                 rows.map((row) => (
@@ -705,7 +716,7 @@ const HotelPage: React.FC = () => {
                         >
                           <Eye className="w-4 h-4" />
                         </button>
-                        <button 
+                        <button
                           className="hotel-action-circle edit"
                           title="Edit"
                           onClick={() => handleEdit(row)}
@@ -732,7 +743,9 @@ const HotelPage: React.FC = () => {
                         aria-pressed={row.isActive}
                         onClick={() => toggleStatus(row)}
                         disabled={savingId === row.backendId}
-                        className={`hotel-toggle ${row.isActive ? "active" : "off"}`}
+                        className={`hotel-toggle ${
+                          row.isActive ? "active" : "off"
+                        }`}
                         title={row.isActive ? "Active" : "Inactive"}
                       >
                         <span className="hotel-toggle-knob" />
@@ -753,20 +766,24 @@ const HotelPage: React.FC = () => {
           </p>
 
           <div className="hotel-pagination">
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
               Previous
             </button>
-            {Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i).map(
-              (pageNum) => (
-                <button
-                  key={pageNum}
-                  onClick={() => setPage(pageNum)}
-                  className={page === pageNum ? "active" : ""}
-                >
-                  {pageNum}
-                </button>
-              )
-            )}
+            {Array.from(
+              { length: endPage - startPage + 1 },
+              (_, i) => startPage + i
+            ).map((pageNum) => (
+              <button
+                key={pageNum}
+                onClick={() => setPage(pageNum)}
+                className={page === pageNum ? "active" : ""}
+              >
+                {pageNum}
+              </button>
+            ))}
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={page >= (Math.ceil(total / entries) || 1)}
@@ -828,38 +845,37 @@ const HotelPage: React.FC = () => {
           padding:.6rem .7rem; border-radius:.5rem; font-weight:500; cursor:pointer;
         }
         .hotel-pricebook-item:hover { background:#f3f4f6; }
-        /* Make the bin (delete) icon red */
+
         .hotel-action-circle.del { 
-          color: #ef4444;              /* sets SVG stroke via currentColor */
-          border-color: #fecaca;       /* optional: subtle red border */
-          background: #ffffff;         /* keep background white */
+          color: #ef4444;
+          border-color: #fecaca;
+          background: #ffffff;
         }
         .hotel-action-circle.del:hover {
-          color: #dc2626;              /* darker red on hover */
-          background: #fee2e2;         /* light red hover background */
+          color: #dc2626;
+          background: #fee2e2;
           border-color: #fca5a5;
         }
-        /* Make the pencil (edit) icon blue */
         .hotel-action-circle.edit {
-          color: #2563eb;        /* blue-500; lucide uses currentColor */
-          border-color: #93c5fd; /* subtle blue border */
+          color: #2563eb;
+          border-color: #93c5fd;
           background: #dbeafe;
         }
         .hotel-action-circle.edit:hover {
-          color: #2563eb;        /* blue-600 on hover */
-          background: #dbeafe;   /* blue-100 hover bg */
+          color: #2563eb;
+          background: #dbeafe;
           border-color: #93c5fd;
         }
         .hotel-copy-btn{
-          color:#6366f1;            /* indigo-500 (icon/text via currentColor) */
+          color:#6366f1;
           background:#ffffff;
-          border:1px solid #c7d2fe; /* indigo-200 border */
+          border:1px solid #c7d2fe;
           border-radius:.6rem;
         }
         .hotel-copy-btn:hover{
-          color:#4f46e5;            /* indigo-600 */
-          background:#eef2ff;       /* indigo-50 */
-          border-color:#a5b4fc;     /* indigo-300 */
+          color:#4f46e5;
+          background:#eef2ff;
+          border-color:#a5b4fc;
         }
       `}</style>
     </div>
