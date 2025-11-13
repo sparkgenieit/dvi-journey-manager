@@ -368,7 +368,7 @@ async function apiGetFirstInternal(paths: string[]) {
   throw lastErr || new Error("All fallback endpoints failed");
 }
 
-const API_BASE_URL = (import.meta as any)?.env?.VITE_API_BASE_URL ?? "";
+const API_BASE_URL = (import.meta as any)?.env?.VITE_API_DVI_BASE_URL ?? "";
 
 export const hotelFormApi = {
   API_BASE_URL,

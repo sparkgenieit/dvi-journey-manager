@@ -4,9 +4,9 @@
 /**
  * Reads Vite environment variable correctly and safely.
  * Make sure .env (at project root) contains:
- * VITE_API_URL=http://localhost:4006
+ * VITE_API_DVI_BASE_URL=http://localhost:4006
  */
-const RAW_FROM_ENV = (import.meta.env.VITE_API_URL ?? "").trim();
+const RAW_FROM_ENV = (import.meta.env.VITE_API_DVI_BASE_URL ?? "").trim();
 export const RAW_API_BASE = RAW_FROM_ENV || "http://localhost:4006";
 
 /** Normalize base URL (append /api/v1 if missing). */
@@ -18,9 +18,7 @@ function normalizeBase(base: string) {
 
 export const API_BASE_URL = normalizeBase(RAW_API_BASE);
 
-// Debug log to verify if env is loading correctly
-console.log("VITE_API_URL =", import.meta.env.VITE_API_URL);
-console.log("API_BASE_URL =", API_BASE_URL);
+
 
 type ApiOptions = {
   method?: string;
