@@ -372,7 +372,8 @@ const API_BASE_URL = (import.meta as any)?.env?.VITE_API_BASE_URL ?? "";
 
 export const hotelFormApi = {
   API_BASE_URL,
-  token: "", // not used by steps, but required by ApiCtx type
+  // must be a function returning string to satisfy ApiCtx
+    token: () => localStorage.getItem("token") ?? "",
   apiGet: (path: string) => api(stripApiPrefix(path)),
   apiPost: (path: string, body: any) =>
     api(stripApiPrefix(path), { method: "POST", body }),

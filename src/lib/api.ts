@@ -4,7 +4,7 @@
 /**
  * Reads Vite environment variable correctly and safely.
  * Make sure .env (at project root) contains:
- * VITE_API_URL=http://localhost:4000
+ * VITE_API_URL=http://localhost:4006
  */
 const RAW_FROM_ENV = (import.meta.env.VITE_API_URL ?? "").trim();
 export const RAW_API_BASE = RAW_FROM_ENV || "http://localhost:4006";

@@ -1,4 +1,4 @@
-// FILE: src/pages/hotels.tsx
+// FILE: src/pages/Hotels.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Eye,
@@ -196,18 +196,19 @@ const HotelPage: React.FC = () => {
           }))
           .filter((x) => x.id);
 
-        const normCities: Array<{ id: string; name: string; state_id?: string }> = (cities || [])
-          .map((c: any) => ({
-            id: String(c.id ?? c.city_id ?? c.cityId ?? ""),
-            name: String(c.name ?? c.city_name ?? c.cityName ?? "").trim(),
-            state_id:
-              c.state_id != null
-                ? String(c.state_id)
-                : c.stateId != null
-                ? String(c.stateId)
-                : undefined,
-          }))
-          .filter((x) => x.id);
+        const normCities: Array<{ id: string; name: string; state_id?: string }> =
+          (cities || [])
+            .map((c: any) => ({
+              id: String(c.id ?? c.city_id ?? c.cityId ?? ""),
+              name: String(c.name ?? c.city_name ?? c.cityName ?? "").trim(),
+              state_id:
+                c.state_id != null
+                  ? String(c.state_id)
+                  : c.stateId != null
+                  ? String(c.stateId)
+                  : undefined,
+            }))
+            .filter((x) => x.id);
 
         const sMap: Record<string, string> = {};
         for (const s of normStates) sMap[s.id] = s.name || s.id;
@@ -264,8 +265,10 @@ const HotelPage: React.FC = () => {
         setLoading(true);
         const resp = await listHotels({ search, page, limit: entries });
 
-        const mapped: HotelRow[] = (resp.items ?? resp.data ?? resp.rows ?? []).map(
-          (h: Hotel, ix: number) => withNames(toRowBase(h, ix))
+        // `listHotels` already normalizes backend shapes to { page, total, items }
+        const source: Hotel[] = resp.items ?? [];
+        const mapped: HotelRow[] = source.map((h: Hotel, ix: number) =>
+          withNames(toRowBase(h, ix))
         );
 
         if (!aborted) setAllRows(mapped);
@@ -309,8 +312,7 @@ const HotelPage: React.FC = () => {
         if (!aborted) {
           setRows(list);
           const anyClientFilter = !!filterState || !!filterCity || !!q;
-          const totalFromApi =
-            Number(resp.total ?? resp.count ?? (resp.rows?.length ?? mapped.length));
+          const totalFromApi = Number(resp.total ?? source.length);
           setTotal(anyClientFilter ? list.length : totalFromApi);
         }
       } finally {
