@@ -42,17 +42,29 @@ function ChipInput({
     onChange(next);
   };
 
-  const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
-    if (["Enter", ","].includes(e.key) || (e.key === " " && text.trim())) {
-      e.preventDefault();
+const handleKeyDown: React.KeyboardEventHandler<HTMLInputElement> = (e) => {
+  const hasText = text.trim().length > 0;
+  if (e.key === "Tab") {
+    if (hasText) {
       add(text);
       setText("");
-    } else if (e.key === "Backspace" && text === "" && value.length) {
-      const next = [...value];
-      next.pop();
-      onChange(next);
     }
-  };
+    // IMPORTANT: no preventDefault here, so focus will move
+    return;
+  }
+
+  // Enter / comma / space-with-text -> create chip, stay in field
+  if (["Enter", ","].includes(e.key) || (e.key === " " && hasText)) {
+    e.preventDefault();
+    add(text);
+    setText("");
+  } else if (e.key === "Backspace" && !hasText && value.length) {
+    const next = [...value];
+    next.pop();
+    onChange(next);
+  }
+};
+
 
   const removeAt = (idx: number) => onChange(value.filter((_, i) => i !== idx));
 
@@ -342,33 +354,53 @@ export default function BasicStep({
     };
   }, [isEdit, hotelId, api, reset]);
 
-  /* Auto-generate hotel code when city changes */
+    /* Auto-generate hotel code when city changes (only for new hotels) */
   const cityWatch = watch("hotel_city");
   useEffect(() => {
-    if (!cityWatch) return;
-    const controller = new AbortController();
+    // Only auto-generate for create mode, and when a city is selected
+    if (!cityWatch || isEdit) return;
+
+    let cancelled = false;
+
     (async () => {
+      // IMPORTANT: api.apiGet already prefixes /api/v1 via your global API_BASE_URL,
+      // so do NOT put /api/v1 here.
       const tryPaths = [
-        `/api/v1/hotels/code?cityId=${cityWatch}`,
-        `/api/v1/hotels/generate-code?cityId=${cityWatch}`,
-        `/api/v1/hotels/code?city_id=${cityWatch}`,
+        `/hotels/code?cityId=${cityWatch}`,
+        `/hotels/generate-code?cityId=${cityWatch}`,
+        `/hotels/code?city_id=${cityWatch}`,
       ];
+
       for (const p of tryPaths) {
         try {
-          const r = await fetch(`${api.API_BASE_URL}${p}`, {
-            headers: { Authorization: `Bearer ${api.token()}` },
-            signal: controller.signal,
-          });
-          if (r.ok) {
-            const { code } = await r.json();
-            setValue("hotel_code", code || "");
+          const res = await api.apiGet(p);
+          if (cancelled || !res) continue;
+
+          // Support different backend shapes: {code}, {data:{code}}, {hotel_code}, etc.
+          const code =
+            res?.code ??
+            res?.data?.code ??
+            res?.hotel_code ??
+            res?.data?.hotel_code ??
+            "";
+
+          if (code) {
+            setValue("hotel_code", code, {
+              shouldDirty: true,
+              shouldValidate: true,
+            });
             break;
           }
-        } catch {}
+        } catch {
+          // ignore and try next path
+        }
       }
     })();
-    return () => controller.abort();
-  }, [cityWatch, api, setValue]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cityWatch, api, setValue, isEdit]);
 
   // Join chip arrays to strings for backend compatibility
   const normalizePayload = (
@@ -567,7 +599,10 @@ export default function BasicStep({
           {/* Country / State / City */}
           <div className="col-span-12 md:col-span-4">
             <label className="block text-sm font-medium">Country *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_country", { required: true })}>
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_country", { required: true })}
+            >
               <option value="">Choose Country</option>
               {countries.map((c: any) => (
                 <option key={S(c.id ?? c.value ?? c)} value={S(c.id ?? c.value ?? c)}>
@@ -579,7 +614,10 @@ export default function BasicStep({
 
           <div className="col-span-12 md:col-span-4">
             <label className="block text-sm font-medium">State *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_state", { required: true })}>
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_state", { required: true })}
+            >
               <option value="">Please Choose State</option>
               {(states as any[]).map((s: any) => (
                 <option key={S(s.id ?? s.value ?? s)} value={S(s.id ?? s.value ?? s)}>
@@ -591,7 +629,10 @@ export default function BasicStep({
 
           <div className="col-span-12 md:col-span-4">
             <label className="block text-sm font-medium">City *</label>
-            <select className="mt-1 w-full border rounded-lg px-3 py-2" {...register("hotel_city", { required: true })}>
+            <select
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+              {...register("hotel_city", { required: true })}
+            >
               <option value="">Please Choosen City</option>
               {(cities as any[]).map((c: any) => (
                 <option key={S(c.id ?? c.value ?? c)} value={S(c.id ?? c.value ?? c)}>
