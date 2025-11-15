@@ -1,7 +1,8 @@
-// src/pages/hotel-form/RoomsStep.tsx
+// FILE: src/pages/hotel-form/RoomsStep.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RoomForm } from "../HotelForm";
+import { API_BASE_URL, getToken } from "../../lib/api";
 
 /* ========= API ctx from parent ========= */
 type ApiCtx = {
@@ -52,7 +53,6 @@ const to12h = (val: string): string => {
 const getTimeString = (t: any): string => {
   if (!t) return "";
   if (typeof t === "string") return t;
-  // Prisma Date objects can serialize as ISO; {} means invalid → ""
   try {
     const d = new Date(t as any);
     if (!isNaN(d.getTime())) {
@@ -62,6 +62,18 @@ const getTimeString = (t: any): string => {
     }
   } catch {}
   return "";
+};
+
+/** Generate a non-null room_ref_code if backend didn't give one */
+const generateRoomRefCode = (hotelId: string | number, rowIndex: number) => {
+  const prefix = "DVIR"; // matches existing style like DVIRDEL...
+  const hidPart = String(hotelId || "")
+    .replace(/\D/g, "")
+    .padStart(3, "0")
+    .slice(-3);
+  const idxPart = String(rowIndex + 1).padStart(2, "0");
+  const rand = Math.floor(100000 + Math.random() * 900000); // 6 digits
+  return `${prefix}${hidPart}${idxPart}${rand}`;
 };
 
 /* ========= Lightweight chip multi-select (no external lib) ========= */
@@ -415,17 +427,8 @@ export default function RoomsStep({
   const roomTypeOptions: Opt[] = useMemo(() => {
     const src = useStaticOnly ? staticRoomTypesFallback : (roomTypesRaw as any[]);
     return src.map((r: any) => ({
-      id:
-        r?.id ??
-        r?.roomtype_id ??
-        r?.room_type_id ??
-        r?.value ??
-        r,
-      name:
-        r?.room_type ??
-        r?.name ??
-        r?.title ??
-        String(r),
+      id: r?.id ?? r?.roomtype_id ?? r?.room_type_id ?? r?.value ?? r,
+      name: r?.room_type ?? r?.name ?? r?.title ?? String(r),
     }));
   }, [roomTypesRaw, useStaticOnly, staticRoomTypesFallback]);
 
@@ -481,10 +484,12 @@ export default function RoomsStep({
         .catch(() => []);
       const data = Array.isArray(raw) ? raw : raw?.items ?? raw?.data ?? raw?.rows ?? [];
 
-      const mapped = (data as any[]).map((r) => {
+      const mapped = (data as any[]).map((r, index) => {
         // preferred_for: "1,2" | ["1","2"] | "Family" → array
         const prefArr = Array.isArray(r?.preferred_for)
-          ? (r.preferred_for as any[]).map((x) => String(x).trim()).filter(Boolean)
+          ? (r.preferred_for as any[])
+              .map((x) => String(x).trim())
+              .filter(Boolean)
           : String(r?.preferred_for ?? "")
               .split(",")
               .map((s) => s.trim())
@@ -500,31 +505,23 @@ export default function RoomsStep({
         const ci = to24h(getTimeString(r?.check_in_time)) || "12:00";
         const co = to24h(getTimeString(r?.check_out_time)) || "11:00";
 
-        return {
-          // NOTE: room_type can be an ID or a name. UI can handle either.
+        const base: any = {
           room_type: r.room_type_id ?? r.roomtype_id ?? r.room_type ?? "",
           room_title: r.room_title ?? r.title ?? "",
-          // ✅ store array for chip multi-select
           preferred_for: prefArr,
-          // map no_of_rooms_available → no_of_rooms
-          no_of_rooms:
-            r.no_of_rooms ?? r.no_of_rooms_available ?? r.count ?? 1,
-          // map air_conditioner_availability
+          no_of_rooms: r.no_of_rooms ?? r.no_of_rooms_available ?? r.count ?? 1,
           ac_availability:
             r.ac_availability ??
             r.air_conditioner_availability ??
             (r.ac ? 1 : 0),
           status: r.status ?? 1,
-          // map total_max_* fields
           max_adult: r.max_adult ?? r.total_max_adults ?? 2,
           max_children: r.max_children ?? r.total_max_childrens ?? 0,
-          // robust time parsing
           check_in_time: ci,
           check_out_time: co,
           // @ts-ignore keep numeric 1/2
           gst_type: toGstNum(r.gst_type ?? 1),
           gst_percentage: Number(r.gst_percentage ?? 5),
-          // support inbuilt_amenities string
           amenities: Array.isArray(r.amenities)
             ? r.amenities
                 .map(
@@ -533,13 +530,19 @@ export default function RoomsStep({
                 )
                 .filter((x: any) => x !== null && x !== undefined)
             : amenitiesFromString,
-          // fix boolean precedence: explicit fallback to false
           food_breakfast:
             (r.food_breakfast ?? (r.breakfast_included === 1)) || false,
           food_lunch: (r.food_lunch ?? (r.lunch_included === 1)) || false,
           food_dinner: (r.food_dinner ?? (r.dinner_included === 1)) || false,
           gallery: null,
-        } as RoomForm;
+        };
+
+        // preserve existing room_ref_code if present; otherwise generate one
+        base.room_ref_code =
+          r.room_ref_code ||
+          generateRoomRefCode(hotelId ?? hid ?? "", index);
+
+        return base as RoomForm;
       });
 
       setRows(mapped.length ? mapped : [defaultRow]);
@@ -550,23 +553,34 @@ export default function RoomsStep({
   /* ========= Handlers ========= */
   const handleChange = (i: number, field: keyof RoomForm, value: any) => {
     setRows((prev) => {
-      const copy = [...prev];
+      const copy = [...prev] as any[];
       if (field === "gst_type") value = toGstNum(value);
       if (field === "gst_percentage") value = Number(value ?? 0);
       copy[i] = { ...copy[i], [field]: value };
-      return copy;
+      return copy as RoomForm[];
     });
   };
 
-  const addRow = () => setRows((p) => [...p, { ...defaultRow }]);
+  const addRow = () =>
+    setRows((p) => {
+      const nextIndex = p.length;
+      const refCode = generateRoomRefCode(hotelId ?? "", nextIndex);
+      return [
+        ...p,
+        { ...(defaultRow as any), room_ref_code: refCode } as RoomForm,
+      ];
+    });
+
   const removeRow = (i: number) =>
     setRows((p) => (p.length === 1 ? p : p.filter((_, idx) => idx !== i)));
 
   /* ========= Save ========= */
   const saveMut = useMutation({
     mutationFn: async (items: RoomForm[]) => {
+      const hotelIdNum = Number(hotelId);
+
       // ✅ Map UI → dvi_hotel_rooms column names & types
-      const payload = items.map((r) => {
+      const payload = items.map((r, index) => {
         // Resolve room_type_id from typed text or numeric value
         const rawType = (r as any).room_type;
         let room_type_id: number | null = null;
@@ -582,21 +596,28 @@ export default function RoomsStep({
           }
         }
 
-        const preferred_for =
-          Array.isArray(r.preferred_for)
-            ? (r.preferred_for as any[]).map(String).filter(Boolean).join(",")
-            : (r as any).preferred_for || null;
+        const preferred_for = Array.isArray(r.preferred_for)
+          ? (r.preferred_for as any[])
+              .map(String)
+              .filter(Boolean)
+              .join(",")
+          : (r as any).preferred_for || null;
 
         const inbuilt_amenitiesStr = (r.amenities ?? [])
           .map((id) => Number(id))
           .filter((n) => Number.isFinite(n))
           .join(",");
 
+        // keep existing room_ref_code if present; otherwise generate a new one
+        const room_ref_code =
+          (r as any).room_ref_code ||
+          generateRoomRefCode(hotelIdNum || hotelId, index);
+
         return {
-          hotel_id: Number(hotelId),
-          room_type_id,                                    // ← expected by DB
+          hotel_id: hotelIdNum,
+          room_type_id,
           room_title: r.room_title || null,
-          preferred_for,                                   // comma string or null
+          preferred_for,
           no_of_rooms_available: Number(r.no_of_rooms || 1),
           air_conditioner_availability: Number(r.ac_availability || 0),
           status: Number(r.status || 1),
@@ -605,14 +626,17 @@ export default function RoomsStep({
           check_in_time:
             to12h((r as any).check_in_time) || (r as any).check_in_time || null,
           check_out_time:
-            to12h((r as any).check_out_time) || (r as any).check_out_time || null,
+            to12h((r as any).check_out_time) ||
+            (r as any).check_out_time ||
+            null,
           gst_type: toGstNum((r as any).gst_type),
           gst_percentage: Number(r.gst_percentage || 0),
-          inbuilt_amenities: inbuilt_amenitiesStr || null, // ← comma list
-          breakfast_included: r.food_breakfast ? 1 : 0,    // ← numeric flags
+          inbuilt_amenities: inbuilt_amenitiesStr || null,
+          breakfast_included: r.food_breakfast ? 1 : 0,
           lunch_included: r.food_lunch ? 1 : 0,
           dinner_included: r.food_dinner ? 1 : 0,
-          // room_ref_code, createdby/createdon/updatedon/deleted are server-side
+          room_ref_code,
+          // createdby/createdon/updatedon/deleted handled server-side
         };
       });
 
@@ -622,17 +646,98 @@ export default function RoomsStep({
         `/api/v1/rooms/bulk`,
       ];
       let lastErr: any;
+      let jsonResult: any;
+
+      // 1) Save room rows as before
       for (const p of endpoints) {
         try {
           try {
-            return await api.apiPost(p, { items: payload });
-          } catch {}
-          return await api.apiPost(p, payload);
+            jsonResult = await api.apiPost(p, { items: payload });
+          } catch {
+            jsonResult = await api.apiPost(p, payload);
+          }
+          break;
         } catch (e) {
           lastErr = e;
         }
       }
-      throw lastErr || new Error("No rooms endpoint available");
+      if (!jsonResult) {
+        throw lastErr || new Error("No rooms endpoint available");
+      }
+
+      // 2) NEW: upload room gallery files (non-blocking for main flow)
+      try {
+        // reload rooms to map room_ref_code → room_ID
+        const rawAfter = await api
+          .apiGetFirst([
+            `/api/v1/hotels/${hotelId}/rooms`,
+            `/api/v1/hotels/rooms?hotelId=${hotelId}`,
+            `/api/v1/rooms?hotelId=${hotelId}`,
+          ])
+          .catch(() => []);
+        const roomsAfter = Array.isArray(rawAfter)
+          ? rawAfter
+          : rawAfter?.items ?? rawAfter?.data ?? rawAfter?.rows ?? [];
+
+        const byRef = new Map<string, any>();
+        (roomsAfter as any[]).forEach((r: any) => {
+          if (r?.room_ref_code) {
+            byRef.set(String(r.room_ref_code), r);
+          }
+        });
+
+        const uploadPromises: Promise<any>[] = [];
+
+        items.forEach((row, index) => {
+          const filesLike: any = (row as any).gallery;
+          if (!filesLike || (filesLike as FileList).length === 0) return;
+
+          const roomRefCode = (payload[index] as any).room_ref_code as string;
+          if (!roomRefCode) return;
+
+          const match = byRef.get(String(roomRefCode));
+          const roomId = match?.room_ID ?? match?.room_id;
+          if (!roomId) return;
+
+          const fd = new FormData();
+          Array.from(filesLike as FileList).forEach((f) => {
+            fd.append("files", f);
+          });
+          fd.append("room_ref_code", roomRefCode);
+
+          const base = API_BASE_URL.replace(/\/+$/, "");
+          const url = `${base}/hotels/${hotelIdNum}/rooms/${roomId}/gallery`;
+
+          const token = getToken();
+          const headers: Record<string, string> = {};
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+
+          uploadPromises.push(
+            fetch(url, {
+              method: "POST",
+              headers,
+              body: fd,
+            }).then(async (res) => {
+              if (!res.ok) {
+                const text = await res.text().catch(() => "");
+                console.error(
+                  "[RoomsStep] Room gallery upload failed",
+                  res.status,
+                  text
+                );
+              }
+            })
+          );
+        });
+
+        if (uploadPromises.length) {
+          await Promise.all(uploadPromises);
+        }
+      } catch (err) {
+        console.error("[RoomsStep] Room gallery upload error", err);
+      }
+
+      return jsonResult;
     },
     onSuccess: () => {
       qc.invalidateQueries();
@@ -687,15 +792,22 @@ export default function RoomsStep({
                 <label className="block text-xs font-medium">Prefered For *</label>
                 <AmenityPicker
                   options={preferredForOptions}
-                  // store as array of ids (strings/numbers)
-                  value={Array.isArray((row as any).preferred_for) ? ((row as any).preferred_for as any[]) : []}
-                  onChange={(ids) => handleChange(idx, "preferred_for" as any, ids)}
+                  value={
+                    Array.isArray((row as any).preferred_for)
+                      ? ((row as any).preferred_for as any[])
+                      : []
+                  }
+                  onChange={(ids) =>
+                    handleChange(idx, "preferred_for" as any, ids)
+                  }
                   placeholder="Select audience (multi)"
                 />
               </div>
 
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-xs font-medium">No of Rooms Availability *</label>
+                <label className="block text-xs font-medium">
+                  No of Rooms Availability *
+                </label>
                 <input
                   className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
                   value={row.no_of_rooms}
@@ -745,7 +857,9 @@ export default function RoomsStep({
                 <input
                   className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
                   value={row.max_children}
-                  onChange={(e) => handleChange(idx, "max_children", e.target.value)}
+                  onChange={(e) =>
+                    handleChange(idx, "max_children", e.target.value)
+                  }
                   placeholder="Enter the total children"
                 />
               </div>
@@ -802,7 +916,9 @@ export default function RoomsStep({
               </div>
 
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-xs font-medium">GST Percentage *</label>
+                <label className="block text-xs font-medium">
+                  GST Percentage *
+                </label>
                 <select
                   className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
                   value={row.gst_percentage}
@@ -820,7 +936,9 @@ export default function RoomsStep({
 
               {/* Amenities */}
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-xs font-medium">Inbuilt Amenities *</label>
+                <label className="block text-xs font-medium">
+                  Inbuilt Amenities *
+                </label>
                 <AmenityPicker
                   options={amenityOpts}
                   value={(row.amenities as any[]) ?? []}
@@ -836,14 +954,20 @@ export default function RoomsStep({
                   multiple
                   className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
                   onChange={(e) =>
-                    handleChange(idx, "gallery" as any, (e.target as HTMLInputElement).files)
+                    handleChange(
+                      idx,
+                      "gallery" as any,
+                      (e.target as HTMLInputElement).files
+                    )
                   }
                 />
               </div>
 
               {/* Food Included? */}
               <div className="col-span-12">
-                <div className="text-xs font-medium mb-2">Food Included? (Optional)</div>
+                <div className="text-xs font-medium mb-2">
+                  Food Included? (Optional)
+                </div>
                 <div className="flex items-center gap-6">
                   <label className="inline-flex items-center gap-2 text-sm">
                     <input
@@ -859,7 +983,9 @@ export default function RoomsStep({
                     <input
                       type="checkbox"
                       checked={row.food_lunch}
-                      onChange={(e) => handleChange(idx, "food_lunch", e.target.checked)}
+                      onChange={(e) =>
+                        handleChange(idx, "food_lunch", e.target.checked)
+                      }
                     />
                     Lunch
                   </label>
@@ -867,7 +993,9 @@ export default function RoomsStep({
                     <input
                       type="checkbox"
                       checked={row.food_dinner}
-                      onChange={(e) => handleChange(idx, "food_dinner", e.target.checked)}
+                      onChange={(e) =>
+                        handleChange(idx, "food_dinner", e.target.checked)
+                      }
                     />
                     Dinner
                   </label>

@@ -1,3 +1,5 @@
+// FILE: AccountsManager.tsx
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +26,19 @@ import { Download, Calendar as CalendarIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 
+// 🧱 modal for Pay Now
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+
+// 🔌 use shared API wrapper
+import { api } from "@/lib/api";
+
 type AccountRow = {
   id: number;
   quoteId: string;
@@ -31,11 +46,14 @@ type AccountRow = {
   amount: number;
   payout: number;
   payable: number;
-  status: "all" | "paid" | "due";
-  componentType?: "hotel" | "flight" | "vehicle";
+  status: "paid" | "due";
+  componentType?: "hotel" | "flight" | "vehicle" | "guide" | "hotspot" | "activity";
   agent?: string;
   startDate?: string; // DD/MM/YYYY
   endDate?: string; // DD/MM/YYYY
+  routeDate?: string; // DD/MM/YYYY, used for vehicle/guide/hotspot/activity
+  vehicleId?: number; // for vehicle payouts
+  vendorId?: number; // for vehicle payouts
 };
 
 const formatINR = (v: number) =>
@@ -74,6 +92,13 @@ export const AccountsManager: React.FC = () => {
   const [visibleCount, setVisibleCount] = useState(20);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // 👉 Pay Now modal state
+  const [payNowOpen, setPayNowOpen] = useState(false);
+  const [selectedRow, setSelectedRow] = useState<AccountRow | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [payNowLoading, setPayNowLoading] = useState(false);
+  const [payNowError, setPayNowError] = useState<string | null>(null);
+
   // fetch on filter change
   useEffect(() => {
     let isCancelled = false;
@@ -92,6 +117,11 @@ export const AccountsManager: React.FC = () => {
         if (!isCancelled) {
           setRows(data);
           setVisibleCount(20);
+        }
+      } catch (err) {
+        console.error("Failed to fetch accounts manager data:", err);
+        if (!isCancelled) {
+          setRows([]);
         }
       } finally {
         if (!isCancelled) setLoading(false);
@@ -131,7 +161,7 @@ export const AccountsManager: React.FC = () => {
     const handler = () => {
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
         setVisibleCount((prev) =>
-          Math.min(prev + 20, filteredRows.length || prev)
+          Math.min(prev + 20, filteredRows.length || prev),
         );
       }
     };
@@ -147,6 +177,80 @@ export const AccountsManager: React.FC = () => {
     setFromDateObj(undefined);
     setToDateObj(undefined);
     setAgent("");
+  };
+
+  // -------------------------------------------------
+  // PAY NOW HANDLERS
+  // -------------------------------------------------
+  const handleOpenPayNow = (row: AccountRow) => {
+    setSelectedRow(row);
+    setPaymentAmount(row.payable > 0 ? String(row.payable) : "");
+    setPayNowError(null);
+    setPayNowOpen(true);
+  };
+
+  const handleClosePayNow = () => {
+    if (payNowLoading) return;
+    setPayNowOpen(false);
+    setSelectedRow(null);
+    setPaymentAmount("");
+    setPayNowError(null);
+  };
+
+  const handleSubmitPayNow = async () => {
+    if (!selectedRow) return;
+
+    const amountNum = Number(paymentAmount);
+    if (!paymentAmount || Number.isNaN(amountNum) || amountNum <= 0) {
+      setPayNowError("Please enter a valid positive amount.");
+      return;
+    }
+    if (amountNum > selectedRow.payable) {
+      setPayNowError(
+        `Amount cannot be more than payable (${formatINR(selectedRow.payable)}).`,
+      );
+      return;
+    }
+
+    setPayNowLoading(true);
+    setPayNowError(null);
+
+    try {
+      await api("/accounts-manager/pay", {
+        method: "POST",
+        auth: true,
+        body: JSON.stringify({
+          accountsDetailId: selectedRow.id,
+          componentType: selectedRow.componentType,
+          vendorId: selectedRow.vendorId,
+          vehicleId: selectedRow.vehicleId,
+          routeDate: selectedRow.routeDate,
+          amount: amountNum,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      // refresh list with same filters
+      const data = await fetchAccountsFromApi({
+        status: activeTab,
+        quoteId: quoteIdFilter,
+        componentType,
+        fromDate,
+        toDate,
+        agent,
+        search,
+      });
+      setRows(data);
+
+      handleClosePayNow();
+    } catch (err) {
+      console.error("Pay Now failed:", err);
+      setPayNowError("Payment failed. Please try again.");
+    } finally {
+      setPayNowLoading(false);
+    }
   };
 
   return (
@@ -293,6 +397,7 @@ export const AccountsManager: React.FC = () => {
                     <SelectValue placeholder="Select Agent" />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* Static options – backend will filter using "agent" param */}
                     <SelectItem value="agent1">Agent 1</SelectItem>
                     <SelectItem value="agent2">Agent 2</SelectItem>
                     <SelectItem value="agent3">Agent 3</SelectItem>
@@ -345,7 +450,7 @@ export const AccountsManager: React.FC = () => {
           </p>
         </div>
         <div className="bg-white rounded-md shadow-sm py-4 px-5">
-          <p className="text-sm text-[#8a7da5] mb-1">Total Profit</p>
+          <p className="text-sm text-[#8a7da5] mb-1">Total Profit </p>
           <p className="text-xl font-semibold text-[#10a037]">
             {formatINR(totalProfit)}
           </p>
@@ -415,8 +520,12 @@ export const AccountsManager: React.FC = () => {
                       {row.quoteId}
                     </TableCell>
                     <TableCell>
-                      <Button className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium">
-                        Pay Now
+                      <Button
+                        className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={() => handleOpenPayNow(row)}
+                        disabled={row.status !== "due" || row.payable <= 0}
+                      >
+                        {row.status === "paid" ? "Paid" : "Pay Now"}
                       </Button>
                     </TableCell>
                     <TableCell className="text-sm text-[#4a4260]">
@@ -490,6 +599,92 @@ export const AccountsManager: React.FC = () => {
           DVI Holidays @ 2025
         </div>
       </Card>
+
+      {/* PAY NOW MODAL */}
+      <Dialog open={payNowOpen} onOpenChange={(open) => (open ? null : handleClosePayNow())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Pay Now</DialogTitle>
+            <DialogDescription>
+              Confirm payout details and enter the amount to be paid.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedRow && (
+            <div className="space-y-3 mt-2">
+              <div className="text-sm">
+                <div>
+                  <span className="font-semibold">Quote ID:</span>{" "}
+                  {selectedRow.quoteId}
+                </div>
+                <div>
+                  <span className="font-semibold">Component:</span>{" "}
+                  {selectedRow.componentType || "N/A"}
+                </div>
+                <div>
+                  <span className="font-semibold">Name:</span>{" "}
+                  {selectedRow.hotelName}
+                </div>
+                {selectedRow.routeDate && (
+                  <div>
+                    <span className="font-semibold">Route Date:</span>{" "}
+                    {selectedRow.routeDate}
+                  </div>
+                )}
+                {selectedRow.vehicleId && (
+                  <div>
+                    <span className="font-semibold">Vehicle ID:</span>{" "}
+                    {selectedRow.vehicleId}
+                  </div>
+                )}
+                {selectedRow.vendorId && (
+                  <div>
+                    <span className="font-semibold">Vendor ID:</span>{" "}
+                    {selectedRow.vendorId}
+                  </div>
+                )}
+                <div className="mt-2">
+                  <span className="font-semibold">Payable:</span>{" "}
+                  {formatINR(selectedRow.payable)}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">Payment Amount</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+
+              {payNowError && (
+                <p className="text-xs text-red-600">{payNowError}</p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="mt-4">
+            <Button
+              variant="outline"
+              onClick={handleClosePayNow}
+              disabled={payNowLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitPayNow}
+              disabled={payNowLoading || !selectedRow}
+              className="bg-[#f057b8] hover:bg-[#e348aa] text-white"
+            >
+              {payNowLoading ? "Processing…" : "Confirm Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -503,7 +698,7 @@ function cnProfit(allLoaded: boolean, _value: number) {
 }
 
 // ------------------------------------------------------
-// 🔌 FAKE API LAYER — now uses DD/MM/YYYY like LatestItinerary
+// 🔌 REAL API LAYER — uses shared api() and query params
 // ------------------------------------------------------
 async function fetchAccountsFromApi(params: {
   status: "all" | "paid" | "due";
@@ -514,96 +709,19 @@ async function fetchAccountsFromApi(params: {
   agent: string;
   search: string;
 }): Promise<AccountRow[]> {
-  await new Promise((r) => setTimeout(r, 150));
-  const all = makeMock();
-  return all.filter((row) => {
-    if (params.status !== "all" && row.status !== params.status) return false;
-    if (params.quoteId && !row.quoteId.includes(params.quoteId)) return false;
-    if (params.componentType !== "all") {
-      if (row.componentType !== params.componentType) return false;
-    }
-    if (params.agent && row.agent !== params.agent) return false;
-    if (params.search) {
-      const s = params.search.toLowerCase();
-      if (
-        !row.quoteId.toLowerCase().includes(s) &&
-        !row.hotelName.toLowerCase().includes(s)
-      ) {
-        return false;
-      }
-    }
+  const searchParams = new URLSearchParams();
 
-    // date filters – same logic as LatestItinerary: just match prefix
-    if (params.fromDate && row.startDate) {
-      if (!row.startDate.startsWith(params.fromDate)) {
-        // also allow range-like: we just do lexicographic compare on dd/mm/yyyy
-        if (toComparable(row.startDate) < toComparable(params.fromDate)) {
-          return false;
-        }
-      }
-    }
-    if (params.toDate && row.endDate) {
-      if (!row.endDate.startsWith(params.toDate)) {
-        if (toComparable(row.endDate) > toComparable(params.toDate)) {
-          return false;
-        }
-      }
-    }
+  if (params.status) searchParams.set("status", params.status);
+  if (params.quoteId?.trim()) searchParams.set("quoteId", params.quoteId.trim());
+  if (params.componentType) searchParams.set("componentType", params.componentType);
+  if (params.fromDate) searchParams.set("fromDate", params.fromDate);
+  if (params.toDate) searchParams.set("toDate", params.toDate);
+  if (params.agent) searchParams.set("agent", params.agent);
+  if (params.search) searchParams.set("search", params.search);
 
-    return true;
-  });
-}
+  const query = searchParams.toString();
+  const path = query ? `/accounts-manager?${query}` : "/accounts-manager";
 
-// convert DD/MM/YYYY -> YYYYMMDD (for simple compare)
-function toComparable(ddmmyyyy: string) {
-  const [d, m, y] = ddmmyyyy.split("/");
-  return `${y}${m}${d}`;
-}
-
-// create 200 mock rows – with DD/MM/YYYY dates
-function makeMock(): AccountRow[] {
-  const hotels = [
-    "COUNTRY CLUB BEACH RESORT",
-    "DVI HOLIDAYS PREMIUM",
-    "LE MERIDIEN KOCHI",
-    "GINGER CHENNAI",
-    "THE PARK HYDERABAD",
-  ];
-  const componentTypes: Array<"hotel" | "flight" | "vehicle"> = [
-    "hotel",
-    "flight",
-    "vehicle",
-  ];
-  const agents = ["agent1", "agent2", "agent3", "agent4", ""];
-  const rows: AccountRow[] = [];
-  for (let i = 1; i <= 200; i++) {
-    const hotel = hotels[i % hotels.length];
-    const amt = 3500 + (i % 7) * 1250;
-    const isPaid = i % 4 === 0;
-    const payout = isPaid ? amt : 0;
-    const payable = isPaid ? 0 : amt;
-    const cType = componentTypes[i % componentTypes.length];
-    const agent = agents[i % agents.length];
-
-    // spread in Oct 2025 as DD/MM/YYYY
-    const day = ((i % 28) + 1).toString().padStart(2, "0");
-    const startDate = `${day}/10/2025`;
-    const endDay = Math.min(Number(day) + 2, 28).toString().padStart(2, "0");
-    const endDate = `${endDay}/10/2025`;
-
-    rows.push({
-      id: i,
-      quoteId: `DVI0${520256 + i}`,
-      hotelName: hotel,
-      amount: amt,
-      payout,
-      payable,
-      status: isPaid ? "paid" : "due",
-      componentType: cType,
-      agent,
-      startDate,
-      endDate,
-    });
-  }
-  return rows;
+  const data = await api(path, { method: "GET", auth: true });
+  return data as AccountRow[];
 }
