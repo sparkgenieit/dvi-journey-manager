@@ -1,4 +1,4 @@
-// REPLACE-WHOLE-FILE: src/lib/api.ts
+
 /// <reference types="vite/client" />
 
 /**
