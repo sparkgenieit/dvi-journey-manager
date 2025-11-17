@@ -1,4 +1,4 @@
-// FILE: AccountsManager.tsx
+// FILE: src/pages/AccountsManager.tsx
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -23,38 +23,30 @@ import {
 import { Download, Calendar as CalendarIcon } from "lucide-react";
 
 // 👇 same as LatestItinerary
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 
-// 🧱 modal for Pay Now
+// 🔌 New shared backend layer for Accounts Manager
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-
-// 🔌 use shared API wrapper
-import { api } from "@/lib/api";
-
-type AccountRow = {
-  id: number;
-  quoteId: string;
-  hotelName: string;
-  amount: number;
-  payout: number;
-  payable: number;
-  status: "paid" | "due";
-  componentType?: "hotel" | "flight" | "vehicle" | "guide" | "hotspot" | "activity";
-  agent?: string;
-  startDate?: string; // DD/MM/YYYY
-  endDate?: string; // DD/MM/YYYY
-  routeDate?: string; // DD/MM/YYYY, used for vehicle/guide/hotspot/activity
-  vehicleId?: number; // for vehicle payouts
-  vendorId?: number; // for vehicle payouts
-};
+  fetchAccountsList,
+  fetchAccountsSummary,
+  fetchAgents,
+  fetchPaymentModes,
+  searchQuotes,
+} from "@/services/accountsManagerApi";
+import type {
+  AccountsRow,
+  AccountsSummary,
+  AccountsFilters,
+  AgentOption,
+  PaymentModeOption,
+  AccountsComponentType,
+} from "@/services/accountsManagerApi";
+import { PayNowModal } from "./PayNowModal";
 
 const formatINR = (v: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -72,10 +64,24 @@ function formatToDDMMYYYY(date: Date | undefined) {
   return `${d}/${m}/${y}`;
 }
 
+// Sections for "List of Accounts Details" – same components as PHP ALL list
+const SECTION_CONFIG = [
+  { type: "guide", label: "Guide" },
+  { type: "hotspot", label: "Hotspot" },
+  { type: "activity", label: "Activity" },
+  { type: "hotel", label: "Hotel" },
+  { type: "vehicle", label: "Vehicle" },
+] as const;
+
+type SectionKey = (typeof SECTION_CONFIG)[number]["type"];
+
 export const AccountsManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"all" | "paid" | "due">("all");
   const [quoteIdFilter, setQuoteIdFilter] = useState("");
-  const [componentType, setComponentType] = useState("all");
+  // 👇 now strongly typed: "all" + union from API
+  const [componentType, setComponentType] = useState<
+    "all" | AccountsComponentType
+  >("all");
 
   // 👇 show like LatestItinerary: we store string + date obj
   const [fromDate, setFromDate] = useState("");
@@ -83,50 +89,116 @@ export const AccountsManager: React.FC = () => {
   const [fromDateObj, setFromDateObj] = useState<Date | undefined>(undefined);
   const [toDateObj, setToDateObj] = useState<Date | undefined>(undefined);
 
-  const [agent, setAgent] = useState("");
+  const [agent, setAgent] = useState(""); // "" means ALL in filters
   const [search, setSearch] = useState("");
 
-  const [rows, setRows] = useState<AccountRow[]>([]);
+  const [rows, setRows] = useState<AccountsRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const [summary, setSummary] = useState<AccountsSummary | null>(null);
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [paymentModes, setPaymentModes] = useState<PaymentModeOption[]>([]);
+
+  // Quote autocomplete state
+  const [quoteSearchTerm, setQuoteSearchTerm] = useState("");
+  const [quoteSuggestions, setQuoteSuggestions] = useState<string[]>([]);
 
   const [visibleCount, setVisibleCount] = useState(20);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 👉 Pay Now modal state
   const [payNowOpen, setPayNowOpen] = useState(false);
-  const [selectedRow, setSelectedRow] = useState<AccountRow | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState<string>("");
-  const [payNowLoading, setPayNowLoading] = useState(false);
-  const [payNowError, setPayNowError] = useState<string | null>(null);
+  const [selectedRow, setSelectedRow] = useState<AccountsRow | null>(null);
 
-  // fetch on filter change
+  // -------------------------------------------------
+  // LOOKUPS: agents + payment modes
+  // -------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLookups() {
+      try {
+        const [agentsData, paymentModesData] = await Promise.all([
+          fetchAgents(),
+          fetchPaymentModes(),
+        ]);
+        if (cancelled) return;
+        setAgents(agentsData);
+        setPaymentModes(paymentModesData);
+      } catch (err) {
+        console.error("Failed to load agents / payment modes:", err);
+      }
+    }
+
+    loadLookups();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // -------------------------------------------------
+  // QUOTE AUTOCOMPLETE
+  // -------------------------------------------------
+  useEffect(() => {
+    if (!quoteSearchTerm.trim()) {
+      setQuoteSuggestions([]);
+      return;
+    }
+
+    const handle = setTimeout(async () => {
+      try {
+        const result = await searchQuotes(quoteSearchTerm.trim());
+        setQuoteSuggestions(result.map((q) => q.quoteId));
+      } catch (err) {
+        console.error("Quote search failed:", err);
+      }
+    }, 300);
+
+    return () => clearTimeout(handle);
+  }, [quoteSearchTerm]);
+
+  // -------------------------------------------------
+  // MAIN DATA FETCH (LIST + SUMMARY) ON FILTER CHANGE
+  // -------------------------------------------------
   useEffect(() => {
     let isCancelled = false;
-    (async () => {
+
+    async function load() {
       setLoading(true);
       try {
-        const data = await fetchAccountsFromApi({
+        const filters: AccountsFilters = {
           status: activeTab,
-          quoteId: quoteIdFilter,
-          componentType,
-          fromDate,
-          toDate,
-          agent,
-          search,
-        });
-        if (!isCancelled) {
-          setRows(data);
-          setVisibleCount(20);
-        }
+          quoteId: quoteIdFilter || undefined,
+          // 👇 backend should not get "all"
+          componentType:
+            componentType === "all" ? undefined : componentType,
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+          agent: agent || undefined,
+          search: search || undefined,
+        };
+
+        const [listData, summaryData] = await Promise.all([
+          fetchAccountsList(filters),
+          fetchAccountsSummary(filters),
+        ]);
+
+        if (isCancelled) return;
+        setRows(listData);
+        setSummary(summaryData);
+        setVisibleCount(20);
       } catch (err) {
         console.error("Failed to fetch accounts manager data:", err);
         if (!isCancelled) {
           setRows([]);
+          setSummary(null);
         }
       } finally {
         if (!isCancelled) setLoading(false);
       }
-    })();
+    }
+
+    load();
     return () => {
       isCancelled = true;
     };
@@ -134,17 +206,28 @@ export const AccountsManager: React.FC = () => {
 
   const filteredRows = useMemo(() => rows, [rows]);
 
-  // totals (full)
-  const totalBilled = filteredRows.reduce((s, r) => s + r.amount, 0);
-  const totalReceived = filteredRows
+  // -------------------------------------------------
+  // TOTALS (ROW-BASED) – keep existing behaviour
+  // -------------------------------------------------
+  const rowTotalBilled = filteredRows.reduce((s, r) => s + r.amount, 0);
+  const rowTotalReceived = filteredRows
     .filter((r) => r.status === "paid")
     .reduce((s, r) => s + r.payout, 0);
-  const totalReceivable = filteredRows
+  const rowTotalReceivable = filteredRows
     .filter((r) => r.status === "due")
     .reduce((s, r) => s + r.payable, 0);
-  const totalPayout = filteredRows.reduce((s, r) => s + r.payout, 0);
-  const totalPayable = filteredRows.reduce((s, r) => s + r.payable, 0);
-  const totalProfit = totalReceived - totalPayable;
+  const rowTotalPayout = filteredRows.reduce((s, r) => s + r.payout, 0);
+  const rowTotalPayable = filteredRows.reduce((s, r) => s + r.payable, 0);
+  const rowTotalProfit = rowTotalReceived - rowTotalPayable;
+
+  // 🔗 Map summary endpoint to your cards (with safe fallbacks)
+  const totalBilled = summary?.totalPayable ?? rowTotalBilled;
+  const totalPayout = summary?.totalPaid ?? rowTotalPayout;
+  const totalPayable = summary?.totalBalance ?? rowTotalPayable;
+
+  const totalReceived = rowTotalReceived; // keep same semantics as before
+  const totalReceivable = rowTotalReceivable;
+  const totalProfit = rowTotalProfit;
 
   // visible (infinite scroll)
   const visibleRows = filteredRows.slice(0, visibleCount);
@@ -153,6 +236,101 @@ export const AccountsManager: React.FC = () => {
   const visiblePayable = visibleRows.reduce((s, r) => s + r.payable, 0);
   const visibleProfit = visiblePayout - visiblePayable;
   const isAllLoaded = visibleCount >= filteredRows.length;
+
+  // Group visible rows by component type (guide / hotspot / activity / hotel / vehicle)
+  const groupedVisibleRows = useMemo(() => {
+    const base: Record<SectionKey, AccountsRow[]> = {
+      guide: [],
+      hotspot: [],
+      activity: [],
+      hotel: [],
+      vehicle: [],
+    };
+
+    for (const row of visibleRows) {
+      const t = (row as any).componentType as string | undefined;
+      if (!t) continue;
+      if ((base as any)[t]) {
+        (base as any)[t].push(row);
+      }
+    }
+
+    return base;
+  }, [visibleRows]);
+
+  // Render one header + body block for a given component type – mirrors PHP ALL list
+  const renderSection = (type: SectionKey, label: string) => {
+    const rowsForType = groupedVisibleRows[type];
+    if (!rowsForType || rowsForType.length === 0) return null;
+
+    return (
+      <>
+        <TableHeader>
+          <TableRow className="bg-[#fbf2ff]">
+            <TableHead className="text-xs text-[#4a4260]">
+              QUOTE ID
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260]">
+              ACTION
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260] text-right">
+              {label}
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260] text-right">
+              AMOUNT
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260] text-right">
+              PAYOUT
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260] text-right">
+              PAYABLE
+            </TableHead>
+            {/* Extra columns (Receivable / Inhand / Service / Tax / Date / Guest etc.)
+                can be added here later per component if backend exposes them. */}
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {rowsForType.map((row, index) => (
+            <TableRow key={`${type}-${index}`} className="hover:bg-[#fff7ff]">
+              {/* QUOTE ID */}
+              <TableCell className="text-sm text-[#7b6b99]">
+                {row.quoteId}
+              </TableCell>
+
+              {/* ACTION – Pay Now / Paid */}
+              <TableCell>
+                <Button
+                  className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => handleOpenPayNow(row)}
+                  disabled={row.status !== "due" || row.payable <= 0}
+                >
+                  {row.status === "paid" ? "Paid" : "Pay Now"}
+                </Button>
+              </TableCell>
+
+              {/* NAME COLUMN – hotel/guide/hotspot/activity/vehicle label
+                  For now we use row.hotelName; backend should map each component's label into this field. */}
+              <TableCell className="text-sm text-[#4a4260]">
+                {row.hotelName}
+              </TableCell>
+
+              {/* AMOUNT / PAYOUT / PAYABLE */}
+              <TableCell className="text-sm text-right text-[#4a4260]">
+                {formatINR(row.amount)}
+              </TableCell>
+              <TableCell className="text-sm text-right text-[#4a4260]">
+                {formatINR(row.payout)}
+              </TableCell>
+              <TableCell className="text-sm text-right text-[#4a4260]">
+                {formatINR(row.payable)}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </>
+    );
+  };
 
   // infinite scroll
   useEffect(() => {
@@ -171,6 +349,8 @@ export const AccountsManager: React.FC = () => {
 
   const clearFilters = () => {
     setQuoteIdFilter("");
+    setQuoteSearchTerm("");
+    setQuoteSuggestions([]);
     setComponentType("all");
     setFromDate("");
     setToDate("");
@@ -180,76 +360,47 @@ export const AccountsManager: React.FC = () => {
   };
 
   // -------------------------------------------------
-  // PAY NOW HANDLERS
+  // PAY NOW HANDLERS (now using PayNowModal + /pay endpoint)
   // -------------------------------------------------
-  const handleOpenPayNow = (row: AccountRow) => {
+  const handleOpenPayNow = (row: AccountsRow) => {
     setSelectedRow(row);
-    setPaymentAmount(row.payable > 0 ? String(row.payable) : "");
-    setPayNowError(null);
     setPayNowOpen(true);
   };
 
   const handleClosePayNow = () => {
-    if (payNowLoading) return;
     setPayNowOpen(false);
     setSelectedRow(null);
-    setPaymentAmount("");
-    setPayNowError(null);
   };
 
-  const handleSubmitPayNow = async () => {
-    if (!selectedRow) return;
+  const handlePaySuccess = async () => {
+    // close modal
+    setPayNowOpen(false);
+    setSelectedRow(null);
 
-    const amountNum = Number(paymentAmount);
-    if (!paymentAmount || Number.isNaN(amountNum) || amountNum <= 0) {
-      setPayNowError("Please enter a valid positive amount.");
-      return;
-    }
-    if (amountNum > selectedRow.payable) {
-      setPayNowError(
-        `Amount cannot be more than payable (${formatINR(selectedRow.payable)}).`,
-      );
-      return;
-    }
-
-    setPayNowLoading(true);
-    setPayNowError(null);
-
+    // reload list + summary with same filters
     try {
-      await api("/accounts-manager/pay", {
-        method: "POST",
-        auth: true,
-        body: JSON.stringify({
-          accountsDetailId: selectedRow.id,
-          componentType: selectedRow.componentType,
-          vendorId: selectedRow.vendorId,
-          vehicleId: selectedRow.vehicleId,
-          routeDate: selectedRow.routeDate,
-          amount: amountNum,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      // refresh list with same filters
-      const data = await fetchAccountsFromApi({
+      setLoading(true);
+      const filters: AccountsFilters = {
         status: activeTab,
-        quoteId: quoteIdFilter,
-        componentType,
-        fromDate,
-        toDate,
-        agent,
-        search,
-      });
-      setRows(data);
-
-      handleClosePayNow();
+        quoteId: quoteIdFilter || undefined,
+        componentType:
+          componentType === "all" ? undefined : componentType,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        agent: agent || undefined,
+        search: search || undefined,
+      };
+      const [listData, summaryData] = await Promise.all([
+        fetchAccountsList(filters),
+        fetchAccountsSummary(filters),
+      ]);
+      setRows(listData);
+      setSummary(summaryData);
+      setVisibleCount(20);
     } catch (err) {
-      console.error("Pay Now failed:", err);
-      setPayNowError("Payment failed. Please try again.");
+      console.error("Failed to reload after payment:", err);
     } finally {
-      setPayNowLoading(false);
+      setLoading(false);
     }
   };
 
@@ -298,15 +449,36 @@ export const AccountsManager: React.FC = () => {
         <CardContent className="pt-6 pb-5">
           <p className="text-sm font-semibold text-[#4a4260] mb-4">FILTER</p>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Quote ID */}
-            <div className="space-y-2">
+            {/* Quote ID with autocomplete */}
+            <div className="space-y-2 relative">
               <Label className="text-sm text-[#4a4260]">Quote ID</Label>
               <Input
                 placeholder="Enter the Quote ID"
                 value={quoteIdFilter}
-                onChange={(e) => setQuoteIdFilter(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setQuoteIdFilter(value);
+                  setQuoteSearchTerm(value);
+                }}
                 className="h-9"
               />
+              {quoteSuggestions.length > 0 && (
+                <div className="absolute z-20 bg-white border rounded mt-1 w-full max-h-40 overflow-y-auto text-xs">
+                  {quoteSuggestions.map((q) => (
+                    <div
+                      key={q}
+                      className="px-2 py-1 hover:bg-gray-100 cursor-pointer"
+                      onClick={() => {
+                        setQuoteIdFilter(q);
+                        setQuoteSearchTerm(q);
+                        setQuoteSuggestions([]);
+                      }}
+                    >
+                      {q}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Component Type */}
@@ -314,7 +486,9 @@ export const AccountsManager: React.FC = () => {
               <Label className="text-sm text-[#4a4260]">Component Type</Label>
               <Select
                 value={componentType}
-                onValueChange={(v) => setComponentType(v)}
+                onValueChange={(v) =>
+                  setComponentType(v as "all" | AccountsComponentType)
+                }
               >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="All" />
@@ -324,6 +498,9 @@ export const AccountsManager: React.FC = () => {
                   <SelectItem value="hotel">Hotel</SelectItem>
                   <SelectItem value="flight">Flight</SelectItem>
                   <SelectItem value="vehicle">Vehicle</SelectItem>
+                  <SelectItem value="guide">Guide</SelectItem>
+                  <SelectItem value="hotspot">Hotspot</SelectItem>
+                  <SelectItem value="activity">Activity</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -392,16 +569,27 @@ export const AccountsManager: React.FC = () => {
             <div className="space-y-2 flex flex-col justify-end">
               <Label className="text-sm text-[#4a4260]">Agent</Label>
               <div className="flex gap-2">
-                <Select value={agent} onValueChange={(v) => setAgent(v)}>
+                <Select
+                  // use "__all" sentinel in UI; "" in state == ALL
+                  value={agent || "__all"}
+                  onValueChange={(v) => {
+                    if (v === "__all") {
+                      setAgent("");
+                    } else {
+                      setAgent(v);
+                    }
+                  }}
+                >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select Agent" />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* Static options – backend will filter using "agent" param */}
-                    <SelectItem value="agent1">Agent 1</SelectItem>
-                    <SelectItem value="agent2">Agent 2</SelectItem>
-                    <SelectItem value="agent3">Agent 3</SelectItem>
-                    <SelectItem value="agent4">Agent 4</SelectItem>
+                    <SelectItem value="__all">All</SelectItem>
+                    {agents.map((a) => (
+                      <SelectItem key={a.id} value={a.name}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button
@@ -482,88 +670,77 @@ export const AccountsManager: React.FC = () => {
           </div>
         </CardContent>
 
-        {/* SCROLL TABLE */}
+        {/* SCROLL TABLE – vertical + horizontal */}
         <div
           ref={scrollRef}
-          className="max-h-[460px] overflow-y-auto border-t border-[#f3e0ff]"
+          className="max-h-[460px] overflow-y-auto overflow-x-auto border-t border-[#f3e0ff]"
         >
-          <Table className="min-w-full">
-            <TableHeader>
-              <TableRow className="bg-[#fbf2ff]">
-                <TableHead className="text-xs text-[#4a4260]">QUOTE ID</TableHead>
-                <TableHead className="text-xs text-[#4a4260]">ACTION</TableHead>
-                <TableHead className="text-xs text-[#4a4260]">
-                  HOTEL NAME
-                </TableHead>
-                <TableHead className="text-xs text-[#4a4260] text-right">
-                  AMOUNT
-                </TableHead>
-                <TableHead className="text-xs text-[#4a4260] text-right">
-                  PAYOUT
-                </TableHead>
-                <TableHead className="text-xs text-[#4a4260] text-right">
-                  PAYABLE
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          {/* min-w-[1400px] forces horizontal scroll so all columns are visible */}
+          <Table id="all_accountsmanager_list" className="min-w-[1400px]">
+            {/* Initial loading state (before any rows are visible) */}
+            {loading && visibleRows.length === 0 && (
+              <TableBody>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-xs">
+                  <TableCell
+                    colSpan={12}
+                    className="text-center py-6 text-xs"
+                  >
                     Loading records…
                   </TableCell>
                 </TableRow>
-              ) : visibleRows.length ? (
-                visibleRows.map((row) => (
-                  <TableRow key={row.id} className="hover:bg-[#fff7ff]">
-                    <TableCell className="text-sm text-[#7b6b99]">
-                      {row.quoteId}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        onClick={() => handleOpenPayNow(row)}
-                        disabled={row.status !== "due" || row.payable <= 0}
-                      >
-                        {row.status === "paid" ? "Paid" : "Pay Now"}
-                      </Button>
-                    </TableCell>
-                    <TableCell className="text-sm text-[#4a4260]">
-                      {row.hotelName}
-                    </TableCell>
-                    <TableCell className="text-sm text-right text-[#4a4260]">
-                      {formatINR(row.amount)}
-                    </TableCell>
-                    <TableCell className="text-sm text-right text-[#4a4260]">
-                      {formatINR(row.payout)}
-                    </TableCell>
-                    <TableCell className="text-sm text-right text-[#4a4260]">
-                      {formatINR(row.payable)}
-                    </TableCell>
-                  </TableRow>
-                ))
-              ) : (
+              </TableBody>
+            )}
+
+            {/* No records */}
+            {!loading && visibleRows.length === 0 && (
+              <TableBody>
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-xs">
+                  <TableCell
+                    colSpan={12}
+                    className="text-center py-6 text-xs"
+                  >
                     No records found
                   </TableCell>
                 </TableRow>
-              )}
-              {!loading &&
-                (visibleCount < filteredRows.length ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4 text-xs">
-                      Loading more…
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-4 text-xs">
-                      All rows loaded
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
+              </TableBody>
+            )}
+
+            {/* Sections by component type (Guide / Hotspot / Activity / Hotel / Vehicle) */}
+            {!loading && visibleRows.length > 0 && (
+              <>
+                {(componentType === "all"
+                  ? SECTION_CONFIG
+                  : SECTION_CONFIG.filter(
+                      (s) => s.type === (componentType as SectionKey),
+                    )
+                ).map((section) =>
+                  renderSection(section.type, section.label),
+                )}
+
+                {/* Bottom loader / completion row – similar to PHP footer */}
+                <TableBody>
+                  {visibleCount < filteredRows.length ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={12}
+                        className="text-center py-4 text-xs"
+                      >
+                        Loading more…
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={12}
+                        className="text-center py-4 text-xs"
+                      >
+                        All rows loaded
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </>
+            )}
           </Table>
         </div>
 
@@ -600,91 +777,15 @@ export const AccountsManager: React.FC = () => {
         </div>
       </Card>
 
-      {/* PAY NOW MODAL */}
-      <Dialog open={payNowOpen} onOpenChange={(open) => (open ? null : handleClosePayNow())}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Pay Now</DialogTitle>
-            <DialogDescription>
-              Confirm payout details and enter the amount to be paid.
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedRow && (
-            <div className="space-y-3 mt-2">
-              <div className="text-sm">
-                <div>
-                  <span className="font-semibold">Quote ID:</span>{" "}
-                  {selectedRow.quoteId}
-                </div>
-                <div>
-                  <span className="font-semibold">Component:</span>{" "}
-                  {selectedRow.componentType || "N/A"}
-                </div>
-                <div>
-                  <span className="font-semibold">Name:</span>{" "}
-                  {selectedRow.hotelName}
-                </div>
-                {selectedRow.routeDate && (
-                  <div>
-                    <span className="font-semibold">Route Date:</span>{" "}
-                    {selectedRow.routeDate}
-                  </div>
-                )}
-                {selectedRow.vehicleId && (
-                  <div>
-                    <span className="font-semibold">Vehicle ID:</span>{" "}
-                    {selectedRow.vehicleId}
-                  </div>
-                )}
-                {selectedRow.vendorId && (
-                  <div>
-                    <span className="font-semibold">Vendor ID:</span>{" "}
-                    {selectedRow.vendorId}
-                  </div>
-                )}
-                <div className="mt-2">
-                  <span className="font-semibold">Payable:</span>{" "}
-                  {formatINR(selectedRow.payable)}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm">Payment Amount</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  className="h-9"
-                />
-              </div>
-
-              {payNowError && (
-                <p className="text-xs text-red-600">{payNowError}</p>
-              )}
-            </div>
-          )}
-
-          <DialogFooter className="mt-4">
-            <Button
-              variant="outline"
-              onClick={handleClosePayNow}
-              disabled={payNowLoading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmitPayNow}
-              disabled={payNowLoading || !selectedRow}
-              className="bg-[#f057b8] hover:bg-[#e348aa] text-white"
-            >
-              {payNowLoading ? "Processing…" : "Confirm Payment"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* PAY NOW MODAL (new component) */}
+      {payNowOpen && selectedRow && (
+        <PayNowModal
+          row={selectedRow}
+          paymentModes={paymentModes}
+          onClose={handleClosePayNow}
+          onSuccess={handlePaySuccess}
+        />
+      )}
     </div>
   );
 };
@@ -695,33 +796,4 @@ function cnProfit(allLoaded: boolean, _value: number) {
     return "text-[#10a037] font-semibold whitespace-nowrap";
   }
   return "text-[#6f97ff] font-semibold whitespace-nowrap";
-}
-
-// ------------------------------------------------------
-// 🔌 REAL API LAYER — uses shared api() and query params
-// ------------------------------------------------------
-async function fetchAccountsFromApi(params: {
-  status: "all" | "paid" | "due";
-  quoteId: string;
-  componentType: string;
-  fromDate: string; // DD/MM/YYYY
-  toDate: string; // DD/MM/YYYY
-  agent: string;
-  search: string;
-}): Promise<AccountRow[]> {
-  const searchParams = new URLSearchParams();
-
-  if (params.status) searchParams.set("status", params.status);
-  if (params.quoteId?.trim()) searchParams.set("quoteId", params.quoteId.trim());
-  if (params.componentType) searchParams.set("componentType", params.componentType);
-  if (params.fromDate) searchParams.set("fromDate", params.fromDate);
-  if (params.toDate) searchParams.set("toDate", params.toDate);
-  if (params.agent) searchParams.set("agent", params.agent);
-  if (params.search) searchParams.set("search", params.search);
-
-  const query = searchParams.toString();
-  const path = query ? `/accounts-manager?${query}` : "/accounts-manager";
-
-  const data = await api(path, { method: "GET", auth: true });
-  return data as AccountRow[];
 }
