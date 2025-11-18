@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/table";
 import { Download, Calendar as CalendarIcon } from "lucide-react";
 
-// 👇 same as LatestItinerary
 import {
   Popover,
   PopoverContent,
@@ -30,7 +29,6 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 
-// 🔌 New shared backend layer for Accounts Manager
 import {
   fetchAccountsList,
   fetchAccountsSummary,
@@ -55,7 +53,6 @@ const formatINR = (v: number) =>
     minimumFractionDigits: 2,
   }).format(v);
 
-// 👇 same small util as LatestItinerary (no date-fns)
 function formatToDDMMYYYY(date: Date | undefined) {
   if (!date) return "";
   const d = date.getDate().toString().padStart(2, "0");
@@ -64,7 +61,6 @@ function formatToDDMMYYYY(date: Date | undefined) {
   return `${d}/${m}/${y}`;
 }
 
-// Sections for "List of Accounts Details" – same components as PHP ALL list
 const SECTION_CONFIG = [
   { type: "guide", label: "Guide" },
   { type: "hotspot", label: "Hotspot" },
@@ -78,18 +74,16 @@ type SectionKey = (typeof SECTION_CONFIG)[number]["type"];
 export const AccountsManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"all" | "paid" | "due">("all");
   const [quoteIdFilter, setQuoteIdFilter] = useState("");
-  // 👇 now strongly typed: "all" + union from API
   const [componentType, setComponentType] = useState<
     "all" | AccountsComponentType
   >("all");
 
-  // 👇 show like LatestItinerary: we store string + date obj
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [fromDateObj, setFromDateObj] = useState<Date | undefined>(undefined);
   const [toDateObj, setToDateObj] = useState<Date | undefined>(undefined);
 
-  const [agent, setAgent] = useState(""); // "" means ALL in filters
+  const [agent, setAgent] = useState("");
   const [search, setSearch] = useState("");
 
   const [rows, setRows] = useState<AccountsRow[]>([]);
@@ -99,20 +93,16 @@ export const AccountsManager: React.FC = () => {
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [paymentModes, setPaymentModes] = useState<PaymentModeOption[]>([]);
 
-  // Quote autocomplete state
   const [quoteSearchTerm, setQuoteSearchTerm] = useState("");
   const [quoteSuggestions, setQuoteSuggestions] = useState<string[]>([]);
 
   const [visibleCount, setVisibleCount] = useState(20);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // 👉 Pay Now modal state
   const [payNowOpen, setPayNowOpen] = useState(false);
   const [selectedRow, setSelectedRow] = useState<AccountsRow | null>(null);
 
-  // -------------------------------------------------
-  // LOOKUPS: agents + payment modes
-  // -------------------------------------------------
+  // LOOKUPS
   useEffect(() => {
     let cancelled = false;
 
@@ -136,9 +126,7 @@ export const AccountsManager: React.FC = () => {
     };
   }, []);
 
-  // -------------------------------------------------
   // QUOTE AUTOCOMPLETE
-  // -------------------------------------------------
   useEffect(() => {
     if (!quoteSearchTerm.trim()) {
       setQuoteSuggestions([]);
@@ -157,9 +145,7 @@ export const AccountsManager: React.FC = () => {
     return () => clearTimeout(handle);
   }, [quoteSearchTerm]);
 
-  // -------------------------------------------------
-  // MAIN DATA FETCH (LIST + SUMMARY) ON FILTER CHANGE
-  // -------------------------------------------------
+  // MAIN DATA FETCH
   useEffect(() => {
     let isCancelled = false;
 
@@ -169,7 +155,6 @@ export const AccountsManager: React.FC = () => {
         const filters: AccountsFilters = {
           status: activeTab,
           quoteId: quoteIdFilter || undefined,
-          // 👇 backend should not get "all"
           componentType:
             componentType === "all" ? undefined : componentType,
           fromDate: fromDate || undefined,
@@ -206,9 +191,7 @@ export const AccountsManager: React.FC = () => {
 
   const filteredRows = useMemo(() => rows, [rows]);
 
-  // -------------------------------------------------
-  // TOTALS (ROW-BASED) – keep existing behaviour
-  // -------------------------------------------------
+  // TOTALS
   const rowTotalBilled = filteredRows.reduce((s, r) => s + r.amount, 0);
   const rowTotalReceived = filteredRows
     .filter((r) => r.status === "paid")
@@ -220,16 +203,15 @@ export const AccountsManager: React.FC = () => {
   const rowTotalPayable = filteredRows.reduce((s, r) => s + r.payable, 0);
   const rowTotalProfit = rowTotalReceived - rowTotalPayable;
 
-  // 🔗 Map summary endpoint to your cards (with safe fallbacks)
   const totalBilled = summary?.totalPayable ?? rowTotalBilled;
   const totalPayout = summary?.totalPaid ?? rowTotalPayout;
   const totalPayable = summary?.totalBalance ?? rowTotalPayable;
 
-  const totalReceived = rowTotalReceived; // keep same semantics as before
+  const totalReceived = rowTotalReceived;
   const totalReceivable = rowTotalReceivable;
   const totalProfit = rowTotalProfit;
 
-  // visible (infinite scroll)
+  // VISIBLE (INFINITE SCROLL)
   const visibleRows = filteredRows.slice(0, visibleCount);
   const visibleAmount = visibleRows.reduce((s, r) => s + r.amount, 0);
   const visiblePayout = visibleRows.reduce((s, r) => s + r.payout, 0);
@@ -237,7 +219,7 @@ export const AccountsManager: React.FC = () => {
   const visibleProfit = visiblePayout - visiblePayable;
   const isAllLoaded = visibleCount >= filteredRows.length;
 
-  // Group visible rows by component type (guide / hotspot / activity / hotel / vehicle)
+  // GROUP BY COMPONENT TYPE
   const groupedVisibleRows = useMemo(() => {
     const base: Record<SectionKey, AccountsRow[]> = {
       guide: [],
@@ -258,11 +240,193 @@ export const AccountsManager: React.FC = () => {
     return base;
   }, [visibleRows]);
 
-  // Render one header + body block for a given component type – mirrors PHP ALL list
+  // SECTION RENDERER – HOTEL HAS FULL 15 HEADERS LIKE PHP
   const renderSection = (type: SectionKey, label: string) => {
     const rowsForType = groupedVisibleRows[type];
     if (!rowsForType || rowsForType.length === 0) return null;
 
+    // SPECIAL: HOTEL COMPONENT – MATCH PHP HEADERS
+    if (type === "hotel") {
+      return (
+        <>
+          <TableHeader>
+            <TableRow className="bg-[#fbf2ff]">
+              {/* 1–4 */}
+              <TableHead className="text-xs text-[#4a4260]">
+                QUOTE ID
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260]">
+                ACTION
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260]">
+                HOTEL NAME
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                AMOUNT
+              </TableHead>
+
+              {/* 5–11 */}
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                PAYOUT
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                PAYABLE
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                RECEIVABLE FROM AGENT
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                INHAND AMOUNT
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                MARGIN AMOUNT
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                TAX
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260]">
+                DATE
+              </TableHead>
+
+              {/* 12–15 */}
+              <TableHead className="text-xs text-[#4a4260]">
+                GUEST
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260] text-right">
+                ROOM COUNT
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260]">
+                ARRIVAL START DATE
+              </TableHead>
+              <TableHead className="text-xs text-[#4a4260]">
+                DESTINATION END DATE
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {rowsForType.map((row, index) => {
+              const r: any = row; // allow extra backend fields without TS errors
+
+              const receivableFromAgentAmount =
+                r.receivableFromAgentAmount ?? r.agentReceivable ?? 0;
+              const receivableFromAgentName =
+                r.receivableFromAgentName ?? r.agent ?? "";
+              const inhandAmount = r.inhandAmount ?? 0;
+              const marginAmount = r.marginAmount ?? 0;
+              const taxAmount = r.taxAmount ?? 0;
+              const date =
+                r.routeDate || r.transactionDate || r.date || "";
+              const guest = r.guestName ?? r.guest ?? "";
+              const roomCount = r.roomCount ?? 0;
+              const arrivalStart =
+                r.arrivalStart ??
+                r.arrivalStartDate ??
+                r.startDate ??
+                "";
+              const destinationEnd =
+                r.destinationEnd ??
+                r.destinationEndDate ??
+                r.endDate ??
+                "";
+
+              return (
+                <TableRow
+                  key={`hotel-${index}`}
+                  className="hover:bg-[#fff7ff]"
+                >
+                  {/* 1. QUOTE ID */}
+                  <TableCell className="text-sm text-[#7b6b99]">
+                    {row.quoteId}
+                  </TableCell>
+
+                  {/* 2. ACTION */}
+                  <TableCell>
+                    <Button
+                      className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => handleOpenPayNow(row)}
+                      disabled={row.status !== "due" || row.payable <= 0}
+                    >
+                      {row.status === "paid" ? "Paid" : "Pay Now"}
+                    </Button>
+                  </TableCell>
+
+                  {/* 3. HOTEL NAME */}
+                  <TableCell className="text-sm text-[#4a4260]">
+                    {row.hotelName}
+                  </TableCell>
+
+                  {/* 4. AMOUNT */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {formatINR(row.amount)}
+                  </TableCell>
+
+                  {/* 5. PAYOUT */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {formatINR(row.payout)}
+                  </TableCell>
+
+                  {/* 6. PAYABLE */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {formatINR(row.payable)}
+                  </TableCell>
+
+                  {/* 7. RECEIVABLE FROM AGENT (amount + name stacked like PHP) */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    <div>{formatINR(receivableFromAgentAmount)}</div>
+                    <div className="text-xs text-[#7b6b99]">
+                      {receivableFromAgentName || "-"}
+                    </div>
+                  </TableCell>
+
+                  {/* 8. INHAND AMOUNT */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {formatINR(inhandAmount)}
+                  </TableCell>
+
+                  {/* 9. MARGIN AMOUNT */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {formatINR(marginAmount)}
+                  </TableCell>
+
+                  {/* 10. TAX */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {formatINR(taxAmount)}
+                  </TableCell>
+
+                  {/* 11. DATE */}
+                  <TableCell className="text-sm text-[#4a4260]">
+                    {date || "-"}
+                  </TableCell>
+
+                  {/* 12. GUEST */}
+                  <TableCell className="text-sm text-[#4a4260]">
+                    {guest || "-"}
+                  </TableCell>
+
+                  {/* 13. ROOM COUNT */}
+                  <TableCell className="text-sm text-right text-[#4a4260]">
+                    {roomCount || "-"}
+                  </TableCell>
+
+                  {/* 14. ARRIVAL START DATE */}
+                  <TableCell className="text-sm text-[#4a4260]">
+                    {arrivalStart || "-"}
+                  </TableCell>
+
+                  {/* 15. DESTINATION END DATE */}
+                  <TableCell className="text-sm text-[#4a4260]">
+                    {destinationEnd || "-"}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </>
+      );
+    }
+
+    // GENERIC LAYOUT FOR OTHER COMPONENTS (guide / hotspot / activity / vehicle)
     return (
       <>
         <TableHeader>
@@ -273,8 +437,23 @@ export const AccountsManager: React.FC = () => {
             <TableHead className="text-xs text-[#4a4260]">
               ACTION
             </TableHead>
-            <TableHead className="text-xs text-[#4a4260] text-right">
-              {label}
+            <TableHead className="text-xs text-[#4a4260]">
+              COMPONENT
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260]">
+              {label} NAME
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260]">
+              AGENT
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260]">
+              START DATE
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260]">
+              END DATE
+            </TableHead>
+            <TableHead className="text-xs text-[#4a4260]">
+              ROUTE DATE
             </TableHead>
             <TableHead className="text-xs text-[#4a4260] text-right">
               AMOUNT
@@ -285,54 +464,83 @@ export const AccountsManager: React.FC = () => {
             <TableHead className="text-xs text-[#4a4260] text-right">
               PAYABLE
             </TableHead>
-            {/* Extra columns (Receivable / Inhand / Service / Tax / Date / Guest etc.)
-                can be added here later per component if backend exposes them. */}
+            <TableHead className="text-xs text-[#4a4260] text-right">
+              ID
+            </TableHead>
           </TableRow>
         </TableHeader>
 
         <TableBody>
-          {rowsForType.map((row, index) => (
-            <TableRow key={`${type}-${index}`} className="hover:bg-[#fff7ff]">
-              {/* QUOTE ID */}
-              <TableCell className="text-sm text-[#7b6b99]">
-                {row.quoteId}
-              </TableCell>
+          {rowsForType.map((row, index) => {
+            const isVehicle = row.componentType === "vehicle";
+            const extraId = isVehicle
+              ? (row as any).vehicleId ?? (row as any).vendorId ?? row.headerId
+              : (row as any).vendorId ?? row.headerId;
 
-              {/* ACTION – Pay Now / Paid */}
-              <TableCell>
-                <Button
-                  className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={() => handleOpenPayNow(row)}
-                  disabled={row.status !== "due" || row.payable <= 0}
-                >
-                  {row.status === "paid" ? "Paid" : "Pay Now"}
-                </Button>
-              </TableCell>
+            return (
+              <TableRow
+                key={`${type}-${index}`}
+                className="hover:bg-[#fff7ff]"
+              >
+                <TableCell className="text-sm text-[#7b6b99]">
+                  {row.quoteId}
+                </TableCell>
 
-              {/* NAME COLUMN – hotel/guide/hotspot/activity/vehicle label
-                  For now we use row.hotelName; backend should map each component's label into this field. */}
-              <TableCell className="text-sm text-[#4a4260]">
-                {row.hotelName}
-              </TableCell>
+                <TableCell>
+                  <Button
+                    className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => handleOpenPayNow(row)}
+                    disabled={row.status !== "due" || row.payable <= 0}
+                  >
+                    {row.status === "paid" ? "Paid" : "Pay Now"}
+                  </Button>
+                </TableCell>
 
-              {/* AMOUNT / PAYOUT / PAYABLE */}
-              <TableCell className="text-sm text-right text-[#4a4260]">
-                {formatINR(row.amount)}
-              </TableCell>
-              <TableCell className="text-sm text-right text-[#4a4260]">
-                {formatINR(row.payout)}
-              </TableCell>
-              <TableCell className="text-sm text-right text-[#4a4260]">
-                {formatINR(row.payable)}
-              </TableCell>
-            </TableRow>
-          ))}
+                <TableCell className="text-sm text-[#4a4260] capitalize">
+                  {row.componentType}
+                </TableCell>
+
+                <TableCell className="text-sm text-[#4a4260]">
+                  {row.hotelName}
+                </TableCell>
+
+                <TableCell className="text-sm text-[#4a4260]">
+                  {row.agent || "-"}
+                </TableCell>
+
+                <TableCell className="text-sm text-[#4a4260]">
+                  {row.startDate || "-"}
+                </TableCell>
+
+                <TableCell className="text-sm text-[#4a4260]">
+                  {row.endDate || "-"}
+                </TableCell>
+
+                <TableCell className="text-sm text-[#4a4260]">
+                  {row.routeDate || "-"}
+                </TableCell>
+
+                <TableCell className="text-sm text-right text-[#4a4260]">
+                  {formatINR(row.amount)}
+                </TableCell>
+                <TableCell className="text-sm text-right text-[#4a4260]">
+                  {formatINR(row.payout)}
+                </TableCell>
+                <TableCell className="text-sm text-right text-[#4a4260]">
+                  {formatINR(row.payable)}
+                </TableCell>
+                <TableCell className="text-sm text-right text-[#4a4260]">
+                  {extraId ?? "-"}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </>
     );
   };
 
-  // infinite scroll
+  // INFINITE SCROLL
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -359,9 +567,6 @@ export const AccountsManager: React.FC = () => {
     setAgent("");
   };
 
-  // -------------------------------------------------
-  // PAY NOW HANDLERS (now using PayNowModal + /pay endpoint)
-  // -------------------------------------------------
   const handleOpenPayNow = (row: AccountsRow) => {
     setSelectedRow(row);
     setPayNowOpen(true);
@@ -373,11 +578,9 @@ export const AccountsManager: React.FC = () => {
   };
 
   const handlePaySuccess = async () => {
-    // close modal
     setPayNowOpen(false);
     setSelectedRow(null);
 
-    // reload list + summary with same filters
     try {
       setLoading(true);
       const filters: AccountsFilters = {
@@ -444,12 +647,12 @@ export const AccountsManager: React.FC = () => {
         </button>
       </div>
 
-      {/* FILTER BAR (styled like LatestItinerary) */}
+      {/* FILTER BAR */}
       <Card className="shadow-none border-none mb-4 bg-white/70">
         <CardContent className="pt-6 pb-5">
           <p className="text-sm font-semibold text-[#4a4260] mb-4">FILTER</p>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Quote ID with autocomplete */}
+            {/* Quote ID */}
             <div className="space-y-2 relative">
               <Label className="text-sm text-[#4a4260]">Quote ID</Label>
               <Input
@@ -505,7 +708,7 @@ export const AccountsManager: React.FC = () => {
               </Select>
             </div>
 
-            {/* From Date (calendar like LatestItinerary) */}
+            {/* From Date */}
             <div className="space-y-2">
               <Label className="text-sm text-[#4a4260]">From Date</Label>
               <Popover>
@@ -535,7 +738,7 @@ export const AccountsManager: React.FC = () => {
               </Popover>
             </div>
 
-            {/* To Date (calendar like LatestItinerary) */}
+            {/* To Date */}
             <div className="space-y-2">
               <Label className="text-sm text-[#4a4260]">To Date</Label>
               <Popover>
@@ -570,7 +773,6 @@ export const AccountsManager: React.FC = () => {
               <Label className="text-sm text-[#4a4260]">Agent</Label>
               <div className="flex gap-2">
                 <Select
-                  // use "__all" sentinel in UI; "" in state == ALL
                   value={agent || "__all"}
                   onValueChange={(v) => {
                     if (v === "__all") {
@@ -605,7 +807,7 @@ export const AccountsManager: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* SUMMARY CARDS */}
+            {/* SUMMARY CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-5">
         <div className="bg-white rounded-md shadow-sm py-4 px-5">
           <p className="text-sm text-[#8a7da5] mb-1">Total Billed</p>
@@ -638,7 +840,7 @@ export const AccountsManager: React.FC = () => {
           </p>
         </div>
         <div className="bg-white rounded-md shadow-sm py-4 px-5">
-          <p className="text-sm text-[#8a7da5] mb-1">Total Profit </p>
+          <p className="text-sm text-[#8a7da5] mb-1">Total Profit</p>
           <p className="text-xl font-semibold text-[#10a037]">
             {formatINR(totalProfit)}
           </p>
@@ -646,7 +848,7 @@ export const AccountsManager: React.FC = () => {
       </div>
 
       {/* LIST CARD */}
-      <Card className="shadow-none border-none bg-white/70">
+      <Card className="shadow-none border-none bg-white">
         <CardContent className="pt-6 pb-0">
           <div className="flex flex-col md:flex-row justify-between gap-4 mb-4">
             <p className="text-sm font-semibold text-[#4a4260]">
@@ -670,19 +872,21 @@ export const AccountsManager: React.FC = () => {
           </div>
         </CardContent>
 
-        {/* SCROLL TABLE – vertical + horizontal */}
+        {/* SCROLL TABLE */}
         <div
           ref={scrollRef}
           className="max-h-[460px] overflow-y-auto overflow-x-auto border-t border-[#f3e0ff]"
         >
-          {/* min-w-[1400px] forces horizontal scroll so all columns are visible */}
-          <Table id="all_accountsmanager_list" className="min-w-[1400px]">
-            {/* Initial loading state (before any rows are visible) */}
+          <Table
+            id="all_accountsmanager_list"
+            className="min-w-[2000px]" // wide enough for 15 hotel columns
+          >
+            {/* Initial loading state */}
             {loading && visibleRows.length === 0 && (
               <TableBody>
                 <TableRow>
                   <TableCell
-                    colSpan={12}
+                    colSpan={15}
                     className="text-center py-6 text-xs"
                   >
                     Loading records…
@@ -696,7 +900,7 @@ export const AccountsManager: React.FC = () => {
               <TableBody>
                 <TableRow>
                   <TableCell
-                    colSpan={12}
+                    colSpan={15}
                     className="text-center py-6 text-xs"
                   >
                     No records found
@@ -705,7 +909,7 @@ export const AccountsManager: React.FC = () => {
               </TableBody>
             )}
 
-            {/* Sections by component type (Guide / Hotspot / Activity / Hotel / Vehicle) */}
+            {/* Sections by component type */}
             {!loading && visibleRows.length > 0 && (
               <>
                 {(componentType === "all"
@@ -717,12 +921,12 @@ export const AccountsManager: React.FC = () => {
                   renderSection(section.type, section.label),
                 )}
 
-                {/* Bottom loader / completion row – similar to PHP footer */}
+                {/* Bottom loader / completion row */}
                 <TableBody>
                   {visibleCount < filteredRows.length ? (
                     <TableRow>
                       <TableCell
-                        colSpan={12}
+                        colSpan={15}
                         className="text-center py-4 text-xs"
                       >
                         Loading more…
@@ -731,7 +935,7 @@ export const AccountsManager: React.FC = () => {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={12}
+                        colSpan={15}
                         className="text-center py-4 text-xs"
                       >
                         All rows loaded
@@ -777,7 +981,7 @@ export const AccountsManager: React.FC = () => {
         </div>
       </Card>
 
-      {/* PAY NOW MODAL (new component) */}
+      {/* PAY NOW MODAL */}
       {payNowOpen && selectedRow && (
         <PayNowModal
           row={selectedRow}
@@ -788,9 +992,8 @@ export const AccountsManager: React.FC = () => {
       )}
     </div>
   );
-};
+}
 
-// small helper to match green style only at end
 function cnProfit(allLoaded: boolean, _value: number) {
   if (allLoaded) {
     return "text-[#10a037] font-semibold whitespace-nowrap";
