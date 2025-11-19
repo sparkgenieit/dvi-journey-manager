@@ -1,5 +1,5 @@
 // FILE: src/services/hotels.ts
-import { api } from "@/lib/api";
+import { api,RAW_API_BASE } from "@/lib/api";
 
 /**
  * UI-facing types stay the same.
@@ -371,7 +371,7 @@ async function apiGetFirstInternal(paths: string[]) {
 const API_BASE_URL = (import.meta as any)?.env?.VITE_API_DVI_BASE_URL ?? "";
 
 export const hotelFormApi = {
-  API_BASE_URL,
+  API_BASE_URL:RAW_API_BASE,
   // must be a function returning string to satisfy ApiCtx
     token: () => localStorage.getItem("token") ?? "",
   apiGet: (path: string) => api(stripApiPrefix(path)),

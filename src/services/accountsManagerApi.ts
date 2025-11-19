@@ -1,4 +1,7 @@
-const BASE_URL = "http://localhost:4006/api/v1/accounts-manager";
+import { API_BASE_URL } from "@/lib/api";
+
+
+const BASE_URL = `${API_BASE_URL}/accounts-manager`;
 
 export type AccountsStatus = "all" | "paid" | "due";
 export type AccountsComponentType =
