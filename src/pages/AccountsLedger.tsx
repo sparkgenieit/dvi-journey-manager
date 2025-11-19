@@ -1,4 +1,5 @@
-// src/pages/AccountsLedger.tsx
+// FILE: src/pages/AccountsLedger.tsx
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Calendar as CalendarIcon } from "lucide-react";
 
@@ -16,6 +17,14 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 
+// 🔌 Ledger service + types
+import {
+  fetchLedgerFromApi,
+  fetchLedgerFilterOptions,
+  ComponentType,
+  LedgerRow,
+} from "@/services/accountsLedgerApi";
+
 const formatINR = (v: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -23,98 +32,9 @@ const formatINR = (v: number) =>
     minimumFractionDigits: 2,
   }).format(v);
 
-type ComponentType =
-  | "all"
-  | "guide"
-  | "hotspot"
-  | "activity"
-  | "hotel"
-  | "vehicle"
-  | "agent";
-
-type LedgerRow = {
-  id: number;
-  bookingId: string;
-  componentType: ComponentType;
-  agentName: string;
-  branch?: string;
-  vehicle?: string;
-  vehicleVendor?: string;
-  guideName?: string;
-  hotspotName?: string;
-  activityName?: string;
-  hotelName?: string;
-  totalBilled: number;
-  totalReceived: number;
-  totalReceivable: number;
-  totalPaid: number;
-  totalBalance: number;
-  guest: string;
-  arrival: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string; // YYYY-MM-DD
-};
-
-const GUIDE_NAMES = [
-  "All",
-  "John Guide",
-  "Maria Guide",
-  "Local Guide 1",
-  "Local Guide 2",
-];
-const HOTSPOT_NAMES = [
-  "All",
-  "Kapaleeshwarar Temple",
-  "Marina Beach",
-  "Fort St.George Museum",
-  "Government Museum Chennai",
-  "Santhome Cathedral",
-];
-const ACTIVITY_NAMES = [
-  "All",
-  "Boating @ Alleppey",
-  "Jungle Trek",
-  "City Tour",
-  "Kovalam Beach Day",
-];
-const HOTEL_NAMES = [
-  "All",
-  "HOTEL ULTIMATE",
-  "GEM PARK",
-  "STERLING OOTY FERN HILL",
-  "STERLING OOTY ELK HILL",
-  "Yantra Resort by Spree Hotels",
-];
-const VEHICLE_BRANCHES = ["All", "Chennai", "Trichy", "Cochin", "Bangalore"];
-const VEHICLE_NAMES = [
-  "All",
-  "Innova",
-  "Tempo Traveller 12",
-  "Sedan",
-  "Etios",
-  "Crysta",
-];
-const VEHICLE_VENDORS = [
-  "All",
-  "DVI-MYSORE",
-  "DVI-TIRUPATI",
-  "DVI-TRICHY",
-  "DVI-COCHIN",
-  "DVI-CHENNAI",
-  "DVI-BANGALORE",
-];
-const AGENTS = [
-  "All",
-  "sandeep - NA",
-  "Ariyappan - Ariya Company",
-  "Uma - NA",
-  "Sunil - NA",
-  "Dvi - NA",
-];
-
 // ──────────────────────────────────────────────
 // small utils
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────-
 function formatToDDMMYYYY(date: Date | undefined) {
   if (!date) return "";
   const d = date.getDate().toString().padStart(2, "0");
@@ -132,212 +52,8 @@ function ddmmyyyyToIso(d: string): string {
 }
 
 // ──────────────────────────────────────────────
-// 🔌 MOCK API  (same behaviour, but now dates come as DD/MM/YYYY from UI)
-// ──────────────────────────────────────────────
-async function fetchLedgerFromApi(params: {
-  quoteId: string;
-  componentType: ComponentType;
-  fromDate: string; // DD/MM/YYYY
-  toDate: string; // DD/MM/YYYY
-  guideName: string;
-  hotspotName: string;
-  activityName: string;
-  hotelName: string;
-  branch: string;
-  vehicle: string;
-  vehicleVendor: string;
-  agentName: string;
-}): Promise<LedgerRow[]> {
-  await new Promise((r) => setTimeout(r, 120));
-
-  // convert to ISO for compare
-  const fromIso = ddmmyyyyToIso(params.fromDate);
-  const toIso = ddmmyyyyToIso(params.toDate);
-
-  const result: LedgerRow[] = [];
-
-  // 1) agent component
-  if (params.componentType === "agent") {
-    const bigCount = 200;
-    for (let i = 1; i <= bigCount; i++) {
-      const billed = 270000 + (i % 7) * 3500;
-      const received = Math.floor(billed * 0.3) + (i % 5) * 1200;
-      const receivable = billed - received;
-      result.push({
-        id: i,
-        bookingId: "DVI09202555",
-        componentType: "agent",
-        agentName: "sandeep - NA",
-        totalBilled: billed,
-        totalReceived: received,
-        totalReceivable: receivable,
-        totalPaid: 0,
-        totalBalance: receivable,
-        guest: i % 2 === 0 ? "Mr. Ramesh & Family" : "Corporate Guest",
-        arrival: i % 3 === 0 ? "Chennai Airport" : "Cochin Airport",
-        startDate: "2025-10-03",
-        endDate: "2025-11-02",
-      });
-    }
-
-    const lightAgents = [
-      "Ariyappan - Ariya Company",
-      "Uma - NA",
-      "Sunil - NA",
-      "Dvi - NA",
-    ];
-    let id = bigCount + 1;
-    for (const a of lightAgents) {
-      const count = a === "Ariyappan - Ariya Company" ? 30 : 5;
-      for (let j = 0; j < count; j++) {
-        const billed = 180000 + (j % 5) * 3500;
-        const received = Math.floor(billed * 0.4);
-        const receivable = billed - received;
-        result.push({
-          id: id++,
-          bookingId: "DVI09202555",
-          componentType: "agent",
-          agentName: a,
-          totalBilled: billed,
-          totalReceived: received,
-          totalReceivable: receivable,
-          totalPaid: 0,
-          totalBalance: receivable,
-          guest: "Guest / " + a,
-          arrival: "Chennai Airport",
-          startDate: "2025-10-10",
-          endDate: "2025-10-15",
-        });
-      }
-    }
-  }
-
-  // 2) vehicle component
-  if (params.componentType === "vehicle") {
-    let id = 1;
-    const branches = ["Chennai", "Cochin", "Bangalore", "Trichy"];
-    const vehicles = ["Innova", "Sedan", "Crysta", "Tempo Traveller 12"];
-    const vendors = [
-      "DVI-CHENNAI",
-      "DVI-COCHIN",
-      "DVI-BANGALORE",
-      "DVI-TRICHY",
-    ];
-    for (let i = 0; i < 60; i++) {
-      const b = branches[i % branches.length];
-      const v = vehicles[i % vehicles.length];
-      const vendor = vendors[i % vendors.length];
-      const billed = 5000 + (i % 5) * 1500;
-      const received = Math.floor(billed * 0.6);
-      const receivable = billed - received;
-      result.push({
-        id: id++,
-        bookingId: "DVI02025156", // default you wanted
-        componentType: "vehicle",
-        agentName: "sandeep - NA",
-        branch: b,
-        vehicle: v,
-        vehicleVendor: vendor,
-        totalBilled: billed,
-        totalReceived: received,
-        totalReceivable: receivable,
-        totalPaid: 0,
-        totalBalance: receivable,
-        guest: "Vehicle Guest",
-        arrival: "Cochin Airport",
-        startDate: "2025-10-01",
-        endDate: "2025-10-03",
-      });
-    }
-  }
-
-  // 3) small sets for other components
-  if (params.componentType === "guide") {
-    result.push({
-      id: 1,
-      bookingId: "DVI02025156",
-      componentType: "guide",
-      agentName: "sandeep - NA",
-      guideName: "John Guide",
-      totalBilled: 8000,
-      totalReceived: 5000,
-      totalReceivable: 3000,
-      totalPaid: 0,
-      totalBalance: 3000,
-      guest: "City Guest",
-      arrival: "Chennai Airport",
-      startDate: "2025-10-12",
-      endDate: "2025-10-13",
-    });
-  }
-  if (params.componentType === "hotel") {
-    result.push({
-      id: 1,
-      bookingId: "DVI02025156",
-      componentType: "hotel",
-      agentName: "sandeep - NA",
-      hotelName: "HOTEL ULTIMATE",
-      totalBilled: 25000,
-      totalReceived: 20000,
-      totalReceivable: 5000,
-      totalPaid: 0,
-      totalBalance: 5000,
-      guest: "Hotel Guest",
-      arrival: "Cochin Airport",
-      startDate: "2025-10-05",
-      endDate: "2025-10-08",
-    });
-  }
-
-  // final filter like real API
-  return result.filter((row) => {
-    if (params.componentType !== "all" && row.componentType !== params.componentType) {
-      return false;
-    }
-
-    if (params.quoteId && !row.bookingId.includes(params.quoteId)) {
-      return false;
-    }
-
-    if (params.componentType === "agent") {
-      if (params.agentName !== "All" && row.agentName !== params.agentName) {
-        return false;
-      }
-    }
-
-    if (params.componentType === "vehicle") {
-      if (params.branch !== "All" && row.branch !== params.branch) return false;
-      if (params.vehicle !== "All" && row.vehicle !== params.vehicle) return false;
-      if (params.vehicleVendor !== "All" && row.vehicleVendor !== params.vehicleVendor)
-        return false;
-    }
-
-    if (params.componentType === "guide") {
-      if (params.guideName !== "All" && row.guideName !== params.guideName) return false;
-    }
-    if (params.componentType === "hotspot") {
-      if (params.hotspotName !== "All" && row.hotspotName !== params.hotspotName)
-        return false;
-    }
-    if (params.componentType === "activity") {
-      if (params.activityName !== "All" && row.activityName !== params.activityName)
-        return false;
-    }
-    if (params.componentType === "hotel") {
-      if (params.hotelName !== "All" && row.hotelName !== params.hotelName) return false;
-    }
-
-    // date
-    if (fromIso && row.startDate < fromIso) return false;
-    if (toIso && row.endDate > toIso) return false;
-
-    return true;
-  });
-}
-
-// ──────────────────────────────────────────────
 // COMPONENT
-// ──────────────────────────────────────────────
+// ─────────────────────────────────────────────-
 export const AccountsLedger: React.FC = () => {
   // 👇 now all typed
   const [quoteId, setQuoteId] = useState<string>("");
@@ -354,7 +70,7 @@ export const AccountsLedger: React.FC = () => {
   const [fromDate, setFromDate] = useState<string>("03/10/2025");
   const [toDate, setToDate] = useState<string>("02/11/2025");
 
-  // conditional fields
+  // conditional fields (selected values)
   const [guideName, setGuideName] = useState<string>("All");
   const [hotspotName, setHotspotName] = useState<string>("All");
   const [activityName, setActivityName] = useState<string>("All");
@@ -366,7 +82,17 @@ export const AccountsLedger: React.FC = () => {
   const [vehicleVendor, setVehicleVendor] = useState<string>("All");
 
   // agent filter
-  const [agentName, setAgentName] = useState<string>("sandeep - NA");
+  const [agentName, setAgentName] = useState<string>("All");
+
+  // DROPDOWN OPTIONS (dynamic, from backend)
+  const [guideOptions, setGuideOptions] = useState<string[]>(["All"]);
+  const [hotspotOptions, setHotspotOptions] = useState<string[]>(["All"]);
+  const [activityOptions, setActivityOptions] = useState<string[]>(["All"]);
+  const [hotelOptions, setHotelOptions] = useState<string[]>(["All"]);
+  const [branchOptions, setBranchOptions] = useState<string[]>(["All"]);
+  const [vehicleOptions, setVehicleOptions] = useState<string[]>(["All"]);
+  const [vendorOptions, setVendorOptions] = useState<string[]>(["All"]);
+  const [agentOptions, setAgentOptions] = useState<string[]>(["All"]);
 
   // fetched rows
   const [rows, setRows] = useState<LedgerRow[]>([]);
@@ -376,29 +102,39 @@ export const AccountsLedger: React.FC = () => {
   const [visibleCount, setVisibleCount] = useState<number>(25);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // fetch when filters change
+  // fetch ledger rows when filters change
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const data = await fetchLedgerFromApi({
-        quoteId,
-        componentType,
-        fromDate,
-        toDate,
-        guideName,
-        hotspotName,
-        activityName,
-        hotelName,
-        branch,
-        vehicle,
-        vehicleVendor,
-        agentName,
-      });
-      if (!cancelled) {
-        setRows(data);
-        setVisibleCount(25);
-        setLoading(false);
+      try {
+        const data = await fetchLedgerFromApi({
+          quoteId,
+          componentType,
+          fromDate,
+          toDate,
+          guideName,
+          hotspotName,
+          activityName,
+          hotelName,
+          branch,
+          vehicle,
+          vehicleVendor,
+          agentName,
+        });
+        if (!cancelled) {
+          setRows(data);
+          setVisibleCount(25);
+        }
+      } catch (err) {
+        console.error("Error fetching ledger:", err);
+        if (!cancelled) {
+          setRows([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
     return () => {
@@ -418,6 +154,47 @@ export const AccountsLedger: React.FC = () => {
     vehicleVendor,
     agentName,
   ]);
+
+  // fetch dynamic dropdown options (like PHP: based on current filters)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const opts = await fetchLedgerFilterOptions({
+          quoteId,
+          componentType,
+          fromDate,
+          toDate,
+        });
+        if (cancelled) return;
+
+        setGuideOptions(opts.guides);
+        setHotspotOptions(opts.hotspots);
+        setActivityOptions(opts.activities);
+        setHotelOptions(opts.hotels);
+        setBranchOptions(opts.vehicleBranches);
+        setVehicleOptions(opts.vehicles);
+        setVendorOptions(opts.vendors);
+        setAgentOptions(opts.agents);
+
+        // Ensure selected values always exist
+        if (!opts.agents.includes(agentName)) setAgentName("All");
+        if (!opts.guides.includes(guideName)) setGuideName("All");
+        if (!opts.hotspots.includes(hotspotName)) setHotspotName("All");
+        if (!opts.activities.includes(activityName)) setActivityName("All");
+        if (!opts.hotels.includes(hotelName)) setHotelName("All");
+        if (!opts.vehicleBranches.includes(branch)) setBranch("All");
+        if (!opts.vehicles.includes(vehicle)) setVehicle("All");
+        if (!opts.vendors.includes(vehicleVendor)) setVehicleVendor("All");
+      } catch (err) {
+        console.error("Error fetching ledger filter options:", err);
+        // keep existing options if request fails
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [quoteId, componentType, fromDate, toDate]);
 
   const totals = useMemo(() => {
     const billed = rows.reduce((s, r) => s + r.totalBilled, 0);
@@ -472,7 +249,7 @@ export const AccountsLedger: React.FC = () => {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                {VEHICLE_VENDORS.map((v) => (
+                {vendorOptions.map((v) => (
                   <SelectItem key={v} value={v}>
                     {v}
                   </SelectItem>
@@ -490,7 +267,7 @@ export const AccountsLedger: React.FC = () => {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                {AGENTS.map((a) => (
+                {agentOptions.map((a) => (
                   <SelectItem key={a} value={a}>
                     {a}
                   </SelectItem>
@@ -508,7 +285,7 @@ export const AccountsLedger: React.FC = () => {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                {GUIDE_NAMES.map((g) => (
+                {guideOptions.map((g) => (
                   <SelectItem key={g} value={g}>
                     {g}
                   </SelectItem>
@@ -526,7 +303,7 @@ export const AccountsLedger: React.FC = () => {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                {HOTSPOT_NAMES.map((h) => (
+                {hotspotOptions.map((h) => (
                   <SelectItem key={h} value={h}>
                     {h}
                   </SelectItem>
@@ -544,7 +321,7 @@ export const AccountsLedger: React.FC = () => {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                {ACTIVITY_NAMES.map((h) => (
+                {activityOptions.map((h) => (
                   <SelectItem key={h} value={h}>
                     {h}
                   </SelectItem>
@@ -562,7 +339,7 @@ export const AccountsLedger: React.FC = () => {
                 <SelectValue placeholder="All" />
               </SelectTrigger>
               <SelectContent>
-                {HOTEL_NAMES.map((h) => (
+                {hotelOptions.map((h) => (
                   <SelectItem key={h} value={h}>
                     {h}
                   </SelectItem>
@@ -578,7 +355,6 @@ export const AccountsLedger: React.FC = () => {
 
   return (
     <div className="w-full min-h-screen bg-[#fbeef8] p-4 md:p-6">
-     
       {/* FILTER CARD */}
       <div className="bg-[#fefefe]/40 rounded-xl border border-[#f6dfff] mb-5">
         <div className="px-6 py-5">
@@ -619,7 +395,7 @@ export const AccountsLedger: React.FC = () => {
               </Select>
             </div>
 
-            {/* From Date (same style as AccountsManager) */}
+            {/* From Date */}
             <div className="space-y-2">
               <Label className="text-sm text-[#4a4260]">From Date</Label>
               <Popover>
@@ -649,7 +425,7 @@ export const AccountsLedger: React.FC = () => {
               </Popover>
             </div>
 
-            {/* To Date (same style) */}
+            {/* To Date */}
             <div className="space-y-2">
               <Label className="text-sm text-[#4a4260]">To Date</Label>
               <Popover>
@@ -694,7 +470,7 @@ export const AccountsLedger: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {VEHICLE_BRANCHES.map((b) => (
+                    {branchOptions.map((b) => (
                       <SelectItem key={b} value={b}>
                         {b}
                       </SelectItem>
@@ -711,9 +487,9 @@ export const AccountsLedger: React.FC = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {VEHICLE_NAMES.map((v) => (
-                      <SelectItem key={v} value={v}>
-                        {v}
+                    {vehicleOptions.map((val) => (
+                      <SelectItem key={val} value={val}>
+                        {val}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -786,7 +562,15 @@ export const AccountsLedger: React.FC = () => {
       {/* LIST */}
       <div className="bg-white/70 rounded-xl border border-[#f6dfff]">
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <p className="text-sm font-semibold text-[#4a4260]">List of Agent</p>
+          <p className="text-sm font-semibold text-[#4a4260]">
+            {componentType === "agent" && "List of Agent"}
+            {componentType === "vehicle" && "List of Vehicle"}
+            {componentType === "hotel" && "List of Hotel"}
+            {componentType === "guide" && "List of Guide"}
+            {componentType === "hotspot" && "List of Hotspot"}
+            {componentType === "activity" && "List of Activity"}
+            {componentType === "all" && "List of All Components"}
+          </p>
           <Button className="h-9 px-4 gap-2 rounded-md bg-[#e5fff1] border border-[#b7f7d9] text-[#0f9c34] text-sm flex items-center">
             <Download className="h-4 w-4" />
             Export
