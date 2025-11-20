@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CarIcon, Star, Upload } from "lucide-react";
+import { ArrowLeft, CarIcon, Star, Upload, Clock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +70,14 @@ type DailyMomentListRowForHeader = {
   driverMobile: string;
   travelExpert: string;
   agent: string;
+};
+
+/**
+ * Route hotspot row (for the DAY timeline cards).
+ * Keep this shape loose so we don't break if backend DTO changes:
+ */
+type RouteHotspotRow = {
+  [key: string]: any;
 };
 
 /* ========================================================================
@@ -153,78 +161,45 @@ async function fetchGuideRatings(
   return [];
 }
 
-async function upsertDriverRating(payload: {
-  itineraryPlanId: number;
-  itineraryRouteId?: number;
-  customerRating: number;
-  feedbackDescription: string;
-}): Promise<void> {
-  const body = {
-    itinerary_plan_ID: payload.itineraryPlanId,
-    itinerary_route_ID: payload.itineraryRouteId ?? 0,
-    customer_rating: payload.customerRating,
-    feedback_description: payload.feedbackDescription,
-  };
+/**
+ * Route hotspots for the DAY cards (Visited / Not-Visited).
+ * GET /daily-moment-tracker/route-hotspots?itineraryPlanId=&itineraryRouteId=
+ */
+async function fetchRouteHotspots(
+  itineraryPlanId: number,
+  itineraryRouteId?: number
+): Promise<RouteHotspotRow[]> {
+  const params = new URLSearchParams();
+  params.set("itineraryPlanId", String(itineraryPlanId));
+  if (itineraryRouteId && itineraryRouteId > 0) {
+    params.set("itineraryRouteId", String(itineraryRouteId));
+  }
 
-  const url = `${API_BASE_URL}/api/v1/daily-moment-tracker/driver-ratings`;
+  const url = `${API_BASE_URL}/api/v1/daily-moment-tracker/route-hotspots?${params.toString()}`;
 
   const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(body),
+    headers: getAuthHeaders(),
   });
 
   if (!res.ok) {
     console.error(
-      "Failed to save driver rating",
+      "Failed to load route hotspots",
       res.status,
       await safeReadText(res)
     );
-    throw new Error("Failed to save driver rating");
+    throw new Error("Failed to load route hotspots");
   }
-}
 
-async function upsertGuideRating(payload: {
-  itineraryPlanId: number;
-  itineraryRouteId?: number;
-  guideRating: number;
-  guideDescription: string;
-}): Promise<void> {
-  const body = {
-    itinerary_plan_ID: payload.itineraryPlanId,
-    itinerary_route_ID: payload.itineraryRouteId ?? 0,
-    guide_rating: payload.guideRating,
-    guide_description: payload.guideDescription,
-  };
-
-  const url = `${API_BASE_URL}/api/v1/daily-moment-tracker/guide-ratings`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    console.error(
-      "Failed to save guide rating",
-      res.status,
-      await safeReadText(res)
-    );
-    throw new Error("Failed to save guide rating");
-  }
+  const json = await res.json();
+  if (Array.isArray(json)) return json as RouteHotspotRow[];
+  if (json && Array.isArray(json.data)) return json.data as RouteHotspotRow[];
+  return [];
 }
 
 /**
  * Upload API stub
  */
-async function uploadDailyMomentImageStub(_payload: {
+async function uploadDailyMomentImageStub(payload: {
   itineraryPlanId: number;
   itineraryRouteId?: number;
   file: File;
@@ -239,6 +214,12 @@ async function uploadDailyMomentImageStub(_payload: {
 function formatAmount(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return "0.00";
   return Number(value).toFixed(2);
+}
+
+function formatRating(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return "--";
+  const formatted = Number(value).toFixed(1);
+  return formatted.endsWith(".0") ? formatted.slice(0, -2) : formatted;
 }
 
 /* ========================================================================
@@ -293,6 +274,7 @@ export const DailyMomentDayView: React.FC = () => {
   const [charges, setCharges] = useState<DailyMomentCharge[]>([]);
   const [driverRatings, setDriverRatings] = useState<DriverRatingRow[]>([]);
   const [guideRatings, setGuideRatings] = useState<GuideRatingRow[]>([]);
+  const [hotspots, setHotspots] = useState<RouteHotspotRow[]>([]);
 
   // dialogs
   const [chargeDialogOpen, setChargeDialogOpen] = useState(false);
@@ -337,17 +319,25 @@ export const DailyMomentDayView: React.FC = () => {
             ? fetchDailyMomentCharges(itineraryPlanId, itineraryRouteId)
             : Promise.resolve<DailyMomentCharge[]>([]);
 
-        const [chargesRes, driverRes, guideRes] = await Promise.all([
-          chargesPromise,
-          fetchDriverRatings(itineraryPlanId, itineraryRouteId || undefined),
-          fetchGuideRatings(itineraryPlanId, itineraryRouteId || undefined),
-        ]);
+        const hotspotsPromise: Promise<RouteHotspotRow[]> =
+          itineraryRouteId && itineraryRouteId > 0
+            ? fetchRouteHotspots(itineraryPlanId, itineraryRouteId)
+            : Promise.resolve<RouteHotspotRow[]>([]);
+
+        const [chargesRes, driverRes, guideRes, hotspotsRes] =
+          await Promise.all([
+            chargesPromise,
+            fetchDriverRatings(itineraryPlanId, itineraryRouteId || undefined),
+            fetchGuideRatings(itineraryPlanId, itineraryRouteId || undefined),
+            hotspotsPromise,
+          ]);
 
         if (cancelled) return;
 
         setCharges(chargesRes);
         setDriverRatings(driverRes);
         setGuideRatings(guideRes);
+        setHotspots(hotspotsRes);
       } catch (e: any) {
         console.error(e);
         if (!cancelled) {
@@ -694,14 +684,14 @@ export const DailyMomentDayView: React.FC = () => {
               >
                 + Upload Image
               </Button>
-                <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-8 px-4 rounded-full bg-white text-xs font-semibold text-[#7c3aed] border border-[#d9c3ff] hover:bg-[#f3e8ff]"
-                    onClick={handleOpenChargeDialog}
-                    >
-                    + Add Charge
-                </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-4 rounded-full bg-white text-xs font-semibold text-[#7c3aed] border border-[#d9c3ff] hover:bg-[#f3e8ff]"
+                onClick={handleOpenChargeDialog}
+              >
+                + Add Charge
+              </Button>
             </div>
           </div>
 
@@ -725,17 +715,297 @@ export const DailyMomentDayView: React.FC = () => {
               <span className="font-bold">0KM</span>
             </p>
           </div>
+
+          {/* DAY HOTSPOT CARDS (Visited / Not-Visited) */}
+          <div className="mt-4 space-y-3">
+            {hotspots.length === 0 ? (
+              <div className="rounded-xl bg-[#fdf2ff] border border-[#f5d7ff] px-4 py-3 text-xs text-[#7b6f9a]">
+                No route hotspots defined for this day.
+              </div>
+            ) : (
+              hotspots.map((spot, index) => {
+                const title =
+                  spot.activity_title ||
+                  spot.activityName ||
+                  spot.location_name ||
+                  "N/A";
+
+                const timeFrom =
+                  spot.start_time ||
+                  spot.activity_from_time ||
+                  spot.fromTime ||
+                  "";
+                const timeTo =
+                  spot.end_time ||
+                  spot.activity_to_time ||
+                  spot.toTime ||
+                  "";
+                const durationLabel =
+                  spot.duration_label ||
+                  spot.duration ||
+                  spot.totalDuration ||
+                  "";
+
+                const visitedFlag =
+                  spot.visited === 1 ||
+                  spot.visit_status === 1 ||
+                  spot.is_visited === 1 ||
+                  spot.visited === true;
+
+                return (
+                  <div
+                    key={spot.id ?? `${itineraryPlanId}-${itineraryRouteId}-${index}`}
+                    className="relative bg-[#ffe9f7] rounded-xl px-4 md:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                  >
+                    {/* Left dot / index */}
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-white flex items-center justify-center text-sm font-semibold text-[#f268b7] shadow-sm">
+                        {index + 1}
+                      </div>
+                      <div className="text-xs md:text-sm text-[#4a4260]">
+                        <p className="font-semibold">{title}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-[#7b6f9a]">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            <span>
+                              {timeFrom && timeTo
+                                ? `${timeFrom} - ${timeTo}`
+                                : "N/A"}
+                            </span>
+                          </span>
+                          {durationLabel && (
+                            <span className="flex items-center gap-1">
+                              <span className="text-[13px]">⏱</span>
+                              <span>{durationLabel}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Visited / Not-Visited buttons (display only) */}
+                    <div className="flex items-center gap-2 md:gap-3">
+                      <button
+                        type="button"
+                        className={`h-8 px-4 rounded-full text-[11px] font-semibold flex items-center gap-1 border ${
+                          visitedFlag
+                            ? "bg-[#16a34a] border-[#16a34a] text-white"
+                            : "bg-white border-[#d1fadf] text-[#15803d]"
+                        }`}
+                        disabled
+                      >
+                        ✓ Visited
+                      </button>
+                      <button
+                        type="button"
+                        className={`h-8 px-4 rounded-full text-[11px] font-semibold flex items-center gap-1 border ${
+                          visitedFlag
+                            ? "bg-white border-[#fecaca] text-[#b91c1c]"
+                            : "bg-[#f97373] border-[#f97373] text-white"
+                        }`}
+                        disabled
+                      >
+                        ✕ Not-Visited
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* (Cards removed as requested) */}
+      {/* SUMMARY + TABLES SECTION (Charges / Reviews) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
+        {/* CHARGES CARD */}
+        <Card className="shadow-none border border-[#f6dfff] bg-white lg:col-span-1">
+          <CardContent className="px-4 md:px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-[#4a4260]">
+                DAY WISE CHARGES
+              </p>
+              <Button
+                size="xs"
+                variant="outline"
+                className="h-7 px-3 rounded-full bg-[#fdf7ff] text-[11px] text-[#7c3aed] border border-[#ddcbff]"
+                onClick={handleOpenChargeDialog}
+              >
+                + Add Charge
+              </Button>
+            </div>
 
-      <div className="py-3 text-center text-[11px] text-[#a593c7] border-t border-[#f6dfff] mt-2">
+            {charges.length === 0 ? (
+              <p className="text-[11px] text-[#a08ac5] mt-1">
+                No extra charges added for this day.
+              </p>
+            ) : (
+              <div className="border border-[#f3e0ff] rounded-lg overflow-hidden">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-[#fbf2ff]">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-[#4a4260]">
+                        Charge Type
+                      </th>
+                      <th className="text-right px-3 py-2 text-[#4a4260]">
+                        Amount (₹)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {charges.map((charge, idx) => (
+                      <tr
+                        key={`${charge.charge_type || "charge"}-${idx}`}
+                        className="odd:bg-white even:bg-[#fff8ff]"
+                      >
+                        <td className="px-3 py-1.5 text-[#4a4260]">
+                          {charge.charge_type || "--"}
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-[#4a4260]">
+                          {formatAmount(charge.charge_amount as any)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-[#fbf2ff] border-t border-[#f3e0ff]">
+                      <td className="px-3 py-1.5 text-right font-semibold text-[#4a4260]">
+                        Total
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-semibold text-[#4a4260]">
+                        {formatAmount(
+                          charges.reduce((sum, c) => {
+                            const val = Number((c as any).charge_amount || 0);
+                            return sum + (Number.isNaN(val) ? 0 : val);
+                          }, 0)
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* DRIVER RATING CARD */}
+        <Card className="shadow-none border border-[#f6dfff] bg-white lg:col-span-1">
+          <CardContent className="px-4 md:px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-[#4a4260]">
+                DRIVER REVIEW
+              </p>
+              <Button
+                size="xs"
+                className="h-7 px-3 rounded-full bg-white text-[11px] text-[#f68c2b] border border-[#ffd4a8] shadow-none"
+                onClick={handleOpenDriverDialog}
+              >
+                ★ Add Review
+              </Button>
+            </div>
+
+            {driverRatings.length === 0 ? (
+              <p className="text-[11px] text-[#a08ac5] mt-1">
+                No driver review added for this day.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {driverRatings.map((row) => (
+                  <div
+                    key={row.count}
+                    className="border border-[#f3e0ff] rounded-lg px-3 py-2 bg-[#fff8ff]"
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-[#4a4260]">
+                      <span className="font-semibold">
+                        {row.location_name || "--"}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Star
+                          className="h-3 w-3 text-[#ffc107]"
+                          fill="#ffc107"
+                        />
+                        <span className="font-semibold">
+                          {formatRating(row.customer_rating as any)}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#7b6f9a] mt-1">
+                      Date: {row.route_date || "--"}
+                    </p>
+                    {row.feedback_description && (
+                      <p className="text-[11px] text-[#4a4260] mt-1">
+                        {row.feedback_description}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* GUIDE RATING CARD */}
+        <Card className="shadow-none border border-[#f6dfff] bg-white lg:col-span-1">
+          <CardContent className="px-4 md:px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-[#4a4260]">
+                GUIDE REVIEW
+              </p>
+              <Button
+                size="xs"
+                className="h-7 px-3 rounded-full bg-white text-[11px] text-[#d94a8c] border border-[#ffc4e3] shadow-none"
+                onClick={handleOpenGuideDialog}
+              >
+                ★ Add Review
+              </Button>
+            </div>
+
+            {guideRatings.length === 0 ? (
+              <p className="text-[11px] text-[#a08ac5] mt-1">
+                No guide review added for this day.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {guideRatings.map((row) => (
+                  <div
+                    key={row.count}
+                    className="border border-[#f3e0ff] rounded-lg px-3 py-2 bg-[#fff8ff]"
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-[#4a4260]">
+                      <span className="font-semibold">
+                        {row.location_name || "--"}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Star
+                          className="h-3 w-3 text-[#ffc107]"
+                          fill="#ffc107"
+                        />
+                        <span className="font-semibold">
+                          {formatRating(row.guide_rating as any)}
+                        </span>
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#7b6f9a] mt-1">
+                      Date: {row.route_date || "--"}
+                    </p>
+                    {row.guide_description && (
+                      <p className="text-[11px] text-[#4a4260] mt-1">
+                        {row.guide_description}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="py-3 text-center text-[11px] text-[#a593c7] border-t border-[#f6dfff] mt-4">
         DVI Holidays @ 2025
       </div>
 
-      {/* MODALS (unchanged) */}
-
+      {/* MODALS: Add Charge, Driver, Guide, Upload – unchanged from previous */}
       {/* Add Charge Dialog */}
       <Dialog open={chargeDialogOpen} onOpenChange={setChargeDialogOpen}>
         <DialogContent className="max-w-md">
