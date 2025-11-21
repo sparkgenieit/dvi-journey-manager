@@ -1,3 +1,5 @@
+// FILE: src/App.tsx
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,13 +19,15 @@ import { MainLayout } from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
-import { AccountsManager } from "./pages/AccountsManager";
+import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";
 import NotFound from "./pages/NotFound";
-import { AccountsLedger } from "./pages/AccountsLedger";
+import { AccountsLedger } from "./pages/accounts/AccountsLedger";
 import Hotels from "./pages/Hotels";
 import Login from "./pages/Login";
 import HotelForm from "./pages/HotelForm";
+import { DailyMomentTracker } from "./pages/daily-moment-tracker/DailyMomentTracker";
+import DailyMomentDayView from "./pages/daily-moment-tracker/DailyMomentDayView";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -83,6 +87,7 @@ const App = () => (
                 </MainLayout>
               }
             />
+
             <Route
               path="/create-itinerary"
               element={
@@ -112,6 +117,34 @@ const App = () => (
               element={
                 <MainLayout>
                   <AccountsLedger />
+                </MainLayout>
+              }
+            />
+
+            {/* Daily Moment Tracker – main list */}
+            <Route
+              path="/daily-moment-tracker"
+              element={
+                <MainLayout>
+                  <DailyMomentTracker />
+                </MainLayout>
+              }
+            />
+            {/* Daily Moment Tracker – alias to match sidebar link /daily-moment */}
+            <Route
+              path="/daily-moment"
+              element={
+                <MainLayout>
+                  <DailyMomentTracker />
+                </MainLayout>
+              }
+            />
+            {/* Daily Moment Day View – opened from car icon */}
+            <Route
+              path="/daily-moment/day-view/:planId/:routeId"
+              element={
+                <MainLayout>
+                  <DailyMomentDayView />
                 </MainLayout>
               }
             />

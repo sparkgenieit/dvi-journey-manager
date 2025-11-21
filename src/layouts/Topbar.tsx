@@ -27,6 +27,7 @@ export const Topbar = ({ onMobileMenuToggle }: TopbarProps) => {
     if (path.includes("/latest-itinerary")) return "Latest Itenary";
     if (path.includes("/accounts-ledger")) return "Accounts Ledger";
     if (path.includes("/accounts")) return "Accounts";
+    if (path.includes("/daily-moment")) return "Daily Moment Tracker";
     if (path.includes("/vendors")) return "Vendor Management";
     if (path.includes("/drivers")) return "Drivers";
     if (path.includes("/vehicles")) return "Vehicles";
