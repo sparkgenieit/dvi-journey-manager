@@ -1,12 +1,16 @@
 // FILE: src/services/dailyMomentTracker.ts
 
-// Trip type coming from backend
 export type TripType = "Arrival" | "Departure" | "Ongoing";
 
 // Raw backend DTO (DailyMomentRowDto from NestJS)
 export type DailyMomentApiRow = {
   count: number;
+
+  // Guest details
   guest_name: string;
+  guest_mobile: string | null; // NEW
+  guest_email: string | null; // NEW
+
   quote_id: string | null;
   itinerary_plan_ID: number;
   itinerary_route_ID: number;
@@ -24,9 +28,135 @@ export type DailyMomentApiRow = {
   driver_name: string | null;
   driver_mobile: string | null;
   special_remarks: string | null;
+
+  // Travel expert details
   travel_expert_name: string | null;
+  travel_expert_mobile: string | null; // NEW
+  travel_expert_email: string | null; // NEW
+
   agent_name: string | null;
 };
+
+// ---------------------------------------------------------------------------
+// Mapped row for React UI (DailyMoment list / header for Day View)
+// ---------------------------------------------------------------------------
+
+export type DailyMomentListRow = {
+  itineraryPlanId?: number;
+  itineraryRouteId?: number;
+
+  // Guest
+  guestName: string;
+  guestMobile?: string | null;
+  guestEmail?: string | null;
+
+  // Travel expert
+  travelExpert: string;
+  travelExpertMobile?: string | null;
+  travelExpertEmail?: string | null;
+
+  quoteId: string;
+  routeDate: Date;
+  type: TripType | string;
+
+  fromLocation: string;
+  toLocation: string;
+
+  hotel: string;
+  vendor: string;
+  vehicle: string;
+  vehicleNo: string;
+
+  driverName: string;
+  driverMobile: string;
+
+  agent: string;
+};
+
+// Safely parse "dd-mm-yyyy" (PHP style) into Date, with fallbacks
+function parseRouteDate(routeDate: string | null | undefined): Date {
+  if (!routeDate) return new Date();
+
+  const parts = routeDate.split("-");
+  if (parts.length === 3) {
+    const [ddStr, mmStr, yyyyStr] = parts;
+    const dd = Number(ddStr);
+    const mm = Number(mmStr);
+    const yyyy = Number(yyyyStr);
+
+    if (
+      Number.isFinite(dd) &&
+      Number.isFinite(mm) &&
+      Number.isFinite(yyyy) &&
+      dd > 0 &&
+      dd <= 31 &&
+      mm > 0 &&
+      mm <= 12
+    ) {
+      const d = new Date(yyyy, mm - 1, dd);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+  }
+
+  // Fallback: let JS try to parse whatever came
+  const fallback = new Date(routeDate);
+  if (!Number.isNaN(fallback.getTime())) return fallback;
+
+  return new Date();
+}
+
+// Map a raw API row into a UI-friendly row (used by list + DayView header)
+export function mapDailyMomentApiRowToListRow(
+  apiRow: DailyMomentApiRow
+): DailyMomentListRow {
+  return {
+    itineraryPlanId: apiRow.itinerary_plan_ID,
+    itineraryRouteId: apiRow.itinerary_route_ID,
+
+    guestName: apiRow.guest_name ?? "",
+    guestMobile: apiRow.guest_mobile ?? null,
+    guestEmail: apiRow.guest_email ?? null,
+
+    travelExpert: apiRow.travel_expert_name ?? "",
+    travelExpertMobile: apiRow.travel_expert_mobile ?? null,
+    travelExpertEmail: apiRow.travel_expert_email ?? null,
+
+    quoteId: apiRow.quote_id ?? "",
+    routeDate: parseRouteDate(apiRow.route_date),
+    type: apiRow.trip_type ?? "Ongoing",
+
+    fromLocation: apiRow.location_name ?? "",
+    toLocation: apiRow.next_visiting_location ?? "",
+
+    hotel: apiRow.hotel_name ?? "",
+    vendor: apiRow.vendor_name ?? "",
+    vehicle: apiRow.vehicle_type_title ?? "",
+    vehicleNo: apiRow.vehicle_no ?? "",
+
+    driverName: apiRow.driver_name ?? "",
+    driverMobile: apiRow.driver_mobile ?? "",
+
+    agent: apiRow.agent_name ?? "",
+  };
+}
+
+// Convenience helper if you want to map an entire list at once
+export function mapDailyMomentApiRowsToListRows(
+  apiRows: DailyMomentApiRow[]
+): DailyMomentListRow[] {
+  return apiRows.map(mapDailyMomentApiRowToListRow);
+}
+
+// Optional convenience: fetch + map in one call (non-breaking addition)
+export async function fetchDailyMomentList(params: {
+  fromDate: string; // DD-MM-YYYY
+  toDate: string; // DD-MM-YYYY
+  itineraryPlanId?: number;
+  agentId?: number;
+}): Promise<DailyMomentListRow[]> {
+  const raw = await fetchDailyMoments(params);
+  return mapDailyMomentApiRowsToListRows(raw);
+}
 
 // Charges DTO (extra charges form via car icon)
 export type DailyMomentCharge = {
@@ -58,10 +188,11 @@ function getAuthHeaders(): Record<string, string> {
 /**
  * Fetch list of Daily Moments between fromDate and toDate.
  * fromDate / toDate are expected in DD-MM-YYYY format (same as PHP UI).
+ * (Existing behaviour preserved – still returns raw DailyMomentApiRow[])
  */
 export async function fetchDailyMoments(params: {
   fromDate: string; // DD-MM-YYYY
-  toDate: string;   // DD-MM-YYYY
+  toDate: string; // DD-MM-YYYY
   itineraryPlanId?: number;
   agentId?: number;
 }): Promise<DailyMomentApiRow[]> {
