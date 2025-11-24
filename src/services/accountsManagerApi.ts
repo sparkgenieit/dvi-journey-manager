@@ -1,7 +1,7 @@
-import { API_BASE_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 
-
-const BASE_URL = `${API_BASE_URL}/accounts-manager`;
+const ACCOUNTS_BASE_PATH = "/accounts-manager";
+const AGENTS_BASE_PATH = "/agents";
 
 export type AccountsStatus = "all" | "paid" | "due";
 export type AccountsComponentType =
@@ -14,11 +14,11 @@ export type AccountsComponentType =
 
 export interface AccountsFilters {
   quoteId?: string;
-  agent?: string;               // your current backend expects agent name substring
+  agent?: string; // backend expects agent name substring
   status?: AccountsStatus;
   componentType?: AccountsComponentType;
-  fromDate?: string;            // "DD/MM/YYYY"
-  toDate?: string;              // "DD/MM/YYYY"
+  fromDate?: string; // "DD/MM/YYYY"
+  toDate?: string; // "DD/MM/YYYY"
   search?: string;
 }
 
@@ -34,7 +34,7 @@ export interface AccountsRow {
   componentType: AccountsComponentType;
   agent: string;
   startDate: string; // "DD/MM/YYYY"
-  endDate: string;   // "DD/MM/YYYY"
+  endDate: string; // "DD/MM/YYYY"
   routeDate?: string;
   vehicleId?: number;
   vendorId?: number;
@@ -94,11 +94,10 @@ export async function fetchAccountsList(
   filters: AccountsFilters,
 ): Promise<AccountsRow[]> {
   const qs = buildQuery(filters);
-  const res = await fetch(`${BASE_URL}${qs}`);
-  if (!res.ok) {
-    throw new Error(`List failed: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
+  return api(`${ACCOUNTS_BASE_PATH}${qs}`, {
+    method: "GET",
+    auth: true,
+  });
 }
 
 // 2) Summary
@@ -106,11 +105,10 @@ export async function fetchAccountsSummary(
   filters: AccountsFilters,
 ): Promise<AccountsSummary> {
   const qs = buildQuery(filters);
-  const res = await fetch(`${BASE_URL}/summary${qs}`);
-  if (!res.ok) {
-    throw new Error(`Summary failed: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
+  return api(`${ACCOUNTS_BASE_PATH}/summary${qs}`, {
+    method: "GET",
+    auth: true,
+  });
 }
 
 // 3) Quote autocomplete
@@ -118,44 +116,38 @@ export async function searchQuotes(
   phrase: string,
 ): Promise<QuoteOption[]> {
   const qs = phrase ? `?q=${encodeURIComponent(phrase)}` : "";
-  const res = await fetch(`${BASE_URL}/quotes${qs}`);
-  if (!res.ok) {
-    throw new Error(`Quote search failed: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
+  return api(`${ACCOUNTS_BASE_PATH}/quotes${qs}`, {
+    method: "GET",
+    auth: true,
+  });
 }
 
-// 4) Agent dropdown
-export async function fetchAgents(): Promise<AgentOption[]> {
-  const res = await fetch(`${BASE_URL}/agents`);
-  if (!res.ok) {
-    throw new Error(`Agents failed: ${res.status} ${res.statusText}`);
-  }
-  return res.json();
+// 4) Agent dropdown (now uses /agents module)
+export async function fetchAgents(
+  travelExpertId?: number,
+): Promise<AgentOption[]> {
+  const qs = travelExpertId
+    ? `?travelExpertId=${encodeURIComponent(String(travelExpertId))}`
+    : "";
+  return api(`${AGENTS_BASE_PATH}${qs}`, {
+    method: "GET",
+    auth: true,
+  });
 }
 
 // 5) Payment modes
 export async function fetchPaymentModes(): Promise<PaymentModeOption[]> {
-  const res = await fetch(`${BASE_URL}/payment-modes`);
-  if (!res.ok) {
-    throw new Error(
-      `Payment modes failed: ${res.status} ${res.statusText}`,
-    );
-  }
-  return res.json();
+  return api(`${ACCOUNTS_BASE_PATH}/payment-modes`, {
+    method: "GET",
+    auth: true,
+  });
 }
 
 // 6) Pay Now
 export async function postPayment(payload: PayPayload): Promise<void> {
-  const res = await fetch(`${BASE_URL}/pay`, {
+  await api(`${ACCOUNTS_BASE_PATH}/pay`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    auth: true,
+    body: payload,
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(
-      `Pay failed: ${res.status} ${res.statusText} ${text}`,
-    );
-  }
 }
