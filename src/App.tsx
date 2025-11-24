@@ -17,7 +17,7 @@ import { getToken } from "@/lib/api";
 
 import { MainLayout } from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
-import { CreateItinerary } from "./pages/CreateItinerary";
+import { CreateItinerary } from "./pages/CreateItinerary/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
 import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";

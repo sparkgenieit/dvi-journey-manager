@@ -1,7 +1,13 @@
 
 /// <reference types="vite/client" />
-/** Raw API base URL from environment variable. */
-export const RAW_API_BASE = import.meta.env.VITE_API_URL;
+
+/**
+ * Reads Vite environment variable correctly and safely.
+ * Make sure .env (at project root) contains:
+ * VITE_API_DVI_BASE_URL=https://dvi.versile.in
+ */
+const RAW_FROM_ENV = (import.meta.env.VITE_API_DVI_BASE_URL ?? "").trim();
+export const RAW_API_BASE = RAW_FROM_ENV || "https://dvi.versile.in";
 
 /** Normalize base URL (append /api/v1 if missing). */
 function normalizeBase(base: string) {

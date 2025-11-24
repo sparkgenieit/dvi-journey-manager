@@ -1,4 +1,5 @@
 // FILE: src/services/accountsLedgerApi.ts
+import { API_BASE_URL } from "@/lib/api";
 
 // Component type – matches backend DTO / PHP split
 export type ComponentType =
@@ -46,11 +47,6 @@ export type LedgerFilterOptions = {
   hotels: string[];
 };
 
-// Vite-style base URL (same pattern as other services)
-const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_URL ||
-  (import.meta as any).env?.VITE_API_BASE_URL ||
-  "http://localhost:4000";
 
 // 🔐 Helper: attach JWT from localStorage (same idea as other secured APIs)
 function getAuthHeaders(): Record<string, string> {
@@ -278,7 +274,7 @@ export async function fetchLedgerFromApi(params: {
   }
 
   // include global prefix /api/v1 from main.ts
-  const url = `${API_BASE_URL}/api/v1/accounts-ledger?${search.toString()}`;
+  const url = `${API_BASE_URL}/accounts-ledger?${search.toString()}`;
 
   const res = await fetch(url, {
     method: "GET",
@@ -318,7 +314,7 @@ export async function fetchLedgerFilterOptions(params: {
   }
 
   // include global prefix /api/v1 from main.ts
-  const url = `${API_BASE_URL}/api/v1/accounts-ledger/options?${search.toString()}`;
+  const url = `${API_BASE_URL}/accounts-ledger/options?${search.toString()}`;
 
   const res = await fetch(url, {
     method: "GET",
