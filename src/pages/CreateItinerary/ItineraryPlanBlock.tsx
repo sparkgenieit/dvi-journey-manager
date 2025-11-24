@@ -66,6 +66,10 @@ type ItineraryPlanBlockProps = {
   setTripStartDate: (val: string) => void;
   setTripEndDate: (val: string) => void;
 
+  // NEW: pickup time (time part of "Pick Up Date & Time *")
+  pickupTime: string;
+  setPickupTime: (val: string) => void;
+
   itineraryTypes: SimpleOption[];
   itineraryTypeSelect: string;
   setItineraryTypeSelect: (val: string) => void;
@@ -99,6 +103,9 @@ type ItineraryPlanBlockProps = {
   foodPreferences: SimpleOption[];
   foodPreference: string;
   setFoodPreference: (val: string) => void;
+
+  // optional – used for error styles + messages
+  validationErrors?: { [key: string]: string };
 };
 
 function parseDDMMYYYY(str: string): Date | undefined {
@@ -132,6 +139,8 @@ export const ItineraryPlanBlock = ({
   tripEndDate,
   setTripStartDate,
   setTripEndDate,
+  pickupTime,
+  setPickupTime,
   itineraryTypes,
   itineraryTypeSelect,
   setItineraryTypeSelect,
@@ -158,6 +167,7 @@ export const ItineraryPlanBlock = ({
   foodPreferences,
   foodPreference,
   setFoodPreference,
+  validationErrors,
 }: ItineraryPlanBlockProps) => {
   // Popover open state for calendars
   const [isTripStartOpen, setIsTripStartOpen] = useState(false);
@@ -243,7 +253,14 @@ export const ItineraryPlanBlock = ({
           </div>
 
           {/* Agent dropdown (autosuggest single) */}
-          <div className="flex-1">
+          <div
+            className={`flex-1 ${
+              validationErrors?.agentId
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }`}
+            data-field="agentId"
+          >
             <Label className="text-sm block mb-1">Agent *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -254,12 +271,24 @@ export const ItineraryPlanBlock = ({
               options={agentOptions}
               placeholder="Select Agent"
             />
+            {validationErrors?.agentId && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.agentId}
+              </p>
+            )}
           </div>
         </div>
 
         {/* ROW 2: Arrival | Departure */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
+          <div
+            className={`flex-1 ${
+              validationErrors?.arrivalLocation
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }`}
+            data-field="arrivalLocation"
+          >
             <Label className="text-sm block mb-1">Arrival *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -268,8 +297,20 @@ export const ItineraryPlanBlock = ({
               options={locationOptions}
               placeholder="Choose Location"
             />
+            {validationErrors?.arrivalLocation && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.arrivalLocation}
+              </p>
+            )}
           </div>
-          <div className="flex-1">
+          <div
+            className={`flex-1 ${
+              validationErrors?.departureLocation
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }`}
+            data-field="departureLocation"
+          >
             <Label className="text-sm block mb-1">Departure *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -278,6 +319,11 @@ export const ItineraryPlanBlock = ({
               options={locationOptions}
               placeholder="Choose Location"
             />
+            {validationErrors?.departureLocation && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.departureLocation}
+              </p>
+            )}
           </div>
         </div>
 
@@ -316,7 +362,14 @@ export const ItineraryPlanBlock = ({
         {/* ROW 4: dates etc */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           {/* Trip Start Date with Calendar popup */}
-          <div>
+          <div
+            className={
+              validationErrors?.tripStartDate
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="tripStartDate"
+          >
             <Label className="text-sm block mb-1">Trip Start Date *</Label>
             <Popover
               open={isTripStartOpen}
@@ -349,9 +402,14 @@ export const ItineraryPlanBlock = ({
                 />
               </PopoverContent>
             </Popover>
+            {validationErrors?.tripStartDate && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.tripStartDate}
+              </p>
+            )}
           </div>
 
-          {/* ✅ Start Time as time picker */}
+          {/* Start Time as time picker */}
           <div>
             <Label className="text-sm block mb-1">Start Time *</Label>
             <Input
@@ -362,7 +420,14 @@ export const ItineraryPlanBlock = ({
           </div>
 
           {/* Trip End Date with Calendar popup */}
-          <div>
+          <div
+            className={
+              validationErrors?.tripEndDate
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="tripEndDate"
+          >
             <Label className="text-sm block mb-1">Trip End Date *</Label>
             <Popover open={isTripEndOpen} onOpenChange={setIsTripEndOpen}>
               <PopoverTrigger asChild>
@@ -392,9 +457,14 @@ export const ItineraryPlanBlock = ({
                 />
               </PopoverContent>
             </Popover>
+            {validationErrors?.tripEndDate && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.tripEndDate}
+              </p>
+            )}
           </div>
 
-          {/* ✅ End Time as time picker */}
+          {/* End Time as time picker */}
           <div>
             <Label className="text-sm block mb-1">End Time *</Label>
             <Input
@@ -404,7 +474,14 @@ export const ItineraryPlanBlock = ({
             />
           </div>
 
-          <div>
+          <div
+            className={
+              validationErrors?.itineraryTypeSelect
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="itineraryTypeSelect"
+          >
             <Label className="text-sm block mb-1">Itinerary Type *</Label>
             <Select
               value={itineraryTypeSelect}
@@ -426,12 +503,24 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.itineraryTypeSelect && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.itineraryTypeSelect}
+              </p>
+            )}
           </div>
         </div>
 
         {/* ROW 5 */}
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div>
+          <div
+            className={
+              validationErrors?.arrivalType
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="arrivalType"
+          >
             <Label className="text-sm block mb-1">Arrival Type *</Label>
             <Select value={arrivalType} onValueChange={setArrivalType}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
@@ -450,8 +539,20 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.arrivalType && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.arrivalType}
+              </p>
+            )}
           </div>
-          <div>
+          <div
+            className={
+              validationErrors?.departureType
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="departureType"
+          >
             <Label className="text-sm block mb-1">Departure Type *</Label>
             <Select value={departureType} onValueChange={setDepartureType}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
@@ -470,6 +571,11 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.departureType && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.departureType}
+              </p>
+            )}
           </div>
           <div>
             <Label className="text-sm block mb-1">Number of Nights</Label>
@@ -487,7 +593,14 @@ export const ItineraryPlanBlock = ({
               className="h-9 border-[#e5d7f6]"
             />
           </div>
-          <div>
+          <div
+            className={
+              validationErrors?.budget
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="budget"
+          >
             <Label className="text-sm block mb-1">Budget *</Label>
             <Input
               type="number"
@@ -499,8 +612,20 @@ export const ItineraryPlanBlock = ({
                 )
               }
             />
+            {validationErrors?.budget && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.budget}
+              </p>
+            )}
           </div>
-          <div>
+          <div
+            className={
+              validationErrors?.entryTicketRequired
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="entryTicketRequired"
+          >
             <Label className="text-sm block mb-1">
               Entry Ticket Required? *
             </Label>
@@ -524,6 +649,11 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.entryTicketRequired && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.entryTicketRequired}
+              </p>
+            )}
           </div>
         </div>
 
@@ -538,7 +668,14 @@ export const ItineraryPlanBlock = ({
 
         {/* ROW 6: Guide / Nationality / Food / Meal plan */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
+          <div
+            className={
+              validationErrors?.guideRequired
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="guideRequired"
+          >
             <Label className="text-sm block mb-1">
               Guide for Whole Itinerary *
             </Label>
@@ -559,8 +696,20 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.guideRequired && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.guideRequired}
+              </p>
+            )}
           </div>
-          <div>
+          <div
+            className={
+              validationErrors?.nationality
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="nationality"
+          >
             <Label className="text-sm block mb-1">Nationality *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -569,8 +718,20 @@ export const ItineraryPlanBlock = ({
               options={nationalityOptions}
               placeholder="India"
             />
+            {validationErrors?.nationality && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.nationality}
+              </p>
+            )}
           </div>
-          <div>
+          <div
+            className={
+              validationErrors?.foodPreference
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }
+            data-field="foodPreference"
+          >
             <Label className="text-sm block mb-1">Food Preferences *</Label>
             <Select value={foodPreference} onValueChange={setFoodPreference}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
@@ -589,6 +750,11 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.foodPreference && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.foodPreference}
+              </p>
+            )}
           </div>
           <div>
             <Label className="text-sm block mb-1">Meal Plan</Label>
@@ -615,7 +781,14 @@ export const ItineraryPlanBlock = ({
 
         {/* ROW 7: Pick up / Instructions */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="md:w-[30%]">
+          <div
+            className={`md:w-[30%] ${
+              validationErrors?.pickupDateTime
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }`}
+            data-field="pickupDateTime"
+          >
             <Label className="text-sm block mb-1">
               Pick Up Date &amp; Time *
             </Label>
@@ -653,9 +826,16 @@ export const ItineraryPlanBlock = ({
               <Input
                 type="time"
                 className="h-9 border-[#e5d7f6] w-[90px]"
-                defaultValue="12:00"
+                value={pickupTime}
+                onChange={(e) => setPickupTime(e.target.value)}
               />
             </div>
+
+            {validationErrors?.pickupDateTime && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.pickupDateTime}
+              </p>
+            )}
           </div>
 
           <div className="flex-1">

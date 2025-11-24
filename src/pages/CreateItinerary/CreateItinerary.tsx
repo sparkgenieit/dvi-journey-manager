@@ -30,6 +30,10 @@ import { api } from "@/lib/api";
 
 // ----------------- types -----------------
 
+type ValidationErrors = {
+  [key: string]: string;
+};
+
 type RouteRow = {
   id: number;
   day: number;
@@ -132,6 +136,9 @@ export const CreateItinerary = () => {
   const [tripStartDate, setTripStartDate] = useState<string>("");
   const [tripEndDate, setTripEndDate] = useState<string>("");
 
+  // NEW: Pick Up time (time part of "Pick Up Date & Time *")
+  const [pickupTime, setPickupTime] = useState<string>("");
+
   // rooms & vehicles
   type RoomRow = {
     id: number;
@@ -192,6 +199,10 @@ export const CreateItinerary = () => {
   // loading / saving
   const [loading, setLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // simple validation error map
+  const [validationErrors, setValidationErrors] =
+    useState<ValidationErrors>({});
 
   // ----------------- effects -----------------
 
@@ -317,6 +328,9 @@ export const CreateItinerary = () => {
                   }))
                 );
               }
+
+              // NOTE: pickupTime prefill is skipped for now because
+              // we don't yet know the exact field name from API.
             }
           }
         }
@@ -470,9 +484,7 @@ export const CreateItinerary = () => {
         const viaText = viaLabels.join(", ");
 
         setRouteDetails((prev) =>
-          prev.map((r) =>
-            r.id === row.id ? { ...r, via: viaText } : r
-          )
+          prev.map((r) => (r.id === row.id ? { ...r, via: viaText } : r))
         );
 
         setActiveViaRouteRow((prev) =>
@@ -489,38 +501,108 @@ export const CreateItinerary = () => {
   };
 
   // when user clicks "Submit" inside Via Route popup
-// REPLACE the entire handleViaDialogSubmit function in CreateItinerary.tsx
-const handleViaDialogSubmit = async (selectedOptions: SimpleOption[]) => {
-  if (!activeViaRouteRow) {
-    setViaDialogOpen(false);
-    return;
-  }
+  const handleViaDialogSubmit = async (selectedOptions: SimpleOption[]) => {
+    if (!activeViaRouteRow) {
+      setViaDialogOpen(false);
+      return;
+    }
 
-  try {
-    const viaRouteIds = selectedOptions.map((o) => o.id);
+    try {
+      const viaRouteIds = selectedOptions.map((o) => o.id);
 
-    // CASE 1: User removed all via routes → just clear them in DB
-    if (!viaRouteIds.length) {
-      const clearBody = {
-        via_route_location: [], // IMPORTANT: empty array means "delete only"
+      // CASE 1: User removed all via routes → just clear them in DB
+      if (!viaRouteIds.length) {
+        const clearBody = {
+          via_route_location: [], // IMPORTANT: empty array means "delete only"
+          hidden_route_date: activeViaRouteRow.date, // DD/MM/YYYY
+          hidden_source_location: activeViaRouteRow.source,
+          hidden_destination_location: activeViaRouteRow.next,
+          hidden_itineary_via_route_id: [],
+          itinerary_route_ID: null,
+          itinerary_plan_ID: id ? Number(id) : null,
+          itinerary_session_id: itinerarySessionId,
+        };
+
+        const clearData = await api("/itinerary-via-routes/add", {
+          method: "POST",
+          body: clearBody,
+        });
+
+        if (!clearData?.success) {
+          const msg =
+            clearData?.errors?.result_error || "Unable to clear Via Route.";
+          toast({
+            title: "Via Route Error",
+            description: msg,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Local UI: clear VIA column
+        setRouteDetails((prev) =>
+          prev.map((r) =>
+            r.id === activeViaRouteRow.id ? { ...r, via: "" } : r
+          )
+        );
+
+        setViaDialogOpen(false);
+        setActiveViaRouteRow(null);
+        setActiveViaRouteIds([]);
+
+        toast({
+          description: "Via Route removed for this day.",
+        });
+
+        return;
+      }
+
+      // CASE 2: We have via routes selected → check distance limit then save
+      const checkBody = {
+        source: activeViaRouteRow.source,
+        destination: activeViaRouteRow.next,
+        via_routes: viaRouteIds,
+      };
+
+      const checkData = await api(
+        "/itinerary-via-routes/check-distance-limit",
+        {
+          method: "POST",
+          body: checkBody,
+        }
+      );
+
+      if (!checkData?.success) {
+        const msg =
+          checkData?.errors?.result_error ||
+          "Distance KM Limit Exceeded !!!";
+        toast({
+          title: "Via Route Limit",
+          description: msg,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const addBody = {
+        via_route_location: viaRouteIds,
         hidden_route_date: activeViaRouteRow.date, // DD/MM/YYYY
         hidden_source_location: activeViaRouteRow.source,
         hidden_destination_location: activeViaRouteRow.next,
-        hidden_itineary_via_route_id: [],
+        hidden_itineary_via_route_id: [], // we now do a full replace on backend
         itinerary_route_ID: null,
         itinerary_plan_ID: id ? Number(id) : null,
         itinerary_session_id: itinerarySessionId,
       };
 
-      const clearData = await api("/itinerary-via-routes/add", {
+      const addData = await api("/itinerary-via-routes/add", {
         method: "POST",
-        body: clearBody,
+        body: addBody,
       });
 
-      if (!clearData?.success) {
+      if (!addData?.success) {
         const msg =
-          clearData?.errors?.result_error ||
-          "Unable to clear Via Route.";
+          addData?.errors?.result_error || "Unable to add Via Route.";
         toast({
           title: "Via Route Error",
           description: msg,
@@ -529,10 +611,12 @@ const handleViaDialogSubmit = async (selectedOptions: SimpleOption[]) => {
         return;
       }
 
-      // Local UI: clear VIA column
+      // Local UI update – VIA column
+      const viaText = selectedOptions.map((o) => o.label).join(", ");
+
       setRouteDetails((prev) =>
         prev.map((r) =>
-          r.id === activeViaRouteRow.id ? { ...r, via: "" } : r
+          r.id === activeViaRouteRow.id ? { ...r, via: viaText } : r
         )
       );
 
@@ -541,94 +625,161 @@ const handleViaDialogSubmit = async (selectedOptions: SimpleOption[]) => {
       setActiveViaRouteIds([]);
 
       toast({
-        description: "Via Route removed for this day.",
+        description: "Via Route Added Successfully",
       });
-
-      return;
-    }
-
-    // CASE 2: We have via routes selected → check distance limit then save
-    const checkBody = {
-      source: activeViaRouteRow.source,
-      destination: activeViaRouteRow.next,
-      via_routes: viaRouteIds,
-    };
-
-    const checkData = await api(
-      "/itinerary-via-routes/check-distance-limit",
-      {
-        method: "POST",
-        body: checkBody,
-      }
-    );
-
-    if (!checkData?.success) {
-      const msg =
-        checkData?.errors?.result_error || "Distance KM Limit Exceeded !!!";
-      toast({
-        title: "Via Route Limit",
-        description: msg,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const addBody = {
-      via_route_location: viaRouteIds,
-      hidden_route_date: activeViaRouteRow.date, // DD/MM/YYYY
-      hidden_source_location: activeViaRouteRow.source,
-      hidden_destination_location: activeViaRouteRow.next,
-      hidden_itineary_via_route_id: [], // we now do a full replace on backend
-      itinerary_route_ID: null,
-      itinerary_plan_ID: id ? Number(id) : null,
-      itinerary_session_id: itinerarySessionId,
-    };
-
-    const addData = await api("/itinerary-via-routes/add", {
-      method: "POST",
-      body: addBody,
-    });
-
-    if (!addData?.success) {
-      const msg =
-        addData?.errors?.result_error || "Unable to add Via Route.";
+    } catch (err) {
+      console.error("Via route submit failed", err);
       toast({
         title: "Via Route Error",
-        description: msg,
+        description: "Something went wrong while saving via route.",
         variant: "destructive",
       });
-      return;
+    }
+  };
+
+  // ----------------- VALIDATION -----------------
+
+  const validateBeforeSave = (): boolean => {
+    const errors: ValidationErrors = {};
+
+    // header / basic fields
+    if (!agentId) errors.agentId = "Please select an Agent";
+    if (!arrivalLocation) errors.arrivalLocation = "Please select Arrival";
+    if (!departureLocation)
+      errors.departureLocation = "Please select Departure";
+    if (!tripStartDate) errors.tripStartDate = "Please select Trip Start Date";
+    if (!tripEndDate) errors.tripEndDate = "Please select Trip End Date";
+
+    if (!itineraryTypeSelect)
+      errors.itineraryTypeSelect = "Please select Itinerary Type";
+    if (!arrivalType) errors.arrivalType = "Please select Arrival Type";
+    if (!departureType) errors.departureType = "Please select Departure Type";
+
+    if (budget === "" || Number(budget) <= 0) {
+      errors.budget = "Please enter a valid Budget";
     }
 
-    // Local UI update – VIA column
-    const viaText = selectedOptions.map((o) => o.label).join(", ");
+    if (!entryTicketRequired)
+      errors.entryTicketRequired =
+        "Please select Entry Ticket Required option";
+    if (!guideRequired)
+      errors.guideRequired = "Please select Guide for Itinerary option";
+    if (!nationality) errors.nationality = "Please select Nationality";
+    if (!foodPreference)
+      errors.foodPreference = "Please select Food Preference";
 
-    setRouteDetails((prev) =>
-      prev.map((r) =>
-        r.id === activeViaRouteRow.id ? { ...r, via: viaText } : r
-      )
-    );
+    // Pick Up Date & Time – date is tripStartDate, time is pickupTime
+    if (!tripStartDate || !pickupTime) {
+      errors.pickupDateTime = "Please select Pick Up Date & Time";
+    }
 
-    setViaDialogOpen(false);
-    setActiveViaRouteRow(null);
-    setActiveViaRouteIds([]);
+    // first route row (Route Details block)
+    const firstRoute = routeDetails[0];
+    if (!firstRoute?.source) {
+      errors.firstRouteSource = "Please fill first day Source location";
+    }
+    if (!firstRoute?.next) {
+      errors.firstRouteNext = "Please fill first day Next Destination";
+    }
+
+    // vehicles required when preference includes vehicles
+    if (itineraryPreference === "vehicle" || itineraryPreference === "both") {
+      const missingType = vehicles.some((v) => !v.type);
+      if (missingType) {
+        errors.vehicleType = "Please select Vehicle Type for all rows";
+      }
+    }
+
+    setValidationErrors(errors);
+
+    const keys = Object.keys(errors);
+    if (!keys.length) return true;
+
+    // focus + scroll to first error candidate
+    const firstKey = keys[0];
+    let selector = "";
+
+    switch (firstKey) {
+      case "agentId":
+        selector = "[data-field='agentId']";
+        break;
+      case "arrivalLocation":
+        selector = "[data-field='arrivalLocation']";
+        break;
+      case "departureLocation":
+        selector = "[data-field='departureLocation']";
+        break;
+      case "tripStartDate":
+        selector = "[data-field='tripStartDate']";
+        break;
+      case "tripEndDate":
+        selector = "[data-field='tripEndDate']";
+        break;
+      case "itineraryTypeSelect":
+        selector = "[data-field='itineraryTypeSelect']";
+        break;
+      case "arrivalType":
+        selector = "[data-field='arrivalType']";
+        break;
+      case "departureType":
+        selector = "[data-field='departureType']";
+        break;
+      case "budget":
+        selector = "[data-field='budget']";
+        break;
+      case "entryTicketRequired":
+        selector = "[data-field='entryTicketRequired']";
+        break;
+      case "guideRequired":
+        selector = "[data-field='guideRequired']";
+        break;
+      case "nationality":
+        selector = "[data-field='nationality']";
+        break;
+      case "foodPreference":
+        selector = "[data-field='foodPreference']";
+        break;
+      case "pickupDateTime":
+        selector = "[data-field='pickupDateTime']";
+        break;
+      case "firstRouteSource":
+      case "firstRouteNext":
+        selector = "[data-field='firstRouteSource']";
+        break;
+      case "vehicleType":
+        selector = "[data-field='vehicleType']";
+        break;
+      default:
+        selector = "";
+    }
+
+    if (selector && typeof document !== "undefined") {
+      const el = document.querySelector<
+        HTMLInputElement | HTMLButtonElement | HTMLElement
+      >(
+        `${selector} input, ${selector} button, ${selector} [role='combobox'], ${selector} select`
+      );
+      if (el && "focus" in el) {
+        (el as HTMLInputElement | HTMLButtonElement).focus();
+      }
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
 
     toast({
-      description: "Via Route Added Successfully",
-    });
-  } catch (err) {
-    console.error("Via route submit failed", err);
-    toast({
-      title: "Via Route Error",
-      description: "Something went wrong while saving via route.",
+      title: "Please fix the highlighted fields",
       variant: "destructive",
     });
-  }
-};
+
+    return false;
+  };
 
   // ----------------- SAVE -----------------
 
   const handleSave = async () => {
+    // run client-side checks first
+    const ok = validateBeforeSave();
+    if (!ok) return;
+
     try {
       setIsSaving(true);
 
@@ -706,6 +857,7 @@ const handleViaDialogSubmit = async (selectedOptions: SimpleOption[]) => {
           adult_count: totalAdults,
           child_count: totalChildren,
           infant_count: totalInfants,
+          // NOTE: pickupTime not sent yet; backend contract needs confirmation.
         },
         routes,
         vehicles: vehicles.map((v) => ({
@@ -791,24 +943,61 @@ const handleViaDialogSubmit = async (selectedOptions: SimpleOption[]) => {
         setTripEndDate={setTripEndDate}
         hotelCategoryOptions={hotelCategoryOptions}
         hotelFacilityOptions={hotelFacilityOptions}
+        pickupTime={pickupTime}
+        setPickupTime={setPickupTime}
+        validationErrors={validationErrors}
       />
 
-      {/* Route Details */}
-      <RouteDetailsBlock
-        locations={locations}
-        routeDetails={routeDetails}
-        setRouteDetails={setRouteDetails}
-        onOpenViaRoutes={openViaRoutes}
-      />
+      {/* Route Details – with validation wrapper */}
+      <div
+        data-field="firstRouteSource"
+        className={
+          validationErrors.firstRouteSource || validationErrors.firstRouteNext
+            ? "border border-red-500 rounded-md p-2"
+            : ""
+        }
+      >
+        <RouteDetailsBlock
+          locations={locations}
+          routeDetails={routeDetails}
+          setRouteDetails={setRouteDetails}
+          onOpenViaRoutes={openViaRoutes}
+        />
+        {validationErrors.firstRouteSource && (
+          <p className="mt-1 text-xs text-red-500">
+            {validationErrors.firstRouteSource}
+          </p>
+        )}
+        {validationErrors.firstRouteNext && (
+          <p className="mt-1 text-xs text-red-500">
+            {validationErrors.firstRouteNext}
+          </p>
+        )}
+      </div>
 
-      {/* Vehicles */}
-      <VehicleBlock
-        vehicleTypes={vehicleTypes}
-        vehicles={vehicles}
-        setVehicles={setVehicles}
-        addVehicle={addVehicle}
-        removeVehicle={removeVehicle}
-      />
+      {/* Vehicles – with validation wrapper */}
+      <div
+        data-field="vehicleType"
+        className={
+          validationErrors.vehicleType
+            ? "border border-red-500 rounded-md p-2"
+            : ""
+        }
+      >
+        <VehicleBlock
+          vehicleTypes={vehicleTypes}
+          vehicles={vehicles}
+          setVehicles={setVehicles}
+          addVehicle={addVehicle}
+          removeVehicle={removeVehicle}
+          itineraryPreference={itineraryPreference}
+        />
+        {validationErrors.vehicleType && (
+          <p className="mt-1 text-xs text-red-500">
+            {validationErrors.vehicleType}
+          </p>
+        )}
+      </div>
 
       {/* Save / Cancel */}
       <div className="flex justify-end gap-2 pt-4">

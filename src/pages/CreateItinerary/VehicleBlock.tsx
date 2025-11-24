@@ -26,6 +26,10 @@ type VehicleRow = {
   count: number;
 };
 
+type ValidationErrors = {
+  [key: string]: string;
+};
+
 type VehicleBlockProps = {
   vehicleTypes: SimpleOption[]; // fetched via fetchVehicleTypes()
   vehicles: VehicleRow[];
@@ -35,6 +39,9 @@ type VehicleBlockProps = {
   itineraryPreference?: "vehicle" | "hotel" | "both";
   addVehicle?: () => void;
   removeVehicle?: (id: number) => void;
+
+  // optional validation
+  validationErrors?: ValidationErrors;
 };
 
 export const VehicleBlock = ({
@@ -44,6 +51,7 @@ export const VehicleBlock = ({
   vehicleTypes,
   addVehicle,
   removeVehicle,
+  validationErrors,
 }: VehicleBlockProps) => {
   const { toast } = useToast();
 
@@ -70,6 +78,8 @@ export const VehicleBlock = ({
   const internalRemoveVehicle = (id: number) => {
     setVehicles((prev) => prev.filter((v) => v.id !== id));
   };
+
+  const vehicleTypeError = validationErrors?.vehicleType;
 
   return (
     <Card className="border border-[#efdef8] rounded-lg bg-white shadow-none">
@@ -105,7 +115,14 @@ export const VehicleBlock = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Vehicle Type */}
-              <div>
+              <div
+                className={
+                  vehicleTypeError
+                    ? "border border-red-500 rounded-md p-2"
+                    : ""
+                }
+                data-field="vehicleType"
+              >
                 <Label className="text-sm block mb-1">
                   Vehicle Type <span className="text-red-500">*</span>
                 </Label>
@@ -153,6 +170,12 @@ export const VehicleBlock = ({
                     ))}
                   </SelectContent>
                 </Select>
+
+                {vehicleTypeError && (
+                  <p className="mt-1 text-xs text-red-500">
+                    {vehicleTypeError}
+                  </p>
+                )}
               </div>
 
               {/* Vehicle Count */}

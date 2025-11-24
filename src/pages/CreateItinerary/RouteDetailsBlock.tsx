@@ -35,6 +35,10 @@ type RouteDetailRow = {
   directVisit: string;
 };
 
+type ValidationErrors = {
+  [key: string]: string;
+};
+
 type RouteDetailsBlockProps = {
   routeDetails: RouteDetailRow[];
   setRouteDetails: React.Dispatch<React.SetStateAction<RouteDetailRow[]>>;
@@ -43,6 +47,9 @@ type RouteDetailsBlockProps = {
   // optional hooks from parent
   onOpenViaRoutes?: (row: RouteDetailRow) => void;
   addDay?: () => void;
+
+  // optional validation from parent
+  validationErrors?: ValidationErrors;
 };
 
 export const RouteDetailsBlock = ({
@@ -51,6 +58,7 @@ export const RouteDetailsBlock = ({
   locations,
   onOpenViaRoutes,
   addDay,
+  validationErrors,
 }: RouteDetailsBlockProps) => {
   // Global fallback options (like PHP selectize list)
   const globalLocationOptions: AutoSuggestOption[] = locations.map((loc) => ({
@@ -123,6 +131,9 @@ export const RouteDetailsBlock = ({
     });
   };
 
+  const firstRouteSourceError = validationErrors?.firstRouteSource;
+  const firstRouteNextError = validationErrors?.firstRouteNext;
+
   return (
     <Card className="border border-[#efdef8] rounded-lg bg-white shadow-none">
       <CardHeader className="pb-2">
@@ -158,6 +169,8 @@ export const RouteDetailsBlock = ({
                   ? destinationOptionsMap[idx]!
                   : globalLocationOptions;
 
+              const isFirstRow = idx === 0;
+
               return (
                 <TableRow key={idx}>
                   <TableCell>{`DAY ${row.day}`}</TableCell>
@@ -172,45 +185,77 @@ export const RouteDetailsBlock = ({
                     />
                   </TableCell>
 
-                  {/* SOURCE DESTINATION – read only */}
-                  <TableCell>
-                    <Input
-                      readOnly
-                      placeholder="Source Location"
-                      value={row.source}
-                      className="h-8 rounded-md border-[#e5d7f6] bg-[#f9f4ff] cursor-not-allowed"
-                    />
+                  {/* SOURCE DESTINATION – read only, but validated for first row */}
+                  <TableCell
+                    data-field={isFirstRow ? "firstRouteSource" : undefined}
+                    className={isFirstRow && firstRouteSourceError ? "align-top" : ""}
+                  >
+                    <div
+                      className={
+                        isFirstRow && firstRouteSourceError
+                          ? "border border-red-500 rounded-md p-1"
+                          : ""
+                      }
+                    >
+                      <Input
+                        readOnly
+                        placeholder="Source Location"
+                        value={row.source}
+                        className="h-8 rounded-md border-[#e5d7f6] bg-[#f9f4ff] cursor-not-allowed"
+                      />
+                    </div>
+                    {isFirstRow && firstRouteSourceError && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {firstRouteSourceError}
+                      </p>
+                    )}
                   </TableCell>
 
                   {/* NEXT DESTINATION – autosuggest, chained to next row source */}
-                  <TableCell>
-                    <AutoSuggestSelect
-                      mode="single"
-                      value={row.next}
-                      onChange={(val) =>
-                        setRouteDetails((prev) => {
-                          const updated = [...prev];
-                          const chosen = (val as string) || "";
-
-                          updated[idx] = {
-                            ...updated[idx],
-                            next: chosen,
-                          };
-
-                          // PHP behaviour: selected NEXT becomes SOURCE of next day
-                          if (idx + 1 < updated.length) {
-                            updated[idx + 1] = {
-                              ...updated[idx + 1],
-                              source: chosen,
-                            };
-                          }
-
-                          return updated;
-                        })
+                  <TableCell
+                    data-field={isFirstRow ? "firstRouteNext" : undefined}
+                    className={isFirstRow && firstRouteNextError ? "align-top" : ""}
+                  >
+                    <div
+                      className={
+                        isFirstRow && firstRouteNextError
+                          ? "border border-red-500 rounded-md p-1"
+                          : ""
                       }
-                      options={rowSpecificOptions}
-                      placeholder="Next Destination"
-                    />
+                    >
+                      <AutoSuggestSelect
+                        mode="single"
+                        value={row.next}
+                        onChange={(val) =>
+                          setRouteDetails((prev) => {
+                            const updated = [...prev];
+                            const chosen = (val as string) || "";
+
+                            updated[idx] = {
+                              ...updated[idx],
+                              next: chosen,
+                            };
+
+                            // PHP behaviour: selected NEXT becomes SOURCE of next day
+                            if (idx + 1 < updated.length) {
+                              updated[idx + 1] = {
+                                ...updated[idx + 1],
+                                source: chosen,
+                              };
+                            }
+
+                            return updated;
+                          })
+                        }
+                        options={rowSpecificOptions}
+                        placeholder="Next Destination"
+                      />
+                    </div>
+                    {isFirstRow && firstRouteNextError && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {firstRouteNextError}
+                      </p>
+                    )}
                   </TableCell>
 
                   {/* VIA ROUTE – icon button opens popup */}
