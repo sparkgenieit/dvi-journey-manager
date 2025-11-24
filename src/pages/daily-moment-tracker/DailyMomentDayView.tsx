@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CarIcon, Star, Upload, Clock } from "lucide-react";
+import { ArrowLeft, CarIcon, Star, Clock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +56,16 @@ type DailyMomentListRowForHeader = {
   itineraryPlanId?: number;
   itineraryRouteId?: number;
 
+  // Guest
   guestName: string;
+  guestMobile?: string | null;
+  guestEmail?: string | null;
+
+  // Travel expert
+  travelExpert: string;
+  travelExpertMobile?: string | null;
+  travelExpertEmail?: string | null;
+
   quoteId: string;
   routeDate: Date;
   type: string;
@@ -68,13 +77,13 @@ type DailyMomentListRowForHeader = {
   vehicleNo: string;
   driverName: string;
   driverMobile: string;
-  travelExpert: string;
   agent: string;
 };
 
+
 /**
  * Route hotspot row (for the DAY timeline cards).
- * Keep this shape loose so we don't break if backend DTO changes:
+ * Keep this shape loose so we don't break if backend DTO changes.
  */
 type RouteHotspotRow = {
   [key: string]: any;
@@ -197,14 +206,15 @@ async function fetchRouteHotspots(
 }
 
 /**
- * Upload API stub
+ * Image upload stub – wire to real API later
  */
-async function uploadDailyMomentImageStub(payload: {
+async function uploadDailyMomentImageStub(params: {
   itineraryPlanId: number;
   itineraryRouteId?: number;
   file: File;
 }): Promise<void> {
-  // TODO: Wire this to your real upload endpoint.
+  // TODO: POST FormData to your real upload endpoint.
+  console.log("uploadDailyMomentImageStub called", params);
 }
 
 /* ========================================================================
@@ -220,6 +230,12 @@ function formatRating(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return "--";
   const formatted = Number(value).toFixed(1);
   return formatted.endsWith(".0") ? formatted.slice(0, -2) : formatted;
+}
+
+function cleanText(value?: string | null) {
+  if (!value) return "";
+  // remove &nbsp; or &amp;nbsp; and trim spaces
+  return value.replace(/&(?:amp;)?nbsp;/gi, " ").trim();
 }
 
 /* ========================================================================
@@ -268,6 +284,18 @@ export const DailyMomentDayView: React.FC = () => {
     rawRouteFromParams ?? rawRouteFromState
   );
 
+  // ---- Contact details (phone / email) for PHP-style header ----
+  const travelExpertPhone = headerRow?.travelExpertMobile || "";
+  const travelExpertEmail = headerRow?.travelExpertEmail || "";
+  const guestPhone = headerRow?.guestMobile || "";
+  const guestEmail = headerRow?.guestEmail || "";
+
+  const travelExpertContact = `${travelExpertPhone || "--"} / ${
+    travelExpertEmail || "--"
+  }`;
+
+  const guestContact = `${guestPhone || "--"} / ${guestEmail || "--"}`;
+
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -299,6 +327,90 @@ export const DailyMomentDayView: React.FC = () => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadSaving, setUploadSaving] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+    // -------------------------------------------------------------------
+  // DAYWISE SUMMARY HELPERS (KM + tables)
+  // -------------------------------------------------------------------
+  const [chargeSearch, setChargeSearch] = useState("");
+  const [ratingSearch, setRatingSearch] = useState("");
+
+  // TODO: wire this with backend overall KM summary when API is ready.
+  const totalRunningKm = 0;
+
+  const filteredCharges = useMemo(() => {
+    if (!chargeSearch.trim()) return charges;
+    const q = chargeSearch.toLowerCase();
+
+    return charges.filter((charge) => {
+      const c: any = charge;
+      const haystack = [
+        c.charge_type,
+        c.source,
+        c.destination,
+        c.charge_title,
+        c.charge_amount,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toString()
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [charges, chargeSearch]);
+
+  type RatingListRow = {
+    key: string;
+    day: string | null;
+    source: string | null;
+    destination: string | null;
+    rating: number | null;
+    description: string | null;
+  };
+
+  const ratingRows = useMemo<RatingListRow[]>(
+    () => [
+      // Driver ratings
+      ...driverRatings.map((row) => ({
+        key: `driver-${row.count}`,
+        day: row.route_date,
+        source: row.location_name,
+        destination: row.next_visiting_location,
+        rating: row.customer_rating,
+        description: row.feedback_description,
+      })),
+      // Guide ratings
+      ...guideRatings.map((row) => ({
+        key: `guide-${row.count}`,
+        day: row.route_date,
+        source: row.location_name,
+        destination: row.next_visiting_location,
+        rating: row.guide_rating,
+        description: row.guide_description,
+      })),
+    ],
+    [driverRatings, guideRatings]
+  );
+
+  const filteredRatingRows = useMemo(() => {
+    if (!ratingSearch.trim()) return ratingRows;
+    const q = ratingSearch.toLowerCase();
+
+    return ratingRows.filter((row) => {
+      const haystack = [
+        row.day,
+        row.source,
+        row.destination,
+        row.rating?.toString() ?? "",
+        row.description,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(q);
+    });
+  }, [ratingRows, ratingSearch]);
 
   useEffect(() => {
     if (!itineraryPlanId) {
@@ -614,8 +726,9 @@ export const DailyMomentDayView: React.FC = () => {
         </div>
       </div>
 
-      {/* TRAVEL EXPERT + GUEST */}
+          {/* TRAVEL EXPERT + GUEST */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Travel Expert */}
         <div className="bg-white rounded-xl border border-[#f6dfff] px-5 py-4 flex items-center gap-3">
           <div className="h-12 w-12 rounded-xl bg-[#f8f0ff] flex items-center justify-center text-2xl">
             🌍
@@ -625,14 +738,14 @@ export const DailyMomentDayView: React.FC = () => {
               Travel Expert
             </p>
             <p className="font-semibold text-sm">
-              {headerRow?.travelExpert || "Nagappan"}
+              {headerRow?.travelExpert || "--"}
             </p>
-            <p className="text-[11px] mt-1">
-              {headerRow?.vendor || "1234567890 / sales2@dvi.co.in"}
-            </p>
+            {/* Phone / Email like PHP UI: 9919911948 / ops1@dvi.co.in */}
+            <p className="text-[11px] mt-1">{travelExpertContact}</p>
           </div>
         </div>
 
+        {/* Guest */}
         <div className="bg-white rounded-xl border border-[#f6dfff] px-5 py-4 flex items-center gap-3">
           <div className="h-12 w-12 rounded-xl bg-[#f8f0ff] flex items-center justify-center text-2xl">
             🎒
@@ -642,11 +755,10 @@ export const DailyMomentDayView: React.FC = () => {
               Guest
             </p>
             <p className="font-semibold text-sm">
-              {headerRow?.guestName || "Ralf Joseph"}
+              {cleanText(headerRow?.guestName) || "--"}
             </p>
-            <p className="text-[11px] mt-1">
-              {headerRow?.driverMobile || "9919911948 / --"}
-            </p>
+            {/* Phone / Email like PHP UI: 9845420090 / -- */}
+            <p className="text-[11px] mt-1">{guestContact}</p>
           </div>
         </div>
       </div>
@@ -816,196 +928,260 @@ export const DailyMomentDayView: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* SUMMARY + TABLES SECTION (Charges / Reviews) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
-        {/* CHARGES CARD */}
-        <Card className="shadow-none border border-[#f6dfff] bg-white lg:col-span-1">
-          <CardContent className="px-4 md:px-5 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-[#4a4260]">
-                DAY WISE CHARGES
-              </p>
-              <Button
-                size="xs"
-                variant="outline"
-                className="h-7 px-3 rounded-full bg-[#fdf7ff] text-[11px] text-[#7c3aed] border border-[#ddcbff]"
-                onClick={handleOpenChargeDialog}
-              >
-                + Add Charge
-              </Button>
-            </div>
+            {/* OVERALL KM SUMMARY (PHP STYLE) */}
+      <Card className="shadow-none border border-[#f6dfff] bg-white mt-2">
+        <CardContent className="px-4 md:px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <p className="text-sm md:text-base font-semibold text-[#4a4260]">
+            OVERALL KILOMETER SUMMARY
+          </p>
+          <p className="text-sm md:text-base font-semibold text-[#4a4260]">
+            Total Running KM -{" "}
+            <span className="text-[#a448ff]">
+              {totalRunningKm.toLocaleString()} KM
+            </span>
+          </p>
+        </CardContent>
+      </Card>
 
-            {charges.length === 0 ? (
-              <p className="text-[11px] text-[#a08ac5] mt-1">
-                No extra charges added for this day.
-              </p>
-            ) : (
-              <div className="border border-[#f3e0ff] rounded-lg overflow-hidden">
-                <table className="w-full text-[11px]">
-                  <thead className="bg-[#fbf2ff]">
-                    <tr>
-                      <th className="text-left px-3 py-2 text-[#4a4260]">
-                        Charge Type
-                      </th>
-                      <th className="text-right px-3 py-2 text-[#4a4260]">
-                        Amount (₹)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {charges.map((charge, idx) => (
+      {/* LIST OF CHARGE DETAILS (PHP TABLE) */}
+      <Card className="shadow-none border border-[#f6dfff] bg-white mt-4">
+        <CardContent className="px-4 md:px-6 py-4 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <p className="text-sm md:text-base font-semibold text-[#4a4260]">
+              List of Charge Details
+            </p>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#4a4260]">Search:</span>
+                <Input
+                  value={chargeSearch}
+                  onChange={(e) => setChargeSearch(e.target.value)}
+                  className="h-8 w-40 md:w-56 text-xs"
+                  placeholder="Search…"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 rounded-md border border-[#d2c5ff] bg-white text-[11px] text-[#6b4bd8]"
+                >
+                  Copy
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 rounded-md border border-[#b7f7d9] bg-[#e5fff1] text-[11px] text-[#0f9c34]"
+                >
+                  Excel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 rounded-md border border-[#e4e4e7] bg-white text-[11px] text-[#4a4260]"
+                >
+                  CSV
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-[#f3e0ff] rounded-lg overflow-x-auto">
+            <table className="min-w-full text-[11px]">
+              <thead className="bg-[#fbf2ff]">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">S.NO</th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">ACTION</th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">DAY</th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    SOURCE
+                  </th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    DESTINATION
+                  </th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    CHARGE TITLE
+                  </th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    CHARGE AMOUNT
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCharges.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-3 py-6 text-center text-[#7b6f9a]"
+                    >
+                      No data available in table
+                    </td>
+                  </tr>
+                ) : (
+                  filteredCharges.map((charge, index) => {
+                    const c: any = charge;
+                    return (
                       <tr
-                        key={`${charge.charge_type || "charge"}-${idx}`}
+                        key={`${c.charge_type || "charge"}-${index}`}
                         className="odd:bg-white even:bg-[#fff8ff]"
                       >
-                        <td className="px-3 py-1.5 text-[#4a4260]">
-                          {charge.charge_type || "--"}
+                        <td className="px-3 py-2 text-[#4a4260]">
+                          {index + 1}
                         </td>
-                        <td className="px-3 py-1.5 text-right text-[#4a4260]">
-                          {formatAmount(charge.charge_amount as any)}
+                        <td className="px-3 py-2 text-[#4a4260]">--</td>
+                        <td className="px-3 py-2 text-[#4a4260]">
+                          {c.day || "--"}
+                        </td>
+                        <td className="px-3 py-2 text-[#4a4260]">
+                          {c.source || "--"}
+                        </td>
+                        <td className="px-3 py-2 text-[#4a4260]">
+                          {c.destination || "--"}
+                        </td>
+                        <td className="px-3 py-2 text-[#4a4260]">
+                          {c.charge_type || c.charge_title || "--"}
+                        </td>
+                        <td className="px-3 py-2 text-[#4a4260]">
+                          {formatAmount(
+                            (c.charge_amount ??
+                              c.amount ??
+                              0) as number | null | undefined
+                          )}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-[#fbf2ff] border-t border-[#f3e0ff]">
-                      <td className="px-3 py-1.5 text-right font-semibold text-[#4a4260]">
-                        Total
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* LIST OF RATING DETAILS (PHP TABLE) */}
+      <Card className="shadow-none border border-[#f6dfff] bg-white mt-4">
+        <CardContent className="px-4 md:px-6 py-4 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <p className="text-sm md:text-base font-semibold text-[#4a4260]">
+              List of Rating Details
+            </p>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#4a4260]">Search:</span>
+                <Input
+                  value={ratingSearch}
+                  onChange={(e) => setRatingSearch(e.target.value)}
+                  className="h-8 w-40 md:w-56 text-xs"
+                  placeholder="Search…"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 rounded-md border border-[#d2c5ff] bg-white text-[11px] text-[#6b4bd8]"
+                >
+                  Copy
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 rounded-md border border-[#b7f7d9] bg-[#e5fff1] text-[11px] text-[#0f9c34]"
+                >
+                  Excel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 rounded-md border border-[#e4e4e7] bg-white text-[11px] text-[#4a4260]"
+                >
+                  CSV
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="border border-[#f3e0ff] rounded-lg overflow-x-auto">
+            <table className="min-w-full text-[11px]">
+              <thead className="bg-[#fbf2ff]">
+                <tr>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">S.NO</th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">ACTION</th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">DAY</th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    SOURCE
+                  </th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    DESTINATION
+                  </th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    RATING
+                  </th>
+                  <th className="px-3 py-2 text-left text-[#4a4260]">
+                    DESCRIPTION
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRatingRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-3 py-6 text-center text-[#7b6f9a]"
+                    >
+                      No data available in table
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRatingRows.map((row, index) => (
+                    <tr
+                      key={row.key}
+                      className="odd:bg-white even:bg-[#fff8ff]"
+                    >
+                      <td className="px-3 py-2 text-[#4a4260]">
+                        {index + 1}
                       </td>
-                      <td className="px-3 py-1.5 text-right font-semibold text-[#4a4260]">
-                        {formatAmount(
-                          charges.reduce((sum, c) => {
-                            const val = Number((c as any).charge_amount || 0);
-                            return sum + (Number.isNaN(val) ? 0 : val);
-                          }, 0)
-                        )}
+                      <td className="px-3 py-2 text-[#4a4260]">--</td>
+                      <td className="px-3 py-2 text-[#4a4260]">
+                        {row.day || "--"}
+                      </td>
+                      <td className="px-3 py-2 text-[#4a4260]">
+                        {row.source || "--"}
+                      </td>
+                      <td className="px-3 py-2 text-[#4a4260]">
+                        {row.destination || "--"}
+                      </td>
+                      <td className="px-3 py-2 text-[#4a4260]">
+                        {formatRating(row.rating)}
+                      </td>
+                      <td className="px-3 py-2 text-[#4a4260]">
+                        {row.description || "--"}
                       </td>
                     </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* DRIVER RATING CARD */}
-        <Card className="shadow-none border border-[#f6dfff] bg-white lg:col-span-1">
-          <CardContent className="px-4 md:px-5 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-[#4a4260]">
-                DRIVER REVIEW
-              </p>
-              <Button
-                size="xs"
-                className="h-7 px-3 rounded-full bg-white text-[11px] text-[#f68c2b] border border-[#ffd4a8] shadow-none"
-                onClick={handleOpenDriverDialog}
-              >
-                ★ Add Review
-              </Button>
-            </div>
-
-            {driverRatings.length === 0 ? (
-              <p className="text-[11px] text-[#a08ac5] mt-1">
-                No driver review added for this day.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {driverRatings.map((row) => (
-                  <div
-                    key={row.count}
-                    className="border border-[#f3e0ff] rounded-lg px-3 py-2 bg-[#fff8ff]"
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-[#4a4260]">
-                      <span className="font-semibold">
-                        {row.location_name || "--"}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Star
-                          className="h-3 w-3 text-[#ffc107]"
-                          fill="#ffc107"
-                        />
-                        <span className="font-semibold">
-                          {formatRating(row.customer_rating as any)}
-                        </span>
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[#7b6f9a] mt-1">
-                      Date: {row.route_date || "--"}
-                    </p>
-                    {row.feedback_description && (
-                      <p className="text-[11px] text-[#4a4260] mt-1">
-                        {row.feedback_description}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* GUIDE RATING CARD */}
-        <Card className="shadow-none border border-[#f6dfff] bg-white lg:col-span-1">
-          <CardContent className="px-4 md:px-5 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-[#4a4260]">
-                GUIDE REVIEW
-              </p>
-              <Button
-                size="xs"
-                className="h-7 px-3 rounded-full bg-white text-[11px] text-[#d94a8c] border border-[#ffc4e3] shadow-none"
-                onClick={handleOpenGuideDialog}
-              >
-                ★ Add Review
-              </Button>
-            </div>
-
-            {guideRatings.length === 0 ? (
-              <p className="text-[11px] text-[#a08ac5] mt-1">
-                No guide review added for this day.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                {guideRatings.map((row) => (
-                  <div
-                    key={row.count}
-                    className="border border-[#f3e0ff] rounded-lg px-3 py-2 bg-[#fff8ff]"
-                  >
-                    <div className="flex items-center justify-between text-[11px] text-[#4a4260]">
-                      <span className="font-semibold">
-                        {row.location_name || "--"}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Star
-                          className="h-3 w-3 text-[#ffc107]"
-                          fill="#ffc107"
-                        />
-                        <span className="font-semibold">
-                          {formatRating(row.guide_rating as any)}
-                        </span>
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-[#7b6f9a] mt-1">
-                      Date: {row.route_date || "--"}
-                    </p>
-                    {row.guide_description && (
-                      <p className="text-[11px] text-[#4a4260] mt-1">
-                        {row.guide_description}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="py-3 text-center text-[11px] text-[#a593c7] border-t border-[#f6dfff] mt-4">
         DVI Holidays @ 2025
       </div>
 
-      {/* MODALS: Add Charge, Driver, Guide, Upload – unchanged from previous */}
+      {/* MODALS */}
+
       {/* Add Charge Dialog */}
       <Dialog open={chargeDialogOpen} onOpenChange={setChargeDialogOpen}>
         <DialogContent className="max-w-md">

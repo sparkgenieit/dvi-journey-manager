@@ -31,11 +31,18 @@ import {
   DailyMomentApiRow,
 } from "@/services/dailyMomentTracker";
 
+// REPLACE whole DailyMomentRow type with:
+
 type DailyMomentRow = {
   id: number; // row counter from backend
   itineraryPlanId: number;
   itineraryRouteId: number;
+
+  // Guest
   guestName: string;
+  guestMobile: string;
+  guestEmail: string;
+
   quoteId: string;
   routeDate: Date;
   type: TripType;
@@ -51,7 +58,12 @@ type DailyMomentRow = {
   driverName: string;
   driverMobile: string;
   specialRemark: string;
+
+  // Travel expert
   travelExpert: string;
+  travelExpertMobile: string;
+  travelExpertEmail: string;
+
   agent: string;
 };
 
@@ -127,7 +139,12 @@ export const DailyMomentTracker: React.FC = () => {
             id: r.count,
             itineraryPlanId: r.itinerary_plan_ID,
             itineraryRouteId: r.itinerary_route_ID,
+
+            // Guest
             guestName: cleanText(r.guest_name),
+            guestMobile: cleanText(r.guest_mobile),
+            guestEmail: cleanText(r.guest_email),
+
             quoteId: cleanText(r.quote_id) || "--",
             routeDate: parseDDMMYYYY(r.route_date),
             type: r.trip_type,
@@ -143,7 +160,12 @@ export const DailyMomentTracker: React.FC = () => {
             driverName: cleanText(r.driver_name),
             driverMobile: cleanText(r.driver_mobile),
             specialRemark: cleanText(r.special_remarks),
+
+            // Travel expert
             travelExpert: cleanText(r.travel_expert_name),
+            travelExpertMobile: cleanText(r.travel_expert_mobile),
+            travelExpertEmail: cleanText(r.travel_expert_email),
+
             agent: cleanText(r.agent_name),
           })
         );
