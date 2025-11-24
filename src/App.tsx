@@ -28,6 +28,8 @@ import Login from "./pages/Login";
 import HotelForm from "./pages/HotelForm";
 import { DailyMomentTracker } from "./pages/daily-moment-tracker/DailyMomentTracker";
 import DailyMomentDayView from "./pages/daily-moment-tracker/DailyMomentDayView";
+import VendorsPage from "./pages/vendor/VendorsPage";
+import VendorFormPage from "./pages/vendor/VendorFormPage";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -188,13 +190,52 @@ const App = () => (
                 </MainLayout>
               }
             />
-
             {/* Deep-links for each step */}
             <Route path="/hotels/:id/rooms" element={<RoomsRedirect />} />
             <Route path="/hotels/:id/amenities" element={<AmenitiesRedirect />} />
             <Route path="/hotels/:id/pricebook" element={<PriceBookRedirect />} />
             <Route path="/hotels/:id/reviews" element={<ReviewsRedirect />} />
             <Route path="/hotels/:id/preview" element={<PreviewRedirect />} />
+
+            {/* Vendor List */}
+            <Route
+              path="/vendor"
+              element={
+                <MainLayout>
+                  <VendorsPage />
+                </MainLayout>
+              }
+            />
+
+            {/* Add Vendor (6-step wizard) */}
+            <Route
+              path="/vendor/new"
+              element={
+                <MainLayout>
+                  <VendorFormPage />
+                </MainLayout>
+              }
+            />
+
+            {/* Edit Vendor (primary) */}
+            <Route
+              path="/vendor/:id"
+              element={
+                <MainLayout>
+                  <VendorFormPage />
+                </MainLayout>
+              }
+            />
+
+            {/* Edit Vendor (alias like PHP if needed) */}
+            <Route
+              path="/vendor/:id/edit"
+              element={
+                <MainLayout>
+                  <VendorFormPage />
+                </MainLayout>
+              }
+            />
           </Route>
 
           {/* Catch-all */}

@@ -1,4 +1,4 @@
-// src/layouts/Sidebar.tsx
+// FILE: src/layouts/Sidebar.tsx
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -41,12 +41,22 @@ const menuItems = [
 
   { title: "Hotels", icon: Building2, path: "/hotels" },
   { title: "Daily Moment Tracker", icon: Clock, path: "/daily-moment" },
+
+  // ─────────────────────────────────────────────
+  // Vendor Management submenu (Vendor / Driver / Vehicle Availability Chart)
+  // ─────────────────────────────────────────────
   {
     title: "Vendor Management",
     icon: Users,
     path: "/vendor-management",
     hasSubmenu: true,
+    children: [
+      { title: "Vendor", path: "/vendor" },
+      { title: "Driver", path: "/driver" },
+      { title: "Vehicle Availability Chart", path: "/vehicle-availability-chart" },
+    ],
   },
+
   {
     title: "Hotspot",
     icon: MapPin,
@@ -87,8 +97,8 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
-  // keep accounts open by default
-  const [openParent, setOpenParent] = useState<string | null>("Accounts");
+  // keep Vendor Management open by default (like PHP sidebar)
+  const [openParent, setOpenParent] = useState<string | null>("Vendor Management");
   const location = useLocation();
 
   const isExpanded = !collapsed || isHovered || isPinned;
@@ -101,9 +111,7 @@ export const Sidebar = ({
   const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
     <>
       {/* header / logo */}
-      <div
-        className="relative flex items-center gap-0 px-2 py-2 border-b border-sidebar-border"
-      >
+      <div className="relative flex items-center gap-0 px-2 py-2 border-b border-sidebar-border">
         {/* left: logo + text */}
         <div className="flex items-center gap-0 min-w-0">
           <img
@@ -142,9 +150,7 @@ export const Sidebar = ({
             const isParentActive =
               location.pathname === item.path ||
               (item.children &&
-                item.children.some((c) =>
-                  location.pathname.startsWith(c.path)
-                ));
+                item.children.some((c) => location.pathname.startsWith(c.path)));
 
             const isOpen =
               isExpanded &&
@@ -201,9 +207,7 @@ export const Sidebar = ({
                         <li key={child.path}>
                           <NavLink
                             to={child.path}
-                            onClick={
-                              isMobile ? () => onMobileToggle() : undefined
-                            }
+                            onClick={isMobile ? () => onMobileToggle() : undefined}
                             className={({ isActive }) =>
                               cn(
                                 "ml-5 mr-2 flex items-center gap-2 rounded-lg px-3 py-2 transition-all",
@@ -271,19 +275,17 @@ export const Sidebar = ({
       {/* bottom user */}
       <div className="border-t border-sidebar-border p-4">
         <div
-            className={cn(
-              "flex items-center gap-3",
-              !isMobile && !isExpanded && "flex-col items-start"
-            )}
-          >
+          className={cn(
+            "flex items-center gap-3",
+            !isMobile && !isExpanded && "flex-col items-start"
+          )}
+        >
           <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center">
             <span className="text-white font-medium text-sm">A</span>
           </div>
           {(isMobile || isExpanded) && (
             <div className="flex-1 min-w-0">
-              <h6 className="text-sm font-semibold leading-tight">
-                Admindvi
-              </h6>
+              <h6 className="text-sm font-semibold leading-tight">Admindvi</h6>
               <p className="text-xs text-muted-foreground leading-tight">
                 Super Admin
               </p>
