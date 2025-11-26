@@ -30,6 +30,7 @@ import { DailyMomentTracker } from "./pages/daily-moment-tracker/DailyMomentTrac
 import DailyMomentDayView from "./pages/daily-moment-tracker/DailyMomentDayView";
 import VendorsPage from "./pages/vendor/VendorsPage";
 import VendorFormPage from "./pages/vendor/VendorFormPage";
+import { ItineraryDetails } from "./pages/ItineraryDetails";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -103,6 +104,14 @@ const App = () => (
               element={
                 <MainLayout>
                   <LatestItinerary />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/itinerary-details/:id"
+              element={
+                <MainLayout>
+                  <ItineraryDetails />
                 </MainLayout>
               }
             />

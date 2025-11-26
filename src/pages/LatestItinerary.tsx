@@ -1,5 +1,6 @@
 // src/pages/LatestItinerary.tsx
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -706,9 +707,11 @@ export const LatestItinerary = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-md bg-[#f057b8] flex items-center justify-center text-white">
-                          <Eye className="h-4 w-4" />
-                        </div>
+                        <Link to={`/itinerary-details/${itinerary.quoteId}`}>
+                          <div className="h-8 w-8 rounded-md bg-[#f057b8] flex items-center justify-center text-white cursor-pointer hover:bg-[#d546ab]">
+                            <Eye className="h-4 w-4" />
+                          </div>
+                        </Link>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -723,9 +726,11 @@ export const LatestItinerary = () => {
                         >
                           <Download className="h-4 w-4" />
                         </Button>
-                        <span className="font-semibold text-[#3b2f55]">
-                          {itinerary.quoteId}
-                        </span>
+                        <Link to={`/itinerary-details/${itinerary.quoteId}`}>
+                          <span className="font-semibold text-[#3b2f55] hover:text-[#d546ab] cursor-pointer">
+                            {itinerary.quoteId}
+                          </span>
+                        </Link>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm">{itinerary.arrival}</TableCell>
