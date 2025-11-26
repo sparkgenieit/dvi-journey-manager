@@ -52,8 +52,8 @@ const menuItems = [
     hasSubmenu: true,
     children: [
       { title: "Vendor", path: "/vendor" },
-      { title: "Driver", path: "/driver" },
-      { title: "Vehicle Availability Chart", path: "/vehicle-availability-chart" },
+      { title: "Driver", path: "/drivers" },
+      { title: "Vehicle Availability Chart", path: "/vehicle-availability" },
     ],
   },
 
