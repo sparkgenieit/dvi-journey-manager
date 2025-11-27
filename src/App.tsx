@@ -33,6 +33,7 @@ import VendorFormPage from "./pages/vendor/VendorFormPage";
 import DriversPage from "./pages/drivers/DriversPage";
 import DriverFormPage from "./pages/drivers/DriverFormPage";
 import VehicleAvailabilityPage from "./pages/vehicle-availability/VehicleAvailabilityPage";
+import { ItineraryDetails } from "./pages/ItineraryDetails";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -121,6 +122,14 @@ const App = () => (
               element={
                 <MainLayout>
                   <LatestItinerary />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/itinerary-details/:id"
+              element={
+                <MainLayout>
+                  <ItineraryDetails />
                 </MainLayout>
               }
             />
