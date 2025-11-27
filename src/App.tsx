@@ -1,4 +1,4 @@
-// FILE: src/App.tsx
+//src/App.tsx
 
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -30,6 +30,9 @@ import { DailyMomentTracker } from "./pages/daily-moment-tracker/DailyMomentTrac
 import DailyMomentDayView from "./pages/daily-moment-tracker/DailyMomentDayView";
 import VendorsPage from "./pages/vendor/VendorsPage";
 import VendorFormPage from "./pages/vendor/VendorFormPage";
+import DriversPage from "./pages/drivers/DriversPage";
+import DriverFormPage from "./pages/drivers/DriverFormPage";
+import VehicleAvailabilityPage from "./pages/vehicle-availability/VehicleAvailabilityPage";
 import { ItineraryDetails } from "./pages/ItineraryDetails";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
@@ -61,10 +64,25 @@ const PreviewRedirect = () => {
 const RequireAuth = () => {
   const token = getToken();
   if (!token) {
-    // Not logged in → send to /login
     return <Navigate to="/login" replace />;
   }
   return <Outlet />;
+};
+
+/**
+ * TEMP placeholder only for /drivers/:id view route
+ * (Keep until you create a proper DriverViewPage.tsx)
+ */
+const DriverViewPage = () => {
+  const { id } = useParams();
+  return (
+    <div className="p-6">
+      <h1 className="text-xl font-semibold text-slate-800">View Driver</h1>
+      <p className="text-sm text-slate-500 mt-2">
+        Placeholder page for driver ID: <span className="font-medium">{id}</span>
+      </p>
+    </div>
+  );
 };
 
 const queryClient = new QueryClient();
@@ -169,7 +187,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
             {/* Create */}
             <Route
               path="/hotels/new"
@@ -179,7 +196,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
             {/* Edit (primary) */}
             <Route
               path="/hotels/:id/edit"
@@ -189,7 +205,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
             {/* Edit (alias): allow /hotels/:id to open the same form */}
             <Route
               path="/hotels/:id"
@@ -215,8 +230,7 @@ const App = () => (
                 </MainLayout>
               }
             />
-
-            {/* Add Vendor (6-step wizard) */}
+            {/* Add Vendor */}
             <Route
               path="/vendor/new"
               element={
@@ -225,8 +239,7 @@ const App = () => (
                 </MainLayout>
               }
             />
-
-            {/* Edit Vendor (primary) */}
+            {/* Edit Vendor */}
             <Route
               path="/vendor/:id"
               element={
@@ -235,8 +248,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
-            {/* Edit Vendor (alias like PHP if needed) */}
             <Route
               path="/vendor/:id/edit"
               element={
@@ -245,7 +256,65 @@ const App = () => (
                 </MainLayout>
               }
             />
+
+            {/* ✅ Drivers List */}
+            <Route
+              path="/drivers"
+              element={
+                <MainLayout>
+                  <DriversPage />
+                </MainLayout>
+              }
+            />
+
+            {/* ✅ Drivers Add (same pattern as vendor form) */}
+            <Route
+              path="/drivers/new"
+              element={
+                <MainLayout>
+                  <DriverFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/drivers/create"
+              element={
+                <MainLayout>
+                  <DriverFormPage />
+                </MainLayout>
+              }
+            />
+
+            {/* ✅ Drivers Edit (use DriverFormPage just like VendorFormPage) */}
+            <Route
+              path="/drivers/:id/edit"
+              element={
+                <MainLayout>
+                  <DriverFormPage />
+                </MainLayout>
+              }
+            />
+
+            {/* Drivers View (placeholder, can be changed to DriverFormPage if you want exact vendor parity) */}
+            <Route
+              path="/drivers/:id"
+              element={
+                <MainLayout>
+                  <DriverViewPage />
+                </MainLayout>
+              }
+            />
           </Route>
+
+          {/* ✅ Vehicle Availability Chart */}
+            <Route
+              path="/vehicle-availability"
+              element={
+                <MainLayout>
+                  <VehicleAvailabilityPage />
+                </MainLayout>
+              }
+            />
 
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />

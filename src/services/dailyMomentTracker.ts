@@ -168,10 +168,7 @@ export type DailyMomentCharge = {
 };
 
 // Vite-style base URL (same pattern as accountsLedgerApi)
-const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_URL ||
-  (import.meta as any).env?.VITE_API_BASE_URL ||
-  "http://localhost:4000";
+const API_BASE_URL = (import.meta as any).env?.VITE_API_DVI_BASE_URL
 
 // 🔐 Helper: attach JWT from localStorage (same idea as other secured APIs)
 function getAuthHeaders(): Record<string, string> {
