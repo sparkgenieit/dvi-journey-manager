@@ -1,9 +1,9 @@
 // REPLACE-WHOLE-FILE: src/pages/VehicleAvailability/VehicleAvailabilityPage.tsx
 
 import React, { useEffect, useMemo, useState } from "react";
+import { Filter } from "lucide-react";
 import {
   fetchAgents,
-  fetchLocations,
   fetchVehicleAvailability,
   fetchVehicleTypes,
   fetchVendors,
@@ -12,7 +12,9 @@ import {
   VehicleAvailabilityResponse,
   VehicleAvailabilityRow,
 } from "@/services/vehicle-availability";
-import { Filter } from "lucide-react";
+import { AddVehicleModal } from "./modals/AddVehicleModal";
+import { AddDriverModal } from "./modals/AddDriverModal";
+
 
 function clsx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -43,13 +45,15 @@ export default function VehicleAvailabilityPage() {
   const [vendorId, setVendorId] = useState<number | "">("");
   const [vehicleTypeId, setVehicleTypeId] = useState<number | "">("");
   const [agentId, setAgentId] = useState<number | "">("");
-  const [locationId, setLocationId] = useState<number | "">("");
+  // Location filter is now string-based (derived from API routeSegments)
+  const [locationId, setLocationId] = useState<string>("");
 
   // lookups
   const [vendors, setVendors] = useState<SimpleOption[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<SimpleOption[]>([]);
   const [agents, setAgents] = useState<SimpleOption[]>([]);
-  const [locations, setLocations] = useState<SimpleOption[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+
 
   // chart
   const [loading, setLoading] = useState(false);
@@ -59,6 +63,8 @@ export default function VehicleAvailabilityPage() {
   // search
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<SelectedCell>(null);
+  const [addVehicleOpen, setAddVehicleOpen] = useState(false);
+  const [addDriverOpen, setAddDriverOpen] = useState(false);
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -70,19 +76,49 @@ export default function VehicleAvailabilityPage() {
     });
   }, [data.rows, search]);
 
+  function extractLocationsFromAvailability(res: VehicleAvailabilityResponse): string[] {
+  const set = new Set<string>();
+
+  for (const row of res.rows || []) {
+    for (const cell of row.cells || []) {
+      for (const seg of cell.routeSegments || []) {
+        const a = (seg.locationName || "").trim();
+        const b = (seg.nextVisitingLocation || "").trim();
+        if (a) set.add(a);
+        if (b) set.add(b);
+      }
+    }
+  }
+
+  return Array.from(set).sort((x, y) => x.localeCompare(y));
+}
+
+function rowHasLocation(row: VehicleAvailabilityRow, location: string): boolean {
+  const needle = location.trim().toLowerCase();
+  if (!needle) return true;
+
+  for (const cell of row.cells || []) {
+    for (const seg of cell.routeSegments || []) {
+      if ((seg.locationName || "").trim().toLowerCase() === needle) return true;
+      if ((seg.nextVisitingLocation || "").trim().toLowerCase() === needle) return true;
+    }
+  }
+  return false;
+}
+
   async function loadLookups() {
     setError("");
     try {
-      const [v, vt, a, l] = await Promise.all([
-        fetchVendors(),
-        fetchVehicleTypes(),
-        fetchAgents(),
-        fetchLocations(),
-      ]);
-      setVendors(v);
-      setVehicleTypes(vt);
-      setAgents(a);
-      setLocations(l);
+      const [v, vt, a] = await Promise.all([
+      fetchVendors(),
+      fetchVehicleTypes(),
+      fetchAgents(),
+    ]);
+    setVendors(v);
+    setVehicleTypes(vt);
+    setAgents(a);
+    // locations will be derived from vehicle-availability API response in loadChart()
+    setLocations([]);
     } catch (e: any) {
       // Keep page usable even if lookups fail
       setError(e?.message || "Failed to load dropdown data.");
@@ -98,14 +134,23 @@ export default function VehicleAvailabilityPage() {
     setError("");
     try {
       const res = await fetchVehicleAvailability({
-        dateFrom,
-        dateTo,
-        vendorId: vendorId === "" ? undefined : vendorId,
-        vehicleTypeId: vehicleTypeId === "" ? undefined : vehicleTypeId,
-        agentId: agentId === "" ? undefined : agentId,
-        locationId: locationId === "" ? undefined : locationId,
-      });
-      setData(res);
+      dateFrom,
+      dateTo,
+      vendorId: vendorId === "" ? undefined : vendorId,
+      vehicleTypeId: vehicleTypeId === "" ? undefined : vehicleTypeId,
+      agentId: agentId === "" ? undefined : agentId,
+      // NOTE: locationId is now a string label, not a numeric ID, so we do client-side filtering
+    });
+
+    // 1) Build dynamic dropdown options from routeSegments
+    const derivedLocations = extractLocationsFromAvailability(res);
+    setLocations(derivedLocations);
+
+    // 2) Apply location filter locally (so results change only after clicking Apply -> loadChart())
+    const loc = (locationId || "").trim();
+    const rowsFilteredByLoc = loc ? res.rows.filter((r) => rowHasLocation(r, loc)) : res.rows;
+
+    setData({ ...res, rows: rowsFilteredByLoc });
     } catch (e: any) {
       setError(e?.message || "Failed to load vehicle availability.");
       setData({ dates: [], rows: [] });
@@ -242,15 +287,13 @@ export default function VehicleAvailabilityPage() {
               </label>
               <select
                 className="h-11 rounded-md border border-slate-300 bg-white px-3 text-sm"
-                value={locationId === "" ? "" : String(locationId)}
-                onChange={(e) =>
-                  setLocationId(e.target.value ? Number(e.target.value) : "")
-                }
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
               >
                 <option value="">Choose Location</option>
-                {locations.map((l) => (
-                  <option key={l.id} value={String(l.id)}>
-                    {l.label}
+                {locations.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
                   </option>
                 ))}
               </select>
@@ -293,12 +336,14 @@ export default function VehicleAvailabilityPage() {
             <button
               className="rounded-md border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100"
               type="button"
+              onClick={() => setAddVehicleOpen(true)}
             >
               + Add New Vehicle
             </button>
             <button
               className="rounded-md border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100"
               type="button"
+              onClick={() => setAddDriverOpen(true)}
             >
               + Add New Driver
             </button>
@@ -378,7 +423,6 @@ export default function VehicleAvailabilityPage() {
                     <div className="font-medium text-slate-900">
                       {row.vendorName || `Vendor #${row.vendorId}`}
                     </div>
-                    <div className="text-xs text-slate-500">ID: {row.vendorId}</div>
                   </td>
 
                   <td className={clsx(stickyCol2, "border-b border-slate-200 p-2 align-top")}>
@@ -388,12 +432,11 @@ export default function VehicleAvailabilityPage() {
                         : `Type #${row.vehicleTypeId}`}
                     </div>
                     <div className="text-xs text-slate-600">
-                      Reg:{" "}
+                      {" "}
                       <span className="font-semibold text-blue-700">
                         {row.registrationNumber}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500">Vehicle ID: {row.vehicleId}</div>
                   </td>
 
                   {row.cells.map((cell) => {
@@ -590,6 +633,31 @@ export default function VehicleAvailabilityPage() {
           </div>
         </div>
       ) : null}
+      <AddVehicleModal
+          open={addVehicleOpen}
+          onClose={() => setAddVehicleOpen(false)}
+          onCreated={() => {
+            // refresh chart so the newly added vehicle can appear
+            loadChart();
+          }}
+          vendors={vendors}
+          vehicleTypes={vehicleTypes}
+          defaultVendorId={vendorId}
+          defaultVehicleTypeId={vehicleTypeId}
+        />
+
+        <AddDriverModal
+          open={addDriverOpen}
+          onClose={() => setAddDriverOpen(false)}
+          onCreated={() => {
+            // optional refresh; harmless
+            loadChart();
+          }}
+          vendors={vendors}
+          vehicleTypes={vehicleTypes}
+          defaultVendorId={vendorId}
+          defaultVehicleTypeId={vehicleTypeId}
+        />
     </div>
   );
 }

@@ -89,3 +89,57 @@ export async function fetchAgents(): Promise<SimpleOption[]> {
 export async function fetchLocations(): Promise<SimpleOption[]> {
   return api(`/vehicle-availability/locations`, { auth: true });
 }
+
+/**
+ * Vendor Branch dropdown (used in Add Vehicle modal)
+ * Backend endpoint must exist:
+ *   GET /vehicle-availability/vendor-branches?vendorId=123
+ */
+export async function fetchVendorBranches(
+  vendorId: number,
+): Promise<SimpleOption[]> {
+  return api(
+    `/vehicle-availability/vendor-branches${buildQueryString({ vendorId })}`,
+    { auth: true },
+  );
+}
+
+// ------------------------------
+// CREATE (Add New Vehicle/Driver)
+// ------------------------------
+
+export type CreateVehiclePayload = {
+  vendorId: number;
+  vehicleTypeId: number;
+  registrationNumber: string;
+
+  // extra fields for PHP-like modal (only works if backend supports them)
+  vendor_branch_id?: number;
+  vehicle_origin?: string;
+  vehicle_expiry_date?: string; // YYYY-MM-DD
+  insurance_start_date?: string; // YYYY-MM-DD
+  insurance_end_date?: string; // YYYY-MM-DD
+};
+
+export async function createVehicle(payload: CreateVehiclePayload) {
+  return api(`/vehicle-availability/vehicles`, {
+    method: "POST",
+    body: payload,
+    auth: true,
+  });
+}
+
+export type CreateDriverPayload = {
+  vendorId: number;
+  vehicleTypeId: number;
+  driverName: string;
+  mobile: string;
+};
+
+export async function createDriver(payload: CreateDriverPayload) {
+  return api(`/vehicle-availability/drivers`, {
+    method: "POST",
+    body: payload,
+    auth: true,
+  });
+}
