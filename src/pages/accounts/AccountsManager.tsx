@@ -1,4 +1,4 @@
-// FILE: src/pages/AccountsManager.tsx
+// src/pages/AccountsManager.tsx
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,8 @@ import type {
 } from "@/services/accountsManagerApi";
 import { PayNowModal } from "./PayNowModal";
 
+// --------- helpers ---------
+
 const formatINR = (v: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -61,12 +63,23 @@ function formatToDDMMYYYY(date: Date | undefined) {
   return `${d}/${m}/${y}`;
 }
 
+// Safely coerce API values (number | string | null | undefined) to number
+function toNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    return Number.isNaN(n) ? 0 : n;
+  }
+  return 0;
+}
+
 const SECTION_CONFIG = [
   { type: "guide", label: "Guide" },
   { type: "hotspot", label: "Hotspot" },
   { type: "activity", label: "Activity" },
   { type: "hotel", label: "Hotel" },
   { type: "vehicle", label: "Vehicle" },
+  { type: "flight", label: "Flight" },
 ] as const;
 
 type SectionKey = (typeof SECTION_CONFIG)[number]["type"];
@@ -155,8 +168,7 @@ export const AccountsManager: React.FC = () => {
         const filters: AccountsFilters = {
           status: activeTab,
           quoteId: quoteIdFilter || undefined,
-          componentType:
-            componentType === "all" ? undefined : componentType,
+          componentType: componentType === "all" ? undefined : componentType,
           fromDate: fromDate || undefined,
           toDate: toDate || undefined,
           agent: agent || undefined,
@@ -191,16 +203,25 @@ export const AccountsManager: React.FC = () => {
 
   const filteredRows = useMemo(() => rows, [rows]);
 
-  // TOTALS
-  const rowTotalBilled = filteredRows.reduce((s, r) => s + r.amount, 0);
+  // TOTALS (using helper toNumber to keep TS + runtime happy even if API sends strings)
+  const rowTotalBilled = filteredRows.reduce(
+    (s, r) => s + toNumber((r as any).amount),
+    0,
+  );
   const rowTotalReceived = filteredRows
-    .filter((r) => r.status === "paid")
-    .reduce((s, r) => s + r.payout, 0);
+    .filter((r) => (r as any).status === "paid")
+    .reduce((s, r) => s + toNumber((r as any).payout), 0);
   const rowTotalReceivable = filteredRows
-    .filter((r) => r.status === "due")
-    .reduce((s, r) => s + r.payable, 0);
-  const rowTotalPayout = filteredRows.reduce((s, r) => s + r.payout, 0);
-  const rowTotalPayable = filteredRows.reduce((s, r) => s + r.payable, 0);
+    .filter((r) => (r as any).status === "due")
+    .reduce((s, r) => s + toNumber((r as any).payable), 0);
+  const rowTotalPayout = filteredRows.reduce(
+    (s, r) => s + toNumber((r as any).payout),
+    0,
+  );
+  const rowTotalPayable = filteredRows.reduce(
+    (s, r) => s + toNumber((r as any).payable),
+    0,
+  );
   const rowTotalProfit = rowTotalReceived - rowTotalPayable;
 
   const totalBilled = summary?.totalPayable ?? rowTotalBilled;
@@ -213,25 +234,36 @@ export const AccountsManager: React.FC = () => {
 
   // VISIBLE (INFINITE SCROLL)
   const visibleRows = filteredRows.slice(0, visibleCount);
-  const visibleAmount = visibleRows.reduce((s, r) => s + r.amount, 0);
-  const visiblePayout = visibleRows.reduce((s, r) => s + r.payout, 0);
-  const visiblePayable = visibleRows.reduce((s, r) => s + r.payable, 0);
+  const visibleAmount = visibleRows.reduce(
+    (s, r) => s + toNumber((r as any).amount),
+    0,
+  );
+  const visiblePayout = visibleRows.reduce(
+    (s, r) => s + toNumber((r as any).payout),
+    0,
+  );
+  const visiblePayable = visibleRows.reduce(
+    (s, r) => s + toNumber((r as any).payable),
+    0,
+  );
   const visibleProfit = visiblePayout - visiblePayable;
   const isAllLoaded = visibleCount >= filteredRows.length;
 
-  // GROUP BY COMPONENT TYPE
   const groupedVisibleRows = useMemo(() => {
+    // one array per section type, including "flight"
     const base: Record<SectionKey, AccountsRow[]> = {
       guide: [],
       hotspot: [],
       activity: [],
       hotel: [],
       vehicle: [],
+      flight: [],
     };
 
     for (const row of visibleRows) {
       const t = (row as any).componentType as string | undefined;
       if (!t) continue;
+
       if ((base as any)[t]) {
         (base as any)[t].push(row);
       }
@@ -306,15 +338,17 @@ export const AccountsManager: React.FC = () => {
 
           <TableBody>
             {rowsForType.map((row, index) => {
-              const r: any = row; // allow extra backend fields without TS errors
+              const r = row as any;
 
               const receivableFromAgentAmount =
-                r.receivableFromAgentAmount ?? r.agentReceivable ?? 0;
+                toNumber(
+                  r.receivableFromAgentAmount ?? r.agentReceivable ?? 0,
+                );
               const receivableFromAgentName =
                 r.receivableFromAgentName ?? r.agent ?? "";
-              const inhandAmount = r.inhandAmount ?? 0;
-              const marginAmount = r.marginAmount ?? 0;
-              const taxAmount = r.taxAmount ?? 0;
+              const inhandAmount = toNumber(r.inhandAmount ?? 0);
+              const marginAmount = toNumber(r.marginAmount ?? 0);
+              const taxAmount = toNumber(r.taxAmount ?? 0);
               const date =
                 r.routeDate || r.transactionDate || r.date || "";
               const guest = r.guestName ?? r.guest ?? "";
@@ -330,6 +364,11 @@ export const AccountsManager: React.FC = () => {
                 r.endDate ??
                 "";
 
+              const amount = toNumber(r.amount);
+              const payout = toNumber(r.payout);
+              const payable = toNumber(r.payable);
+              const status: string = r.status ?? "";
+
               return (
                 <TableRow
                   key={`hotel-${index}`}
@@ -337,7 +376,7 @@ export const AccountsManager: React.FC = () => {
                 >
                   {/* 1. QUOTE ID */}
                   <TableCell className="text-sm text-[#7b6b99]">
-                    {row.quoteId}
+                    {r.quoteId}
                   </TableCell>
 
                   {/* 2. ACTION */}
@@ -345,30 +384,30 @@ export const AccountsManager: React.FC = () => {
                     <Button
                       className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => handleOpenPayNow(row)}
-                      disabled={row.status !== "due" || row.payable <= 0}
+                      disabled={status !== "due" || payable <= 0}
                     >
-                      {row.status === "paid" ? "Paid" : "Pay Now"}
+                      {status === "paid" ? "Paid" : "Pay Now"}
                     </Button>
                   </TableCell>
 
                   {/* 3. HOTEL NAME */}
                   <TableCell className="text-sm text-[#4a4260]">
-                    {row.hotelName}
+                    {r.hotelName}
                   </TableCell>
 
                   {/* 4. AMOUNT */}
                   <TableCell className="text-sm text-right text-[#4a4260]">
-                    {formatINR(row.amount)}
+                    {formatINR(amount)}
                   </TableCell>
 
                   {/* 5. PAYOUT */}
                   <TableCell className="text-sm text-right text-[#4a4260]">
-                    {formatINR(row.payout)}
+                    {formatINR(payout)}
                   </TableCell>
 
                   {/* 6. PAYABLE */}
                   <TableCell className="text-sm text-right text-[#4a4260]">
-                    {formatINR(row.payable)}
+                    {formatINR(payable)}
                   </TableCell>
 
                   {/* 7. RECEIVABLE FROM AGENT (amount + name stacked like PHP) */}
@@ -426,7 +465,7 @@ export const AccountsManager: React.FC = () => {
       );
     }
 
-    // GENERIC LAYOUT FOR OTHER COMPONENTS (guide / hotspot / activity / vehicle)
+    // GENERIC LAYOUT FOR OTHER COMPONENTS (guide / hotspot / activity / vehicle / flight)
     return (
       <>
         <TableHeader>
@@ -472,10 +511,17 @@ export const AccountsManager: React.FC = () => {
 
         <TableBody>
           {rowsForType.map((row, index) => {
-            const isVehicle = row.componentType === "vehicle";
+            const r = row as any;
+
+            const isVehicle = r.componentType === "vehicle";
             const extraId = isVehicle
-              ? (row as any).vehicleId ?? (row as any).vendorId ?? row.headerId
-              : (row as any).vendorId ?? row.headerId;
+              ? r.vehicleId ?? r.vendorId ?? r.headerId
+              : r.vendorId ?? r.headerId;
+
+            const amount = toNumber(r.amount);
+            const payout = toNumber(r.payout);
+            const payable = toNumber(r.payable);
+            const status: string = r.status ?? "";
 
             return (
               <TableRow
@@ -483,51 +529,51 @@ export const AccountsManager: React.FC = () => {
                 className="hover:bg-[#fff7ff]"
               >
                 <TableCell className="text-sm text-[#7b6b99]">
-                  {row.quoteId}
+                  {r.quoteId}
                 </TableCell>
 
                 <TableCell>
                   <Button
                     className="h-7 bg-[#f6ecff] hover:bg-[#f6ecff] text-[#7c2f9a] px-4 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => handleOpenPayNow(row)}
-                    disabled={row.status !== "due" || row.payable <= 0}
+                    disabled={status !== "due" || payable <= 0}
                   >
-                    {row.status === "paid" ? "Paid" : "Pay Now"}
+                    {status === "paid" ? "Paid" : "Pay Now"}
                   </Button>
                 </TableCell>
 
                 <TableCell className="text-sm text-[#4a4260] capitalize">
-                  {row.componentType}
+                  {r.componentType}
                 </TableCell>
 
                 <TableCell className="text-sm text-[#4a4260]">
-                  {row.hotelName}
+                  {r.hotelName}
                 </TableCell>
 
                 <TableCell className="text-sm text-[#4a4260]">
-                  {row.agent || "-"}
+                  {r.agent || "-"}
                 </TableCell>
 
                 <TableCell className="text-sm text-[#4a4260]">
-                  {row.startDate || "-"}
+                  {r.startDate || "-"}
                 </TableCell>
 
                 <TableCell className="text-sm text-[#4a4260]">
-                  {row.endDate || "-"}
+                  {r.endDate || "-"}
                 </TableCell>
 
                 <TableCell className="text-sm text-[#4a4260]">
-                  {row.routeDate || "-"}
+                  {r.routeDate || "-"}
                 </TableCell>
 
                 <TableCell className="text-sm text-right text-[#4a4260]">
-                  {formatINR(row.amount)}
+                  {formatINR(amount)}
                 </TableCell>
                 <TableCell className="text-sm text-right text-[#4a4260]">
-                  {formatINR(row.payout)}
+                  {formatINR(payout)}
                 </TableCell>
                 <TableCell className="text-sm text-right text-[#4a4260]">
-                  {formatINR(row.payable)}
+                  {formatINR(payable)}
                 </TableCell>
                 <TableCell className="text-sm text-right text-[#4a4260]">
                   {extraId ?? "-"}
@@ -586,8 +632,7 @@ export const AccountsManager: React.FC = () => {
       const filters: AccountsFilters = {
         status: activeTab,
         quoteId: quoteIdFilter || undefined,
-        componentType:
-          componentType === "all" ? undefined : componentType,
+        componentType: componentType === "all" ? undefined : componentType,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         agent: agent || undefined,
@@ -605,6 +650,136 @@ export const AccountsManager: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+    // EXPORT CURRENT FILTERED ROWS TO CSV (EXCEL-COMPATIBLE)
+  const handleExport = () => {
+    if (!filteredRows || filteredRows.length === 0) {
+      // nothing to export
+      return;
+    }
+
+    // Helper to safely escape CSV fields
+    const escapeCsv = (value: unknown): string => {
+      if (value === null || value === undefined) return "";
+      const str = String(value).replace(/\r\n|\n|\r/g, " "); // remove newlines
+      if (/[",]/.test(str)) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Header row – includes hotel-style columns + generic fields
+    const headers = [
+      "Component Type",
+      "Quote ID",
+      "Status",
+      "Component / Hotel Name",
+      "Agent",
+      "Amount",
+      "Payout",
+      "Payable",
+      "Receivable From Agent Amount",
+      "Receivable From Agent Name",
+      "Inhand Amount",
+      "Margin Amount",
+      "Tax Amount",
+      "Date",
+      "Guest",
+      "Room Count",
+      "Arrival Start Date",
+      "Destination End Date",
+      "Start Date",
+      "End Date",
+      "Route Date",
+      "Header ID",
+      "Vendor ID",
+      "Vehicle ID",
+    ];
+
+    const lines: string[] = [];
+    lines.push(headers.map(escapeCsv).join(","));
+
+    filteredRows.forEach((row) => {
+      const r: any = row; // allow dynamic backend fields
+
+      const receivableFromAgentAmount =
+        r.receivableFromAgentAmount ?? r.agentReceivable ?? 0;
+      const receivableFromAgentName = r.receivableFromAgentName ?? r.agent ?? "";
+      const inhandAmount = r.inhandAmount ?? 0;
+      const marginAmount = r.marginAmount ?? 0;
+      const taxAmount = r.taxAmount ?? 0;
+      const date = r.routeDate || r.transactionDate || r.date || "";
+      const guest = r.guestName ?? r.guest ?? "";
+      const roomCount = r.roomCount ?? "";
+      const arrivalStart =
+        r.arrivalStart ?? r.arrivalStartDate ?? r.startDate ?? "";
+      const destinationEnd =
+        r.destinationEnd ?? r.destinationEndDate ?? r.endDate ?? "";
+
+      const startDate = r.startDate ?? "";
+      const endDate = r.endDate ?? "";
+      const routeDate = r.routeDate ?? "";
+
+      const headerId = r.headerId ?? "";
+      const vendorId = r.vendorId ?? "";
+      const vehicleId = r.vehicleId ?? "";
+
+      const rowValues = [
+        row.componentType ?? "",
+        row.quoteId ?? "",
+        row.status ?? "",
+        row.hotelName ?? "", // for non-hotel components this will still be filled if backend sends name here
+        row.agent ?? "",
+        row.amount ?? 0,
+        row.payout ?? 0,
+        row.payable ?? 0,
+        receivableFromAgentAmount,
+        receivableFromAgentName,
+        inhandAmount,
+        marginAmount,
+        taxAmount,
+        date,
+        guest,
+        roomCount,
+        arrivalStart,
+        destinationEnd,
+        startDate,
+        endDate,
+        routeDate,
+        headerId,
+        vendorId,
+        vehicleId,
+      ];
+
+      lines.push(rowValues.map(escapeCsv).join(","));
+    });
+
+    const csvContent = "\uFEFF" + lines.join("\r\n"); // BOM for Excel
+
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mi = String(now.getMinutes()).padStart(2, "0");
+    const ss = String(now.getSeconds()).padStart(2, "0");
+
+    const filename = `accounts_all_ledger_${yyyy}_${mm}_${dd}_${hh}_${mi}_${ss}.csv`;
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -807,7 +982,7 @@ export const AccountsManager: React.FC = () => {
         </CardContent>
       </Card>
 
-            {/* SUMMARY CARDS */}
+      {/* SUMMARY CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 mb-5">
         <div className="bg-white rounded-md shadow-sm py-4 px-5">
           <p className="text-sm text-[#8a7da5] mb-1">Total Billed</p>
@@ -864,6 +1039,8 @@ export const AccountsManager: React.FC = () => {
               <Button
                 variant="outline"
                 className="h-9 px-4 gap-2 bg-[#e5fff1] border-[#b7f7d9] text-[#0f9c34]"
+                onClick={handleExport}
+                disabled={filteredRows.length === 0}
               >
                 <Download className="h-4 w-4" />
                 Export
@@ -992,7 +1169,7 @@ export const AccountsManager: React.FC = () => {
       )}
     </div>
   );
-}
+};
 
 function cnProfit(allLoaded: boolean, _value: number) {
   if (allLoaded) {
