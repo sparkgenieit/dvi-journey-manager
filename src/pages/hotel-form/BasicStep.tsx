@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { HotelForm } from "../HotelForm";
+import type { HotelForm } from "./HotelForm";
 
 /* ================== Small, local ChipInput ================== */
 function ChipInput({

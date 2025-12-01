@@ -1,7 +1,12 @@
+// REPLACE-WHOLE-FILE
 // FILE: src/pages/VehicleAvailability/modals/AddDriverModal.tsx
 
 import React, { useEffect, useState } from "react";
-import { SimpleOption, createDriver } from "@/services/vehicle-availability";
+import {
+  SimpleOption,
+  createDriver,
+  fetchVendorVehicleTypes,
+} from "@/services/vehicle-availability";
 import { ChevronDown } from "lucide-react";
 
 type Props = {
@@ -10,8 +15,7 @@ type Props = {
   onCreated?: () => void;
 
   vendors: SimpleOption[];
-  vehicleTypes: SimpleOption[];
-
+  vehicleTypes?: SimpleOption[]; // optional fallback (we fetch per vendor)
   defaultVendorId?: number | "";
   defaultVehicleTypeId?: number | "";
 };
@@ -26,12 +30,14 @@ function SelectBox({
   placeholder,
   options,
   invalid,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   options: SimpleOption[];
   invalid?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <div className="relative">
@@ -40,9 +46,11 @@ function SelectBox({
           inputBase,
           "appearance-none pr-10",
           invalid ? "border-red-400" : "border-slate-300",
+          disabled ? "bg-slate-100 text-slate-400" : "",
         ].join(" ")}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       >
         <option value="">{placeholder}</option>
         {options.map((o) => (
@@ -64,7 +72,7 @@ export function AddDriverModal({
   onClose,
   onCreated,
   vendors,
-  vehicleTypes,
+  vehicleTypes: legacyVehicleTypes = [],
   defaultVendorId = "",
   defaultVehicleTypeId = "",
 }: Props) {
@@ -73,12 +81,17 @@ export function AddDriverModal({
   const [driverName, setDriverName] = useState("");
   const [mobile, setMobile] = useState("");
 
+  const [vendorVehicleTypes, setVendorVehicleTypes] = useState<SimpleOption[]>(
+    [],
+  );
+  const [loadingTypes, setLoadingTypes] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // init on open
   useEffect(() => {
     if (!open) return;
-
     setError("");
     setSaving(false);
 
@@ -86,34 +99,88 @@ export function AddDriverModal({
     setVehicleTypeId(defaultVehicleTypeId ?? "");
     setDriverName("");
     setMobile("");
+
+    // preload types for default vendor if provided
+    const v = Number(defaultVendorId);
+    if (defaultVendorId !== "" && Number.isFinite(v) && v > 0) {
+      setLoadingTypes(true);
+      fetchVendorVehicleTypes(v)
+        .then((opts) => setVendorVehicleTypes(opts || []))
+        .catch(() => setVendorVehicleTypes([]))
+        .finally(() => setLoadingTypes(false));
+    } else {
+      setVendorVehicleTypes([]);
+    }
   }, [open, defaultVendorId, defaultVehicleTypeId]);
 
-  if (!open) return null;
+  // fetch vendor-specific types when vendor changes
+  useEffect(() => {
+    if (!open) return;
+    if (vendorId === "") {
+      setVendorVehicleTypes([]);
+      setVehicleTypeId("");
+      return;
+    }
+    let alive = true;
+    setLoadingTypes(true);
+    fetchVendorVehicleTypes(Number(vendorId))
+      .then((opts) => {
+        if (!alive) return;
+        setVendorVehicleTypes(opts || []);
+        if (
+          vehicleTypeId !== "" &&
+          !(opts || []).some((o) => String(o.id) === String(vehicleTypeId))
+        ) {
+          setVehicleTypeId("");
+        }
+      })
+      .catch(() => {
+        if (!alive) return;
+        setVendorVehicleTypes([]);
+        setVehicleTypeId("");
+      })
+      .finally(() => {
+        if (alive) setLoadingTypes(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
+
+  // ---- derived values (no hooks after conditional return) ----
+  const effectiveVehicleTypes =
+    vendorVehicleTypes.length > 0 ? vendorVehicleTypes : legacyVehicleTypes;
 
   const vendorInvalid = vendorId === "";
   const vehicleTypeInvalid = vehicleTypeId === "";
 
-  const mobileValid =
-    mobile.trim().length >= 10 && /^[0-9+\-\s()]+$/.test(mobile.trim());
+  // simple derived boolean (no useMemo so hooks order is safe)
+  const mobileValid = (() => {
+    const s = mobile.trim();
+    if (!s.length) return false;
+    if (!/^[0-9+\-\s()]+$/.test(s)) return false;
+    const onlyDigits = s.replace(/[^\d]/g, "");
+    return onlyDigits.length >= 10 && onlyDigits.length <= 15;
+  })();
+
+  if (!open) return null;
 
   async function handleSave() {
     setError("");
-
     if (vendorInvalid) return setError("Please choose Vendor.");
     if (vehicleTypeInvalid) return setError("Please choose Vehicle Type.");
     if (!driverName.trim()) return setError("Please enter Driver Name.");
-    if (!mobile.trim()) return setError("Please enter Primary Mobile Number.");
+    if (!mobileValid) return setError("Please enter a valid Primary Mobile Number.");
 
     try {
       setSaving(true);
-
       await createDriver({
         vendorId: Number(vendorId),
-        vehicleTypeId: Number(vehicleTypeId),
+        vehicleTypeId: Number(vehicleTypeId), // vendor_vehicle_type_ID
         driverName: driverName.trim(),
         mobile: mobile.trim(),
       });
-
       onClose();
       onCreated?.();
     } catch (e: any) {
@@ -162,7 +229,7 @@ export function AddDriverModal({
               </div>
             </div>
 
-            {/* Vehicle Type */}
+            {/* Vehicle Type (vendor-scoped) */}
             <div>
               <div className={labelBase}>
                 Vehicle Type <span className="text-red-500">*</span>
@@ -171,10 +238,18 @@ export function AddDriverModal({
                 <SelectBox
                   value={vehicleTypeId === "" ? "" : String(vehicleTypeId)}
                   onChange={(v) => setVehicleTypeId(v ? Number(v) : "")}
-                  placeholder="Choose Vehicle Type"
-                  options={vehicleTypes}
+                  placeholder={
+                    loadingTypes ? "Loading vehicle types..." : "Choose Vehicle Type"
+                  }
+                  options={effectiveVehicleTypes}
                   invalid={vehicleTypeInvalid}
+                  disabled={vendorId === "" || loadingTypes}
                 />
+                {vendorId !== "" && !loadingTypes && effectiveVehicleTypes.length === 0 ? (
+                  <div className="mt-1 text-xs text-slate-400">
+                    No vehicle types found for this vendor.
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -211,12 +286,13 @@ export function AddDriverModal({
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value)}
                   placeholder="Primary Mobile Number"
+                  inputMode="tel"
                 />
               </div>
             </div>
           </div>
 
-          {/* Footer buttons like PHP */}
+          {/* Footer */}
           <div className="mt-12 flex items-center justify-between">
             <button
               type="button"

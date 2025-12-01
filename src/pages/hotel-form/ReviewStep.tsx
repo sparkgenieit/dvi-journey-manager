@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ReviewForm } from "../HotelForm";
+import type { ReviewForm } from "./HotelForm";
 import { Copy, FileSpreadsheet, FileText, Pencil, Trash2 } from "lucide-react";
 
 type ApiCtx = {

@@ -25,7 +25,7 @@ import NotFound from "./pages/NotFound";
 import { AccountsLedger } from "./pages/accounts/AccountsLedger";
 import Hotels from "./pages/Hotels";
 import Login from "./pages/Login";
-import HotelForm from "./pages/HotelForm";
+import HotelForm from "./pages/hotel-form/HotelForm";
 import { DailyMomentTracker } from "./pages/daily-moment-tracker/DailyMomentTracker";
 import DailyMomentDayView from "./pages/daily-moment-tracker/DailyMomentDayView";
 import VendorsPage from "./pages/vendor/VendorsPage";
