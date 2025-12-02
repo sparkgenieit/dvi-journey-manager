@@ -34,9 +34,9 @@ import DriversPage from "./pages/drivers/DriversPage";
 import DriverFormPage from "./pages/drivers/DriverFormPage";
 import VehicleAvailabilityPage from "./pages/vehicle-availability/VehicleAvailabilityPage";
 import { ItineraryDetails } from "./pages/ItineraryDetails";
-import HotspotList from "./pages/HotspotList";
-import HotspotForm from "./pages/HotspotForm";
-import HotspotPreview from "./pages/HotspotPreview";
+import HotspotList from "./pages/hotspot/HotspotList";
+import HotspotForm from "./pages/hotspot/HotspotForm";
+import HotspotPreview from "./pages/hotspot/HotspotPreview";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {

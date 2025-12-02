@@ -1,147 +1,189 @@
-import { Hotspot } from "@/types/hotspot";
+// FILE: src/services/hotspotService.ts
 
-// Mock data
-let hotspots: Hotspot[] = [
-  {
-    id: "1",
-    name: "Ullal Beach",
-    type: "Tourist Attraction",
-    priority: 0,
-    description: "Ullal Beach is a scenic coastal destination near Mangalore, Karnataka, known for its sparkling sand, clear water, and vibrant palm and casuarina trees.",
-    landmark: "Ullal, Karnataka",
-    address: "Ullal, Karnataka",
-    adultCost: 0,
-    childCost: 0,
-    infantCost: 0,
-    foreignAdultCost: 0,
-    foreignChildCost: 0,
-    foreignInfantCost: 0,
-    rating: 4.2,
-    duration: "01:00",
-    latitude: "12.8075928193398199",
-    longitude: "74.842164585740735",
-    videoUrl: "https://youtu.be/6Z6oZZHvYlk?si=QQrC7i-wSVBcZKkg",
-    locations: [
-      "Mangalore, Central",
-      "Mangalore, Bus Stop",
-      "Mangalore, Railway Station",
-      "Mangalore, Bus Stop, Bejai",
-      "Mangalore, Karnataka, India",
-      "Mangalore, international Airport",
-      "Mangalore, Railway Station, Attavar"
-    ],
-    galleryImages: ["/placeholder.svg"],
-    parkingCharges: {
-      sedan: 60,
-      innova: 60,
-      innovaCrysta6: 60,
-      tempoTraveller12: 80,
-      muv6: 60,
-      innova7: 60,
-      innovaCrysta7: 60,
-      benz26: 150,
-      leyland36: 150,
-      leyland40: 150,
-      benzLarge45: 150,
-      volvo43: 150
-    },
-    openingHours: {
-      monday: { is24Hours: true, timeSlots: [] },
-      tuesday: { is24Hours: true, timeSlots: [] },
-      wednesday: { is24Hours: true, timeSlots: [] },
-      thursday: { is24Hours: true, timeSlots: [] },
-      friday: { is24Hours: true, timeSlots: [] },
-      saturday: { is24Hours: true, timeSlots: [] },
-      sunday: { is24Hours: true, timeSlots: [] }
-    }
-  },
-  {
-    id: "2",
-    name: "Kadri Shree Manjunatha Temple",
-    type: "Temple",
-    priority: 0,
-    description: "Ancient temple dedicated to Lord Manjunatha",
-    landmark: "Kadri, Mangalore",
-    address: "Kadri, Mangalore, Karnataka",
-    adultCost: 0,
-    childCost: 0,
-    infantCost: 0,
-    foreignAdultCost: 0,
-    foreignChildCost: 0,
-    foreignInfantCost: 0,
-    rating: 4.5,
-    duration: "01:30",
-    latitude: "12.8911",
-    longitude: "74.8425",
-    videoUrl: "",
-    locations: ["Mangalore, Central", "Mangalore, Bus Stop", "Mangalore, Railway Station"],
-    galleryImages: ["/placeholder.svg"],
-    parkingCharges: {
-      sedan: 60,
-      innova: 60,
-      innovaCrysta6: 60,
-      tempoTraveller12: 80,
-      muv6: 60,
-      innova7: 60,
-      innovaCrysta7: 60,
-      benz26: 150,
-      leyland36: 150,
-      leyland40: 150,
-      benzLarge45: 150,
-      volvo43: 150
-    },
-    openingHours: {
-      monday: { is24Hours: true, timeSlots: [] },
-      tuesday: { is24Hours: true, timeSlots: [] },
-      wednesday: { is24Hours: true, timeSlots: [] },
-      thursday: { is24Hours: true, timeSlots: [] },
-      friday: { is24Hours: true, timeSlots: [] },
-      saturday: { is24Hours: true, timeSlots: [] },
-      sunday: { is24Hours: true, timeSlots: [] }
-    }
-  }
-];
+import { api, API_BASE_URL } from "@/lib/api"; // ← adjust path if different
+
+/** Strip `/api/v1` to get the public file base for /uploads */
+const FILE_BASE = API_BASE_URL.replace(/\/api\/v1$/i, "");
+
+type ListRow = {
+  modify: number | string;
+  hotspot_photo_url: string; // <img ...> HTML
+  hotspot_name: string | null;
+  hotspot_priority: number | string | null;
+  hotspot_locations: string | null; // "a<br>b"
+  local_members: string;   // HTML
+  foreign_members: string; // HTML
+};
+
+type FormGetResponse = {
+  payload: {
+    id: number;
+    hotspot_name: string;
+    hotspot_type: string | null;
+    hotspot_priority: number | null;
+    hotspot_description: string | null;
+    hotspot_landmark: string | null;
+    hotspot_address: string | null;
+    hotspot_adult_entry_cost?: number | null;
+    hotspot_child_entry_cost?: number | null;
+    hotspot_infant_entry_cost?: number | null;
+    hotspot_foreign_adult_entry_cost?: number | null;
+    hotspot_foreign_child_entry_cost?: number | null;
+    hotspot_foreign_infant_entry_cost?: number | null;
+    hotspot_rating?: number | null;
+    hotspot_video_url?: string | null;
+    hotspot_latitude?: string | null;
+    hotspot_longitude?: string | null;
+    hotspot_location_list?: string[];
+    gallery: Array<{ id?: number | string; name: string }>;
+    parkingCharges: Array<{ id?: number | string; vehicleTypeId: number; charge: number }>;
+    operatingHours?: Record<
+      string,
+      { open24hrs?: boolean; closed24hrs?: boolean; slots: Array<{ id?: number | string; start: string; end: string }> }
+    >;
+  };
+  options: {
+    hotspotTypes: string[];
+    locations: string[];
+    vehicleTypes: Array<{ id: number; name: string }>;
+  };
+};
+
+export type HotspotListItem = {
+  id: string;
+  imageUrl: string;
+  name: string;
+  priority: number;
+  places: string[];
+  localHtml: string;
+  foreignHtml: string;
+};
+
+export type HotspotFormData = {
+  id?: number;
+  name: string;
+  type: string | null;
+  priority: number;
+  description: string;
+  landmark: string;
+  address: string;
+  adultCost: number;
+  childCost: number;
+  infantCost: number;
+  foreignAdultCost: number;
+  foreignChildCost: number;
+  foreignInfantCost: number;
+  rating: number;
+  duration?: string;
+  latitude: string;
+  longitude: string;
+  videoUrl: string;
+  locations: string[];
+  galleryImages: string[];
+  parkingCharges: Record<string, number>;
+  openingHours: Record<string, { is24Hours?: boolean; timeSlots: Array<{ start: string; end: string }> }>;
+};
+
+function imgFromHtml(html: string): string {
+  const m = /<img[^>]*src=["']([^"']+)["']/i.exec(html || "");
+  return m?.[1] ?? "";
+}
+function brToArray(s: string | null): string[] {
+  return (s || "")
+    .split(/<br\s*\/?>/i)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
 export const hotspotService = {
-  listHotspots: async (): Promise<Hotspot[]> => {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve([...hotspots]), 100);
-    });
+  async listHotspots(): Promise<HotspotListItem[]> {
+    const json = await api("/hotspots"); // GET
+    const rows: ListRow[] = json.data ?? [];
+    return rows.map((r) => ({
+      id: String(r.modify),
+      imageUrl: imgFromHtml(r.hotspot_photo_url),
+      name: r.hotspot_name ?? "",
+      priority: Number(r.hotspot_priority ?? 0),
+      places: brToArray(r.hotspot_locations),
+      localHtml: r.local_members,
+      foreignHtml: r.foreign_members,
+    }));
   },
 
-  getHotspot: async (id: string): Promise<Hotspot | undefined> => {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(hotspots.find(h => h.id === id)), 100);
-    });
+  async getHotspotForm(hotspotId: string): Promise<FormGetResponse> {
+    return api(`/hotspots/${hotspotId}/form`);
   },
 
-  createHotspot: async (payload: Omit<Hotspot, "id">): Promise<Hotspot> => {
-    return new Promise((resolve) => {
-      const newHotspot = {
-        ...payload,
-        id: String(Date.now())
-      };
-      hotspots.push(newHotspot);
-      setTimeout(() => resolve(newHotspot), 100);
-    });
+  async getFormOptions() {
+    return api("/hotspots/form-options");
   },
 
-  updateHotspot: async (id: string, payload: Partial<Hotspot>): Promise<Hotspot> => {
-    return new Promise((resolve, reject) => {
-      const index = hotspots.findIndex(h => h.id === id);
-      if (index === -1) {
-        reject(new Error("Hotspot not found"));
-        return;
-      }
-      hotspots[index] = { ...hotspots[index], ...payload };
-      setTimeout(() => resolve(hotspots[index]), 100);
-    });
+  async saveHotspot(form: Partial<HotspotFormData>): Promise<{ id: number }> {
+    const body = {
+      id: form.id,
+      hotspot_name: form.name,
+      hotspot_type: form.type ?? null,
+      hotspot_priority: form.priority ?? 0,
+      hotspot_description: form.description ?? null,
+      hotspot_landmark: form.landmark ?? null,
+      hotspot_address: form.address ?? null,
+      hotspot_adult_entry_cost: form.adultCost ?? null,
+      hotspot_child_entry_cost: form.childCost ?? null,
+      hotspot_infant_entry_cost: form.infantCost ?? null,
+      hotspot_foreign_adult_entry_cost: form.foreignAdultCost ?? null,
+      hotspot_foreign_child_entry_cost: form.foreignChildCost ?? null,
+      hotspot_foreign_infant_entry_cost: form.foreignInfantCost ?? null,
+      hotspot_rating: form.rating ?? null,
+      hotspot_video_url: form.videoUrl ?? null,
+      hotspot_latitude: form.latitude ?? null,
+      hotspot_longitude: form.longitude ?? null,
+      hotspot_location_list: form.locations ?? [],
+      gallery: (form.galleryImages ?? []).map((u) => ({ name: u.split("/").pop()! })),
+      parkingCharges: Object.entries(form.parkingCharges ?? {})
+        .filter(([, charge]) => Number(charge) >= 0)
+        .map(([k, charge]) => {
+          const maybeId = Number(k);
+          return { vehicleTypeId: Number.isFinite(maybeId) ? maybeId : 0, charge: Number(charge) };
+        }),
+      operatingHours: Object.fromEntries(
+        Object.entries(form.openingHours ?? {}).map(([day, v]) => [
+          day,
+          {
+            open24hrs: !!v?.is24Hours,
+            closed24hrs: false,
+            slots: (v?.timeSlots || []).map((s) => ({ start: s.start, end: s.end })),
+          },
+        ]),
+      ),
+    };
+
+    return api("/hotspots/form", { method: "POST", body });
   },
 
-  deleteHotspot: async (id: string): Promise<void> => {
-    return new Promise((resolve) => {
-      hotspots = hotspots.filter(h => h.id !== id);
-      setTimeout(() => resolve(), 100);
+  async deleteHotspot(id: string): Promise<void> {
+    await api(`/hotspots/${id}`, { method: "DELETE" });
+  },
+
+  async updatePriority(id: string, priority: number) {
+    await api(`/hotspots/${id}/priority`, { method: "PATCH", body: { priority } });
+  },
+
+  async uploadGallery(hotspotId: string | number, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await api(`/hotspots/${hotspotId}/gallery/upload`, {
+      method: "POST",
+      body: fd,
+      // api() will auto-detect FormData and avoid JSON headers
     });
-  }
+    // ensure returned url is absolute for <img>
+    return {
+      ...r,
+      url: r?.url?.startsWith("http") ? r.url : `${FILE_BASE}${r.url || ""}`,
+    } as { ok: true; id: number | string; name: string; url: string };
+  },
+
+  fileBase(): string {
+    return FILE_BASE;
+  },
 };
