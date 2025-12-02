@@ -34,6 +34,9 @@ import DriversPage from "./pages/drivers/DriversPage";
 import DriverFormPage from "./pages/drivers/DriverFormPage";
 import VehicleAvailabilityPage from "./pages/vehicle-availability/VehicleAvailabilityPage";
 import { ItineraryDetails } from "./pages/ItineraryDetails";
+import HotspotList from "./pages/HotspotList";
+import HotspotForm from "./pages/HotspotForm";
+import HotspotPreview from "./pages/HotspotPreview";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -304,9 +307,8 @@ const App = () => (
                 </MainLayout>
               }
             />
-          </Route>
 
-          {/* ✅ Vehicle Availability Chart */}
+            {/* ✅ Vehicle Availability Chart */}
             <Route
               path="/vehicle-availability"
               element={
@@ -315,6 +317,41 @@ const App = () => (
                 </MainLayout>
               }
             />
+
+            {/* ✅ Hotspot Routes */}
+            <Route
+              path="/hotspots"
+              element={
+                <MainLayout>
+                  <HotspotList />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/hotspots/new"
+              element={
+                <MainLayout>
+                  <HotspotForm />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/hotspots/:id/edit"
+              element={
+                <MainLayout>
+                  <HotspotForm />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/hotspots/:id/preview"
+              element={
+                <MainLayout>
+                  <HotspotPreview />
+                </MainLayout>
+              }
+            />
+          </Route>
 
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
