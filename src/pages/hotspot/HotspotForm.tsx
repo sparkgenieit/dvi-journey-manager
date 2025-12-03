@@ -1,4 +1,3 @@
-// REPLACE-WHOLE-FILE
 // FILE: src/pages/hotspots/HotspotForm.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -23,7 +22,11 @@ import { toast } from "sonner";
 /* -------------------------------------------------------------------------- */
 
 type OpeningSlot = { start: string; end: string }; // "hh:mm AM" (12-hr)
-type OpeningDay = { is24Hours?: boolean; closed24Hours?: boolean; timeSlots: OpeningSlot[] };
+type OpeningDay = {
+  is24Hours?: boolean;
+  closed24Hours?: boolean;
+  timeSlots: OpeningSlot[];
+};
 
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
@@ -61,19 +64,19 @@ function TimePickerField({
   const [AP, setAP] = useState<"AM" | "PM">(ap);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
-  // Close on outside click
+  // Keep internal picker state in sync when parent `value` changes
   useEffect(() => {
-    function onDocClick(e: MouseEvent) {
-      if (!open) return;
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+    const parsed = parse12(value);
+    setH(parsed.h);
+    setM(parsed.mm);
+    setAP(parsed.ap);
+  }, [value]);
 
-  // Commit immediately on any change (fix: user selection persists even without pressing "Set")
+  // ❌ Removed outside-click close handler because shadcn <Select>
+  // uses a portal and clicks inside the dropdown were treated as "outside",
+  // which immediately closed the picker and prevented value from sticking.
+
+  // Commit immediately on any change (user selection persists even without pressing "Set")
   const commit = (nh = H, nm = M, nap = AP) => {
     onChange(fmt12(nh, nm, nap));
   };
@@ -83,6 +86,7 @@ function TimePickerField({
       <Input
         value={value || ""}
         onFocus={() => !disabled && setOpen(true)}
+        onClick={() => !disabled && setOpen(true)}
         onChange={() => {
           /* prevent manual typing from desyncing; picker controls value */
         }}
@@ -99,7 +103,7 @@ function TimePickerField({
               onValueChange={(v) => {
                 const nh = Math.max(1, Math.min(12, Number(v)));
                 setH(nh);
-                commit(nh, M, AP); // <-- commit on change
+                commit(nh, M, AP);
               }}
             >
               <SelectTrigger className="w-[80px]" aria-label="Hour">
@@ -122,7 +126,7 @@ function TimePickerField({
               onValueChange={(v) => {
                 const nm = Math.max(0, Math.min(59, Number(v)));
                 setM(nm);
-                commit(H, nm, AP); // <-- commit on change
+                commit(H, nm, AP);
               }}
             >
               <SelectTrigger className="w-[80px]" aria-label="Minute">
@@ -143,7 +147,7 @@ function TimePickerField({
               onValueChange={(v) => {
                 const nap = (v as "AM" | "PM") ?? "AM";
                 setAP(nap);
-                commit(H, M, nap); // <-- commit on change
+                commit(H, M, nap);
               }}
             >
               <SelectTrigger className="w-[80px]" aria-label="AM/PM">
@@ -298,7 +302,15 @@ export default function HotspotForm() {
       );
       setForm((prev) => ({
         ...prev,
-        galleryImages: [...(prev.galleryImages || []), ...uploads.map((u) => u.url)],
+        galleryImages: [
+          ...(prev.galleryImages || []),
+          // support both { url } and { name } shapes
+          ...uploads.map((u: any) =>
+            u?.url
+              ? u.url
+              : `${hotspotService.fileBase()}/uploads/hotspot_gallery/${u.name}`
+          ),
+        ],
       }));
     } catch {
       toast.error("Failed to upload images");
@@ -306,34 +318,34 @@ export default function HotspotForm() {
   }
 
   async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  try {
-    setLoading(true);
+    e.preventDefault();
+    try {
+      setLoading(true);
 
-    // Convert parkingCharges object { [vehicleTypeId]: charge } -> array [{vehicleTypeId, charge}]
-    const parkingChargesArray = Object.entries(form.parkingCharges ?? {}).map(
-      ([vehicleTypeId, charge]) => ({
-        vehicleTypeId: Number(vehicleTypeId),
-        charge: Number(charge ?? 0),
-      }),
-    );
+      // Convert parkingCharges object { [vehicleTypeId]: charge } -> array [{vehicleTypeId, charge}]
+      const parkingChargesArray = Object.entries(form.parkingCharges ?? {}).map(
+        ([vehicleTypeId, charge]) => ({
+          vehicleTypeId: Number(vehicleTypeId),
+          charge: Number(charge ?? 0),
+        })
+      );
 
-    // Build payload aligned to backend
-    const payload = {
-      ...form,
-      parkingCharges: parkingChargesArray,
-      // ensure operatingHours stays as is
-    };
+      // Build payload aligned to backend
+      const payload = {
+        ...form,
+        parkingCharges: parkingChargesArray,
+        // ensure operatingHours stays as is
+      };
 
-    await hotspotService.saveHotspot(payload as any);
-    toast.success("Hotspot saved successfully");
-    navigate("/hotspots");
-  } catch {
-    toast.error("Failed to save hotspot");
-  } finally {
-    setLoading(false);
+      await hotspotService.saveHotspot(payload as any);
+      toast.success("Hotspot saved successfully");
+      navigate("/hotspots");
+    } catch {
+      toast.error("Failed to save hotspot");
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   const vehNamesById = useMemo(
     () => Object.fromEntries(options.vehicleTypes.map((v) => [String(v.id), v.name])),
@@ -417,7 +429,9 @@ export default function HotspotForm() {
                 id="foreignAdultCost"
                 type="number"
                 value={form.foreignAdultCost ?? 0}
-                onChange={(e) => setForm({ ...form, foreignAdultCost: Number(e.target.value) })}
+                onChange={(e) =>
+                  setForm({ ...form, foreignAdultCost: Number(e.target.value) })
+                }
                 placeholder="Foreign Adult Entry Cost"
                 required
               />
@@ -432,7 +446,9 @@ export default function HotspotForm() {
                 id="foreignChildCost"
                 type="number"
                 value={form.foreignChildCost ?? 0}
-                onChange={(e) => setForm({ ...form, foreignChildCost: Number(e.target.value) })}
+                onChange={(e) =>
+                  setForm({ ...form, foreignChildCost: Number(e.target.value) })
+                }
                 placeholder="Foreign Child Entry Cost"
                 required
               />
@@ -443,7 +459,9 @@ export default function HotspotForm() {
                 id="foreignInfantCost"
                 type="number"
                 value={form.foreignInfantCost ?? 0}
-                onChange={(e) => setForm({ ...form, foreignInfantCost: Number(e.target.value) })}
+                onChange={(e) =>
+                  setForm({ ...form, foreignInfantCost: Number(e.target.value) })
+                }
                 placeholder="Foreign Infant Entry Cost"
                 required
               />
@@ -502,7 +520,9 @@ export default function HotspotForm() {
                 type="time"
                 step={60}
                 value={form.duration || "01:00"}
-                onChange={(e) => setForm({ ...form, duration: (e.target as HTMLInputElement).value })}
+                onChange={(e) =>
+                  setForm({ ...form, duration: (e.target as HTMLInputElement).value })
+                }
                 onBlur={(e) => {
                   const v = (e.target as HTMLInputElement).value || "01:00";
                   const [h = "01", m = "00"] = v.split(":");
@@ -582,7 +602,12 @@ export default function HotspotForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Hotspot Gallery*</Label>
-              <Input type="file" multiple accept="image/*" onChange={(e) => onUploadFiles(e.target.files)} />
+              <Input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) => onUploadFiles(e.target.files)}
+              />
             </div>
             <div>
               <Label htmlFor="videoUrl">Hotspot Video URL *</Label>
@@ -655,7 +680,7 @@ export default function HotspotForm() {
                 setForm((prev) => ({
                   ...prev,
                   openingHours: {
-                    ...(prev.openingHours as Record<string, any> | undefined) ?? {},
+                    ...((prev.openingHours as Record<string, any> | undefined) ?? {}),
                     [day]: next,
                   },
                 }));
@@ -676,7 +701,7 @@ export default function HotspotForm() {
                 setDay(next);
               };
 
-              // FIX #1: materialize the first slot so edits persist
+              // materialize the first slot so edits persist
               const updateSlot = (idx: number, key: "start" | "end", val: string) => {
                 const base =
                   current.timeSlots && current.timeSlots.length > 0
@@ -691,7 +716,10 @@ export default function HotspotForm() {
               const disabled = !!current.is24Hours || !!current.closed24Hours;
 
               return (
-                <div key={day} className="grid grid-cols-12 items-center border rounded-md px-4 py-3 gap-3">
+                <div
+                  key={day}
+                  className="grid grid-cols-12 items-center border rounded-md px-4 py-3 gap-3"
+                >
                   {/* Day */}
                   <div className="col-span-3 capitalize font-medium">{day}</div>
 
@@ -699,6 +727,7 @@ export default function HotspotForm() {
                   <div className="col-span-2 flex justify-center">
                     <Switch
                       checked={!!current.is24Hours}
+                      disabled={!!current.closed24Hours}
                       onCheckedChange={(checked) => {
                         setDay({
                           ...current,
@@ -714,6 +743,7 @@ export default function HotspotForm() {
                   <div className="col-span-2 flex justify-center">
                     <Switch
                       checked={!!current.closed24Hours}
+                      disabled={!!current.is24Hours}
                       onCheckedChange={(checked) => {
                         setDay({
                           ...current,

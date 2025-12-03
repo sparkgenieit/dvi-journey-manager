@@ -1,4 +1,5 @@
 // FILE: src/layouts/Sidebar.tsx
+
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
@@ -57,7 +58,20 @@ const menuItems = [
     ],
   },
 
-  { title: "Hotspot", icon: MapPin, path: "/hotspots" },
+  // ─────────────────────────────────────────────
+  // Hotspot submenu (New Hotspot / Parking Charge)
+  // ─────────────────────────────────────────────
+  {
+    title: "Hotspot",
+    icon: MapPin,
+    path: "/hotspots",
+    hasSubmenu: true,
+    children: [
+      { title: "New Hotspot", path: "/hotspots" },
+      { title: "Parking Charge", path: "/parking-charge-bulk-import" },
+    ],
+  },
+
   { title: "Activity", icon: Map, path: "/activity" },
   {
     title: "Locations",

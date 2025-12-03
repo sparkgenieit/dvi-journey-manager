@@ -173,7 +173,7 @@ export default function HotspotList() {
             className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold
                        bg-violet-50 text-violet-700 hover:bg-violet-100 border border-transparent
                        transition-colors"
-            onClick={() => navigate("/hotspots/parking-charges")}
+            onClick={() => navigate("/parking-charge-bulk-import")}
           >
             <Upload className="mr-2 h-4 w-4" />
             Parking charges

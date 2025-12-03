@@ -18,8 +18,6 @@ function normalizeBase(base: string) {
 
 export const API_BASE_URL = normalizeBase(RAW_API_BASE);
 
-
-
 type ApiOptions = {
   method?: string;
   auth?: boolean; // default true

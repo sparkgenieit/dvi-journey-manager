@@ -37,6 +37,7 @@ import { ItineraryDetails } from "./pages/ItineraryDetails";
 import HotspotList from "./pages/hotspot/HotspotList";
 import HotspotForm from "./pages/hotspot/HotspotForm";
 import HotspotPreview from "./pages/hotspot/HotspotPreview";
+import ParkingChargeBulkImport from "./pages/hotspot/ParkingChargeBulkImport";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -352,6 +353,15 @@ const App = () => (
               }
             />
           </Route>
+          {/* Parking Charge Bulk Import */}
+          <Route
+            path="/parking-charge-bulk-import" 
+            element={
+              <MainLayout>
+                <ParkingChargeBulkImport />
+              </MainLayout>
+            }
+          />
 
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
