@@ -72,7 +72,7 @@ const menuItems = [
     ],
   },
 
-  { title: "Activity", icon: Map, path: "/activity" },
+  { title: "Activity", icon: Map, path: "/activities" },
   {
     title: "Locations",
     icon: MapPin,
