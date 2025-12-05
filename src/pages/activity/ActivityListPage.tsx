@@ -96,7 +96,8 @@ export default function ActivityListPage() {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [busyIds, setBusyIds] = useState<Set<number>>(new Set()); // while toggling
+  const [busyIds, setBusyIds] = useState<Set<number>>(new Set()); // while toggling status
+  const [deletingId, setDeletingId] = useState<number | null>(null); // while deleting
 
   /* ---------- define `load` BEFORE any effect that uses it ---------- */
   const load = useCallback(async () => {
@@ -158,6 +159,42 @@ export default function ActivityListPage() {
       });
     }
   }
+
+  /* ---------- delete (optimistic remove + rollback) ---------- */
+  const handleDelete = useCallback(
+    async (id: number) => {
+      if (deletingId) return; // prevent double clicks
+      const ok = window.confirm("Delete this activity? This action cannot be undone.");
+      if (!ok) return;
+
+      setDeletingId(id);
+
+      // keep snapshot for rollback
+      const prevRows = rows;
+      const prevFiltered = filtered;
+
+      // optimistic remove
+      setRows((r) => r.filter((x) => x.activity_id !== id));
+      setFiltered((r) => r.filter((x) => x.activity_id !== id));
+
+      try {
+        await ActivitiesAPI.delete(id);
+        toast.success("Activity deleted");
+        // fix current page if it became empty
+        const totalAfter = prevFiltered.filter((x) => x.activity_id !== id).length;
+        const lastPage = Math.max(1, Math.ceil(totalAfter / pageSize));
+        if (currentPage > lastPage) setCurrentPage(lastPage);
+      } catch (e) {
+        // rollback
+        setRows(prevRows);
+        setFiltered(prevFiltered);
+        toast.error("Failed to delete activity");
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [rows, filtered, pageSize, currentPage, deletingId],
+  );
 
   /* ---------- paging & export ---------- */
   const paginated = useMemo(
@@ -305,6 +342,8 @@ export default function ActivityListPage() {
               paginated.map((r, idx) => {
                 const checked = Number(r.status) === 1;
                 const disabled = busyIds.has(r.activity_id);
+                const isDeleting = deletingId === r.activity_id;
+
                 return (
                   <TableRow key={r.activity_id}>
                     <TableCell>{(currentPage - 1) * pageSize + idx + 1}</TableCell>
@@ -328,12 +367,11 @@ export default function ActivityListPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => {
-                            // Hook your delete modal here if you have one
-                            toast.message("Hook delete modal for id " + r.activity_id);
-                          }}
+                          disabled={isDeleting}
+                          onClick={() => handleDelete(r.activity_id)}
+                          title="Delete"
                         >
-                          <Trash2 className="h-4 w-4 text-red-600" />
+                          <Trash2 className={`h-4 w-4 ${isDeleting ? "opacity-50" : "text-red-600"}`} />
                         </Button>
                       </div>
                     </TableCell>

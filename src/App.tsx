@@ -38,7 +38,9 @@ import HotspotList from "./pages/hotspot/HotspotList";
 import HotspotForm from "./pages/hotspot/HotspotForm";
 import HotspotPreview from "./pages/hotspot/HotspotPreview";
 import ParkingChargeBulkImport from "./pages/hotspot/ParkingChargeBulkImport";
-import { ActivityListPage, ActivityEditPage, ActivityPreviewPage } from "./pages/activity";
+import ActivityForm from "./pages/activity/ActivityForm";
+import ActivityListPage from "./pages/activity/ActivityListPage";
+import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -353,7 +355,41 @@ const App = () => (
                 </MainLayout>
               }
             />
+
+            {/* ✅ Activity Routes */}
+          <Route
+            path="/activities"
+            element={
+              <MainLayout>
+                <ActivityListPage />
+              </MainLayout>
+            }
+          />
+            <Route
+              path="/activities/new"
+              element={
+                <MainLayout>
+                  <ActivityForm />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/activities/:id/edit"
+              element={
+                <MainLayout>
+                  <ActivityForm />
+                </MainLayout>
+              }
+            />
           </Route>
+                      <Route
+              path="/activities/:id/preview"
+              element={
+                <MainLayout>
+                  <ActivityPreviewPage />
+                </MainLayout>
+              }
+            />
           {/* Parking Charge Bulk Import */}
           <Route
             path="/parking-charge-bulk-import" 
@@ -363,39 +399,6 @@ const App = () => (
               </MainLayout>
             }
           />
-          // Activities
-            <Route
-              path="/activities"
-              element={
-                <MainLayout>
-                  <ActivityListPage />
-                </MainLayout>
-              }
-            />
-            <Route
-              path="/activities/new"
-              element={
-                <MainLayout>
-                  <ActivityEditPage />
-                </MainLayout>
-              }
-            />
-            <Route
-              path="/activities/:id/edit"
-              element={
-                <MainLayout>
-                  <ActivityEditPage />
-                </MainLayout>
-              }
-            />
-            <Route
-              path="/activities/:id/preview"
-              element={
-                <MainLayout>
-                  <ActivityPreviewPage />
-                </MainLayout>
-              }
-            />
 
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
