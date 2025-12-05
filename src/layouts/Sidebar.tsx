@@ -58,7 +58,7 @@ const menuItems = [
   },
 
   { title: "Hotspot", icon: MapPin, path: "/hotspots" },
-  { title: "Activity", icon: Map, path: "/activity" },
+  { title: "Activity", icon: Map, path: "/activities" },
   {
     title: "Locations",
     icon: MapPin,
