@@ -37,6 +37,8 @@ import { ItineraryDetails } from "./pages/ItineraryDetails";
 import HotspotList from "./pages/HotspotList";
 import HotspotForm from "./pages/HotspotForm";
 import HotspotPreview from "./pages/HotspotPreview";
+import ActivityList from "./pages/ActivityList";
+import ActivityForm from "./pages/ActivityForm";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -348,6 +350,32 @@ const App = () => (
               element={
                 <MainLayout>
                   <HotspotPreview />
+                </MainLayout>
+              }
+            />
+
+            {/* ✅ Activity Routes */}
+            <Route
+              path="/activities"
+              element={
+                <MainLayout>
+                  <ActivityList />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/activities/new"
+              element={
+                <MainLayout>
+                  <ActivityForm />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/activities/:id/edit"
+              element={
+                <MainLayout>
+                  <ActivityForm />
                 </MainLayout>
               }
             />
