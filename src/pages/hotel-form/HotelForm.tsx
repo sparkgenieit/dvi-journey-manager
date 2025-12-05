@@ -94,12 +94,12 @@ const stepToTab = [
 ] as const;
 
 /* ===== Sub-steps ===== */
-import BasicStep from "./hotel-form/BasicStep";
-import RoomsStep from "./hotel-form/RoomsStep";
-import AmenitiesStep from "./hotel-form/AmenitiesStep";
-import PriceBookStep from "./hotel-form/PriceBookStep";
-import ReviewStep from "./hotel-form/ReviewStep";
-import PreviewStep from "./hotel-form/PreviewStep";
+import BasicStep from "./BasicStep";
+import RoomsStep from "./RoomsStep";
+import AmenitiesStep from "./AmenitiesStep";
+import PriceBookStep from "./PriceBookStep";
+import ReviewStep from "./ReviewStep";
+import PreviewStep from "./PreviewStep";
 
 export default function HotelFormOrchestrator() {
   const qc = useQueryClient();

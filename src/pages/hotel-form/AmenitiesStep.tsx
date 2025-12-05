@@ -1,7 +1,7 @@
 // FILE: src/pages/hotel-form/AmenitiesStep.tsx
 import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AmenityRow } from "../HotelForm";
+import type { AmenityRow } from "./HotelForm";
 
 type ApiCtx = {
   apiGetFirst: (ps: string[]) => Promise<any>;

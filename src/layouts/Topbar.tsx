@@ -32,7 +32,7 @@ export const Topbar = ({ onMobileMenuToggle }: TopbarProps) => {
     if (path.includes("/drivers")) return "Drivers";
     if (path.includes("/vehicles")) return "Vehicles";
     if (path.includes("/guide")) return "Guide";
-    if (path.includes("/activity")) return "Activity";
+    if (path.includes("/activities")) return "Activity";
     if (path.includes("/locations")) return "Locations";
     return "Dashboard";
   };

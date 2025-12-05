@@ -1,7 +1,7 @@
 // FILE: src/pages/hotel-form/PriceBookStep.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { PricebookRow } from "../HotelForm";
+import type { PricebookRow } from "./HotelForm";
 
 type ApiCtx = {
   apiGetFirst: (ps: string[]) => Promise<any>;

@@ -7,6 +7,7 @@ import {
   fetchVehicleAvailability,
   fetchVehicleTypes,
   fetchVendors,
+  fetchLocations,
   SimpleOption,
   VehicleAvailabilityCell,
   VehicleAvailabilityResponse,
@@ -76,6 +77,18 @@ export default function VehicleAvailabilityPage() {
     });
   }, [data.rows, search]);
 
+    async function loadLocationsBase(q?: string) {
+    try {
+      const opts = await fetchLocations(q); // [{ id, label }]
+      const labels = (opts || []).map(o => o.label).filter(Boolean);
+      setLocations(prev =>
+        Array.from(new Set([...(prev || []), ...labels])).sort((a, b) => a.localeCompare(b)),
+      );
+    } catch {
+      // keep silent; locations are optional
+    }
+  }
+
   function extractLocationsFromAvailability(res: VehicleAvailabilityResponse): string[] {
   const set = new Set<string>();
 
@@ -106,21 +119,18 @@ function rowHasLocation(row: VehicleAvailabilityRow, location: string): boolean 
   return false;
 }
 
-  async function loadLookups() {
+   async function loadLookups() {
     setError("");
     try {
-      const [v, vt, a] = await Promise.all([
-      fetchVendors(),
-      fetchVehicleTypes(),
-      fetchAgents(),
-    ]);
-    setVendors(v);
-    setVehicleTypes(vt);
-    setAgents(a);
-    // locations will be derived from vehicle-availability API response in loadChart()
-    setLocations([]);
+      const [v, vt, a] = await Promise.all([fetchVendors(), fetchVehicleTypes(), fetchAgents()]);
+      setVendors(v);
+      setVehicleTypes(vt);
+      setAgents(a);
+
+      // clear then prefill a base set of locations from backend
+      setLocations([]);
+      await loadLocationsBase(); // fills from arrival/departure labels even if chart has zero rows
     } catch (e: any) {
-      // Keep page usable even if lookups fail
       setError(e?.message || "Failed to load dropdown data.");
       setVendors([]);
       setVehicleTypes([]);
@@ -142,9 +152,11 @@ function rowHasLocation(row: VehicleAvailabilityRow, location: string): boolean 
       // NOTE: locationId is now a string label, not a numeric ID, so we do client-side filtering
     });
 
-    // 1) Build dynamic dropdown options from routeSegments
+    // 1) Build dynamic dropdown options from routeSegments, then MERGE with base list
     const derivedLocations = extractLocationsFromAvailability(res);
-    setLocations(derivedLocations);
+    setLocations(prev =>
+      Array.from(new Set([...(prev || []), ...derivedLocations])).sort((x, y) => x.localeCompare(y)),
+    );
 
     // 2) Apply location filter locally (so results change only after clicking Apply -> loadChart())
     const loc = (locationId || "").trim();
@@ -174,6 +186,8 @@ function rowHasLocation(row: VehicleAvailabilityRow, location: string): boolean 
   useEffect(() => {
     loadLookups();
     loadChart();
+    // also try to prefill with a small popular set (no query) at mount
+    loadLocationsBase();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
