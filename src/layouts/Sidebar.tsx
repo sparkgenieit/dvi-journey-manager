@@ -1,6 +1,8 @@
 // FILE: src/layouts/Sidebar.tsx
+
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { LucideIcon } from "lucide-react";
 import {
   Home,
   FileText,
@@ -22,54 +24,88 @@ import {
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
-const menuItems = [
-  { title: "Dashboard", icon: Home, path: "/" },
-  { title: "Create Itinerary", icon: FileText, path: "/create-itinerary" },
-  { title: "Latest Itinerary", icon: FileText, path: "/latest-itinerary" },
-  { title: "Confirmed Itinerary", icon: CheckCircle, path: "/confirmed-itinerary" },
+type MenuChild = {
+  id: string;
+  title: string;
+  path: string;
+};
+
+type MenuItem = {
+  id: string;
+  title: string;
+  icon: LucideIcon;
+  path: string;
+  hasSubmenu?: boolean;
+  children?: MenuChild[];
+};
+
+const menuItems: MenuItem[] = [
+  { id: "dashboard", title: "Dashboard", icon: Home, path: "/" },
+  { id: "create-itinerary", title: "Create Itinerary", icon: FileText, path: "/create-itinerary" },
+  { id: "latest-itinerary", title: "Latest Itinerary", icon: FileText, path: "/latest-itinerary" },
+  { id: "confirmed-itinerary", title: "Confirmed Itinerary", icon: CheckCircle, path: "/confirmed-itinerary" },
 
   {
+    id: "accounts",
     title: "Accounts",
     icon: Wallet,
     path: "/accounts",
     hasSubmenu: true,
     children: [
-      { title: "Accounts Manager", path: "/accounts-manager" },
-      { title: "Accounts Ledger", path: "/accounts-ledger" },
+      { id: "accounts-manager", title: "Accounts Manager", path: "/accounts-manager" },
+      { id: "accounts-ledger", title: "Accounts Ledger", path: "/accounts-ledger" },
     ],
   },
 
-  { title: "Hotels", icon: Building2, path: "/hotels" },
-  { title: "Daily Moment Tracker", icon: Clock, path: "/daily-moment" },
+  { id: "hotels", title: "Hotels", icon: Building2, path: "/hotels" },
+  { id: "daily-moment", title: "Daily Moment Tracker", icon: Clock, path: "/daily-moment" },
 
-  // ─────────────────────────────────────────────
-  // Vendor Management submenu (Vendor / Driver / Vehicle Availability Chart)
-  // ─────────────────────────────────────────────
   {
+    id: "vendor-mgmt",
     title: "Vendor Management",
     icon: Users,
     path: "/vendor-management",
     hasSubmenu: true,
     children: [
-      { title: "Vendor", path: "/vendor" },
-      { title: "Driver", path: "/drivers" },
-      { title: "Vehicle Availability Chart", path: "/vehicle-availability" },
+      { id: "vendor", title: "Vendor", path: "/vendor" },
+      { id: "drivers", title: "Driver", path: "/drivers" },
+      { id: "vehicle-availability", title: "Vehicle Availability Chart", path: "/vehicle-availability" },
     ],
   },
 
-  { title: "Hotspot", icon: MapPin, path: "/hotspots" },
-  { title: "Activity", icon: Map, path: "/activities" },
+  // Single links
+  { id: "hotspots-link", title: "Hotspot", icon: MapPin, path: "/hotspots" },
+  { id: "activities-link", title: "Activity", icon: Map, path: "/activities" },
+
+  // Submenu with same title as a single link (OK now because ids differ)
   {
+    id: "hotspots-submenu",
+    title: "Hotspot",
+    icon: MapPin,
+    path: "/hotspots",
+    hasSubmenu: true,
+    children: [
+      { id: "hotspots-new", title: "New Hotspot", path: "/hotspots" },
+      { id: "parking-charge", title: "Parking Charge", path: "/parking-charge-bulk-import" },
+    ],
+  },
+
+  // Duplicate “Activity” link (id is unique so no key clash)
+  { id: "activities-link-2", title: "Activity", icon: Map, path: "/activities" },
+
+  {
+    id: "locations",
     title: "Locations",
     icon: MapPin,
     path: "/locations",
     hasSubmenu: true,
   },
-  { title: "Guide", icon: UserSquare2, path: "/guide" },
-  { title: "Staff", icon: Users, path: "/staff" },
-  { title: "Agent", icon: UserCircle, path: "/agent" },
-  { title: "Pricebook Export", icon: FileDown, path: "/pricebook-export" },
+  { id: "guide", title: "Guide", icon: UserSquare2, path: "/guide" },
+  { id: "staff", title: "Staff", icon: Users, path: "/staff" },
+  { id: "agent", title: "Agent", icon: UserCircle, path: "/agent" },
+  { id: "pricebook-export", title: "Pricebook Export", icon: FileDown, path: "/pricebook-export" },
   {
+    id: "settings",
     title: "Settings",
     icon: Settings,
     path: "/settings",
@@ -92,8 +128,8 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
-  // keep Vendor Management open by default (like PHP sidebar)
-  const [openParent, setOpenParent] = useState<string | null>("Vendor Management");
+  // Track open submenu by ID (not title) to avoid collisions
+  const [openParentId, setOpenParentId] = useState<string | null>("vendor-mgmt");
   const location = useLocation();
 
   const isExpanded = !collapsed || isHovered || isPinned;
@@ -107,7 +143,6 @@ export const Sidebar = ({
     <>
       {/* header / logo */}
       <div className="relative flex items-center gap-0 px-2 py-2 border-b border-sidebar-border">
-        {/* left: logo + text */}
         <div className="flex items-center gap-0 min-w-0">
           <img
             src="/assets/img/DVi-Logo1-2048x1860.png"
@@ -121,7 +156,6 @@ export const Sidebar = ({
           )}
         </div>
 
-        {/* right: lock/pin absolutely at right */}
         {!isMobile && isExpanded && (
           <button
             onClick={handleTogglePin}
@@ -139,7 +173,7 @@ export const Sidebar = ({
       {/* menu */}
       <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1 px-2">
-          {menuItems.map((item) => {
+          {menuItems.map((item, idx) => {
             const Icon = item.icon;
 
             const isParentActive =
@@ -150,17 +184,17 @@ export const Sidebar = ({
             const isOpen =
               isExpanded &&
               item.hasSubmenu &&
-              (openParent === item.title || isParentActive);
+              (openParentId === item.id || isParentActive);
 
             // PARENT WITH SUBMENU
             if (item.hasSubmenu && item.children) {
               return (
-                <li key={item.title}>
+                <li key={item.id ?? item.path ?? `parent-${idx}`}>
                   <button
                     type="button"
                     onClick={() =>
-                      setOpenParent((prev) =>
-                        prev === item.title ? null : item.title
+                      setOpenParentId((prev) =>
+                        prev === item.id ? null : item.id
                       )
                     }
                     className={cn(
@@ -198,8 +232,8 @@ export const Sidebar = ({
 
                   {isOpen && (
                     <ul className="mt-1 space-y-1">
-                      {item.children.map((child) => (
-                        <li key={child.path}>
+                      {item.children.map((child, cIdx) => (
+                        <li key={child.id ?? child.path ?? `child-${item.id}-${cIdx}`}>
                           <NavLink
                             to={child.path}
                             onClick={isMobile ? () => onMobileToggle() : undefined}
@@ -226,7 +260,7 @@ export const Sidebar = ({
 
             // NORMAL ITEM
             return (
-              <li key={item.title}>
+              <li key={item.id ?? item.path ?? `item-${idx}`}>
                 <NavLink
                   to={item.path}
                   onClick={isMobile ? () => onMobileToggle() : undefined}

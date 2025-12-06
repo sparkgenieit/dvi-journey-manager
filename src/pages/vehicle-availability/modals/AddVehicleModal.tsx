@@ -1,10 +1,10 @@
-// FILE: src/pages/VehicleAvailability/modals/AddVehicleModal.tsx
-
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   SimpleOption,
   createVehicle,
   fetchVendorBranches,
+  fetchVendorVehicleTypes,
+  fetchLocations, // live suggestions
 } from "@/services/vehicle-availability";
 import { ChevronDown } from "lucide-react";
 
@@ -14,8 +14,9 @@ type Props = {
   onCreated?: () => void;
 
   vendors: SimpleOption[];
-  vehicleTypes: SimpleOption[];
-  // optional: reuse your existing locations list as origin suggestions
+  /** Optional global types; once vendor is chosen we fetch vendor-scoped types */
+  vehicleTypes?: SimpleOption[];
+  /** Optional initial origin suggestions (shown when the input is focused and empty) */
   locations?: SimpleOption[];
 
   defaultVendorId?: number | "";
@@ -33,12 +34,14 @@ function SelectBox({
   placeholder,
   options,
   invalid,
+  disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
   options: SimpleOption[];
   invalid?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <div className="relative">
@@ -47,9 +50,11 @@ function SelectBox({
           inputBase,
           "appearance-none pr-10",
           invalid ? "border-red-400" : "border-slate-300",
+          disabled ? "bg-slate-100 text-slate-400" : "",
         ].join(" ")}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
       >
         <option value="">{placeholder}</option>
         {options.map((o) => (
@@ -66,12 +71,173 @@ function SelectBox({
   );
 }
 
+/**
+ * Tiny headless Autocomplete used for "Vehicle Origin".
+ * - Debounced server search via fetchLocations(q)
+ * - Optional initial suggestions from props.locations when empty
+ * - Keyboard navigation (↑/↓/Enter/Escape)
+ * - Click outside to close
+ */
+function Autocomplete({
+  value,
+  onChange,
+  placeholder,
+  initialSuggestions = [],
+  disabled,
+  invalid,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+  initialSuggestions?: SimpleOption[];
+  disabled?: boolean;
+  invalid?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState(value);
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<SimpleOption[]>(initialSuggestions || []);
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const debounceRef = useRef<number | null>(null);
+
+  // keep internal query in sync when parent changes value externally
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  // close on click outside
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  // debounced fetch
+  useEffect(() => {
+    if (!open) return;
+    // if empty, show initialSuggestions
+    if (!query.trim()) {
+      setItems(initialSuggestions || []);
+      setActiveIndex(-1);
+      return;
+    }
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const list = await fetchLocations(query.trim());
+        setItems(list || []);
+        setActiveIndex(list?.length ? 0 : -1);
+      } catch {
+        setItems([]);
+        setActiveIndex(-1);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, open]);
+
+  function choose(option: SimpleOption) {
+    onChange(option.label);
+    setQuery(option.label);
+    setOpen(false);
+    setActiveIndex(-1);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!open) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => (items.length ? (i + 1) % items.length : -1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => (items.length ? (i - 1 + items.length) % items.length : -1));
+    } else if (e.key === "Enter") {
+      if (activeIndex >= 0 && activeIndex < items.length) {
+        e.preventDefault();
+        choose(items[activeIndex]);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  return (
+    <div className="relative" ref={rootRef}>
+      <input
+        className={[
+          inputBase,
+          invalid ? "border-red-400" : "border-slate-300",
+          disabled ? "bg-slate-100 text-slate-400" : "",
+        ].join(" ")}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          onChange(e.target.value);
+          if (!open) setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+        disabled={disabled}
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls="origin-autocomplete-listbox"
+      />
+
+      {open && (
+        <div
+          id="origin-autocomplete-listbox"
+          role="listbox"
+          className="absolute z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg"
+        >
+          {loading ? (
+            <div className="px-3 py-2 text-sm text-slate-500">Searching…</div>
+          ) : items.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-slate-500">No results</div>
+          ) : (
+            items.map((opt, idx) => (
+              <button
+                type="button"
+                key={`${opt.id}-${opt.label}`}
+                role="option"
+                aria-selected={idx === activeIndex}
+                className={[
+                  "block w-full cursor-pointer px-3 py-2 text-left text-[14px]",
+                  idx === activeIndex ? "bg-slate-100" : "bg-white",
+                ].join(" ")}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onMouseDown={(e) => {
+                  // mousedown to pick before input blur
+                  e.preventDefault();
+                  choose(opt);
+                }}
+              >
+                {opt.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AddVehicleModal({
   open,
   onClose,
   onCreated,
   vendors,
-  vehicleTypes,
+  vehicleTypes: globalVehicleTypes = [],
   locations = [],
   defaultVendorId = "",
   defaultVehicleTypeId = "",
@@ -82,18 +248,22 @@ export function AddVehicleModal({
   const [registrationNumber, setRegistrationNumber] = useState("");
 
   const [vehicleOrigin, setVehicleOrigin] = useState("");
-  const [vehicleExpiryDate, setVehicleExpiryDate] = useState("");
+  const [vehicleExpiryDate, setVehicleExpiryDate] = useState(""); // UI label
   const [insuranceStartDate, setInsuranceStartDate] = useState("");
   const [insuranceEndDate, setInsuranceEndDate] = useState("");
 
   const [branches, setBranches] = useState<SimpleOption[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
 
+  const [vendorVehicleTypes, setVendorVehicleTypes] = useState<SimpleOption[]>(
+    [],
+  );
+  const [typesLoading, setTypesLoading] = useState(false);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const originDatalistId = useMemo(() => `origin-dl-${Math.random()}`, []);
-
+  // Reset on open
   useEffect(() => {
     if (!open) return;
 
@@ -112,6 +282,17 @@ export function AddVehicleModal({
 
     setBranches([]);
     setBranchesLoading(false);
+
+    // Preload vendor types for default vendor if provided
+    if (defaultVendorId && Number(defaultVendorId) > 0) {
+      setTypesLoading(true);
+      fetchVendorVehicleTypes(Number(defaultVendorId))
+        .then((opts) => setVendorVehicleTypes(opts || []))
+        .catch(() => setVendorVehicleTypes([]))
+        .finally(() => setTypesLoading(false));
+    } else {
+      setVendorVehicleTypes([]);
+    }
   }, [open, defaultVendorId, defaultVehicleTypeId]);
 
   // Load branches when vendor changes
@@ -149,7 +330,51 @@ export function AddVehicleModal({
     };
   }, [vendorId, open]);
 
+  // Load vendor-scoped vehicle types when vendor changes
+  useEffect(() => {
+    if (!open) return;
+
+    if (vendorId === "") {
+      setVendorVehicleTypes([]);
+      setVehicleTypeId("");
+      return;
+    }
+
+    let alive = true;
+    setTypesLoading(true);
+    fetchVendorVehicleTypes(Number(vendorId))
+      .then((opts) => {
+        if (!alive) return;
+        setVendorVehicleTypes(opts || []);
+        if (
+          vehicleTypeId !== "" &&
+          !(opts || []).some((o) => String(o.id) === String(vehicleTypeId))
+        ) {
+          setVehicleTypeId("");
+        }
+      })
+      .catch(() => {
+        if (!alive) return;
+        setVendorVehicleTypes([]);
+        setVehicleTypeId("");
+      })
+      .finally(() => {
+        if (alive) setTypesLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId]);
+
+  // ---- derive formatted reg (NO hook here; avoids rules-of-hooks error) ----
+  const regFormatted = registrationNumber.replace(/\s+/g, " ").trim().toUpperCase();
+
   if (!open) return null;
+
+  const effectiveVehicleTypes =
+    vendorVehicleTypes.length > 0 ? vendorVehicleTypes : globalVehicleTypes;
 
   const vendorInvalid = vendorId === "";
   const branchInvalid = vendorBranchId === "";
@@ -161,27 +386,27 @@ export function AddVehicleModal({
     if (vendorInvalid) return setError("Please choose Vendor.");
     if (branchInvalid) return setError("Please choose Vendor Branch.");
     if (vehicleTypeInvalid) return setError("Please choose Vehicle Type.");
-    if (!registrationNumber.trim())
-      return setError("Please enter Registration Number.");
-    if (!vehicleOrigin.trim()) return setError("Please choose Vehicle Origin.");
-    if (!vehicleExpiryDate) return setError("Please choose Vehicle Expiry Date.");
-    if (!insuranceStartDate) return setError("Please choose Insurance Start Date.");
-    if (!insuranceEndDate) return setError("Please choose Insurance End Date.");
+    if (!regFormatted) return setError("Please enter Registration Number.");
+    if (!vehicleOrigin.trim())
+      return setError("Please choose Vehicle Origin.");
+    if (!vehicleExpiryDate)
+      return setError("Please choose Vehicle Expiry Date.");
+    if (!insuranceStartDate)
+      return setError("Please choose Insurance Start Date.");
+    if (!insuranceEndDate)
+      return setError("Please choose Insurance End Date.");
 
     try {
       setSaving(true);
 
-      // IMPORTANT: backend createVehicle currently safely accepts vendorId, vehicleTypeId, registrationNumber.
-      // Vendor Branch / Dates need backend column support. If your Prisma model has them, keep below payload.
       await createVehicle({
         vendorId: Number(vendorId),
-        vehicleTypeId: Number(vehicleTypeId),
-        registrationNumber: registrationNumber.trim(),
+        vehicleTypeId: Number(vehicleTypeId), // vendor_vehicle_type_ID
+        registrationNumber: regFormatted,
 
-        // send extra fields in snake_case to match legacy DB naming patterns
         vendor_branch_id: Number(vendorBranchId),
         vehicle_origin: vehicleOrigin.trim(),
-        vehicle_expiry_date: vehicleExpiryDate,
+        vehicle_fc_expiry_date: vehicleExpiryDate,
         insurance_start_date: insuranceStartDate,
         insurance_end_date: insuranceEndDate,
       });
@@ -204,7 +429,7 @@ export function AddVehicleModal({
         className="w-full max-w-[980px] rounded-lg bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header centered like PHP */}
+        {/* Header */}
         <div className="pt-10 text-center">
           <h2 className="text-[28px] font-medium text-slate-600">
             Add New Vehicle
@@ -218,7 +443,6 @@ export function AddVehicleModal({
             </div>
           ) : null}
 
-          {/* 2-column grid like PHP */}
           <div className="grid grid-cols-1 gap-x-10 gap-y-7 md:grid-cols-2">
             {/* Vendor */}
             <div>
@@ -248,12 +472,8 @@ export function AddVehicleModal({
                   placeholder={branchesLoading ? "Loading..." : "Choose Branch"}
                   options={branches}
                   invalid={branchInvalid}
+                  disabled={vendorId === "" || branchesLoading}
                 />
-                {vendorId !== "" && !branchesLoading && branches.length === 0 ? (
-                  <div className="mt-1 text-xs text-slate-400">
-                    No branches found for this vendor.
-                  </div>
-                ) : null}
               </div>
             </div>
 
@@ -266,9 +486,12 @@ export function AddVehicleModal({
                 <SelectBox
                   value={vehicleTypeId === "" ? "" : String(vehicleTypeId)}
                   onChange={(v) => setVehicleTypeId(v ? Number(v) : "")}
-                  placeholder="Choose Vehicle Type"
-                  options={vehicleTypes}
+                  placeholder={
+                    typesLoading ? "Loading vehicle types..." : "Choose Vehicle Type"
+                  }
+                  options={effectiveVehicleTypes}
                   invalid={vehicleTypeInvalid}
+                  disabled={vendorId === "" || typesLoading}
                 />
               </div>
             </div>
@@ -285,27 +508,27 @@ export function AddVehicleModal({
                   onChange={(e) => setRegistrationNumber(e.target.value)}
                   placeholder="Registration Number"
                 />
+                {registrationNumber && regFormatted !== registrationNumber && (
+                  <div className="mt-1 text-xs text-slate-500">
+                    Will save as: <span className="font-mono">{regFormatted}</span>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Vehicle Origin */}
+            {/* Vehicle Origin (Autocomplete) */}
             <div>
               <div className={labelBase}>
                 Vehicle Origin <span className="text-red-500">*</span>
               </div>
               <div className="mt-2">
-                <input
-                  className={[inputBase, "border-slate-300"].join(" ")}
+                <Autocomplete
                   value={vehicleOrigin}
-                  onChange={(e) => setVehicleOrigin(e.target.value)}
-                  placeholder="Choose Vehicle Origin"
-                  list={originDatalistId}
+                  onChange={setVehicleOrigin}
+                  placeholder="Search city / origin…"
+                  initialSuggestions={locations}
+                  invalid={!vehicleOrigin.trim()}
                 />
-                <datalist id={originDatalistId}>
-                  {locations.map((l) => (
-                    <option key={l.id} value={l.label} />
-                  ))}
-                </datalist>
               </div>
             </div>
 
@@ -355,7 +578,7 @@ export function AddVehicleModal({
             </div>
           </div>
 
-          {/* Footer buttons like PHP */}
+          {/* Footer */}
           <div className="mt-12 flex items-center justify-between">
             <button
               type="button"

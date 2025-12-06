@@ -25,7 +25,7 @@ import NotFound from "./pages/NotFound";
 import { AccountsLedger } from "./pages/accounts/AccountsLedger";
 import Hotels from "./pages/Hotels";
 import Login from "./pages/Login";
-import HotelForm from "./pages/HotelForm";
+import HotelForm from "./pages/hotel-form/HotelForm";
 import { DailyMomentTracker } from "./pages/daily-moment-tracker/DailyMomentTracker";
 import DailyMomentDayView from "./pages/daily-moment-tracker/DailyMomentDayView";
 import VendorsPage from "./pages/vendor/VendorsPage";
@@ -34,11 +34,13 @@ import DriversPage from "./pages/drivers/DriversPage";
 import DriverFormPage from "./pages/drivers/DriverFormPage";
 import VehicleAvailabilityPage from "./pages/vehicle-availability/VehicleAvailabilityPage";
 import { ItineraryDetails } from "./pages/ItineraryDetails";
-import HotspotList from "./pages/HotspotList";
-import HotspotForm from "./pages/HotspotForm";
-import HotspotPreview from "./pages/HotspotPreview";
-import ActivityList from "./pages/ActivityList";
-import ActivityForm from "./pages/ActivityForm";
+import HotspotList from "./pages/hotspot/HotspotList";
+import HotspotForm from "./pages/hotspot/HotspotForm";
+import HotspotPreview from "./pages/hotspot/HotspotPreview";
+import ParkingChargeBulkImport from "./pages/hotspot/ParkingChargeBulkImport";
+import ActivityForm from "./pages/activity/ActivityForm";
+import ActivityListPage from "./pages/activity/ActivityListPage";
+import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -355,14 +357,14 @@ const App = () => (
             />
 
             {/* ✅ Activity Routes */}
-            <Route
-              path="/activities"
-              element={
-                <MainLayout>
-                  <ActivityList />
-                </MainLayout>
-              }
-            />
+          <Route
+            path="/activities"
+            element={
+              <MainLayout>
+                <ActivityListPage />
+              </MainLayout>
+            }
+          />
             <Route
               path="/activities/new"
               element={
@@ -380,6 +382,23 @@ const App = () => (
               }
             />
           </Route>
+                      <Route
+              path="/activities/:id/preview"
+              element={
+                <MainLayout>
+                  <ActivityPreviewPage />
+                </MainLayout>
+              }
+            />
+          {/* Parking Charge Bulk Import */}
+          <Route
+            path="/parking-charge-bulk-import" 
+            element={
+              <MainLayout>
+                <ParkingChargeBulkImport />
+              </MainLayout>
+            }
+          />
 
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />

@@ -1,3 +1,4 @@
+// FILE: src/pages/activity/ActivityForm.tsx
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +14,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -33,7 +33,6 @@ import {
   CalendarIcon,
   ChevronRight,
   X,
-  Eye,
   Pencil,
   Trash2,
   Star,
@@ -42,16 +41,53 @@ import {
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Activity, TimeSlot, ActivityReview } from "@/types/activity";
-import { activityService } from "@/services/activityService";
+import { ActivitiesAPI, HotspotOption, PreviewPayload } from "@/services/activities";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 
-const HOTSPOT_OPTIONS = [
-  { value: "clay-oven-munnar", label: "Clay Oven, Munnar" },
-  { value: "spice-plantation-thekkady", label: "Spice plantation, Thekkady" },
-  { value: "kathakali-cochin", label: "K V Kathakali center, Cochin" },
-  { value: "zipline-ooty", label: "Zip line ooty, Ooty" },
-];
+/* ----------------------------- local form types ----------------------------- */
+
+type FormTimeSlot = { startTime: string; endTime: string };
+
+type FormSpecialDay = {
+  date: string;
+  timeSlots: FormTimeSlot[];
+};
+
+type FormPricing = {
+  startDate: string;
+  endDate: string;
+  adult: number;
+  children: number;
+  infant: number;
+  foreignAdult: number;
+  foreignChildren: number;
+  foreignInfant: number;
+};
+
+type FormReview = {
+  id: string;
+  rating: number;
+  description: string;
+  createdOn: string;
+};
+
+type ActivityFormState = {
+  title: string;
+  hotspotId?: number | null;
+  hotspot: string;
+  hotspotPlace: string;
+  maxAllowedPersonCount: number;
+  duration: string; // HH:MM:SS
+  description: string;
+  images: string[]; // currently unused; we use imagePreviews
+  defaultAvailableTimes: FormTimeSlot[];
+  isSpecialDay: boolean;
+  specialDays: FormSpecialDay[];
+  pricing: FormPricing;
+  reviews: FormReview[];
+  status: boolean;
+};
 
 const TABS = [
   { id: 1, name: "Activity Basic Details" },
@@ -60,12 +96,13 @@ const TABS = [
   { id: 4, name: "Preview" },
 ];
 
-const getEmptyActivity = (): Omit<Activity, "id"> => ({
+const getEmptyActivity = (): ActivityFormState => ({
   title: "",
+  hotspotId: undefined,
   hotspot: "",
   hotspotPlace: "",
   maxAllowedPersonCount: 0,
-  duration: "00:00:00",
+  duration: "00:30:00",
   description: "",
   images: [],
   defaultAvailableTimes: [{ startTime: "", endTime: "" }],
@@ -85,6 +122,12 @@ const getEmptyActivity = (): Omit<Activity, "id"> => ({
   status: true,
 });
 
+/** Build absolute URL to backend for non-JSON FormData upload.
+ * If your app is proxied, relative path is fine. Change if needed. */
+function buildApiUrl(path: string) {
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
 const ActivityForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -100,8 +143,13 @@ const ActivityForm = () => {
     return 1;
   });
 
-  const [formData, setFormData] = useState<Omit<Activity, "id">>(getEmptyActivity());
+  const [formData, setFormData] = useState<ActivityFormState>(getEmptyActivity());
   const [loading, setLoading] = useState(false);
+
+  // hotspot dropdown via API
+  const [hotspotOptions, setHotspotOptions] = useState<HotspotOption[]>([]);
+
+  // image state (only for client-side preview)
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
@@ -112,9 +160,18 @@ const ActivityForm = () => {
   const [reviewPageSize, setReviewPageSize] = useState(10);
   const [reviewPage, setReviewPage] = useState(1);
 
-  // Price book dates
+  // Price book dates (UI calendar)
   const [priceStartDate, setPriceStartDate] = useState<Date | undefined>();
   const [priceEndDate, setPriceEndDate] = useState<Date | undefined>();
+
+  /* ------------------------ load hotspots & activity ------------------------ */
+
+  useEffect(() => {
+    // hotspots for dropdown
+    ActivitiesAPI.hotspots()
+      .then((res) => setHotspotOptions(res || []))
+      .catch(() => setHotspotOptions([]));
+  }, []);
 
   useEffect(() => {
     if (isEdit && id) {
@@ -124,28 +181,75 @@ const ActivityForm = () => {
 
   const loadActivity = async (activityId: string) => {
     setLoading(true);
-    const activity = await activityService.getActivity(activityId);
-    if (activity) {
-      const { id: _, ...rest } = activity;
-      setFormData(rest);
-      if (activity.pricing.startDate) {
-        setPriceStartDate(new Date(activity.pricing.startDate));
+    try {
+      const numericId = Number(activityId);
+
+      const [details, preview] = await Promise.all([
+        ActivitiesAPI.details(numericId),
+        ActivitiesAPI.preview(numericId).catch(() => null as PreviewPayload | null),
+      ]);
+
+      const base = getEmptyActivity();
+
+      // basic
+      base.title = details.activity_title ?? "";
+      base.hotspotId = details.hotspot_id ?? undefined;
+      base.hotspot = details.hotspot?.hotspot_name ?? "";
+      base.hotspotPlace = details.hotspot?.hotspot_location ?? "";
+      base.maxAllowedPersonCount = Number(details.max_allowed_person_count ?? 0);
+      base.duration = details.activity_duration ?? "00:30:00";
+      base.description = details.activity_description ?? "";
+      base.status = details.status === 1;
+
+      // preview extras (time slots, reviews)
+      if (preview) {
+        if (preview.defaultSlots && preview.defaultSlots.length > 0) {
+          base.defaultAvailableTimes = preview.defaultSlots.map((s) => ({
+            startTime: s.start_time,
+            endTime: s.end_time,
+          }));
+        }
+
+        if (preview.specialSlots && preview.specialSlots.length > 0) {
+          base.isSpecialDay = true;
+          base.specialDays = preview.specialSlots.map((s) => ({
+            date: s.special_date,
+            timeSlots: [
+              {
+                startTime: s.start_time,
+                endTime: s.end_time,
+              },
+            ],
+          }));
+        }
+
+        base.reviews =
+          preview.reviews?.map((r) => ({
+            id: String(r.activity_review_id),
+            rating: Number(r.activity_rating),
+            description: r.activity_description ?? "",
+            createdOn: r.createdon,
+          })) ?? [];
       }
-      if (activity.pricing.endDate) {
-        setPriceEndDate(new Date(activity.pricing.endDate));
-      }
+
+      setFormData(base);
+
+      // keep priceStartDate/EndDate empty unless you fetch existing pricebook
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load activity");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const handleInputChange = (
-    field: keyof Omit<Activity, "id">,
-    value: any
-  ) => {
+  /* ---------------------------- helpers & change ---------------------------- */
+
+  const handleInputChange = (field: keyof ActivityFormState, value: string | number | boolean | FormTimeSlot[] | FormSpecialDay[] | FormPricing | FormReview[]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handlePricingChange = (field: string, value: number) => {
+  const handlePricingChange = (field: keyof FormPricing, value: number) => {
     setFormData((prev) => ({
       ...prev,
       pricing: { ...prev.pricing, [field]: value },
@@ -184,7 +288,7 @@ const ActivityForm = () => {
 
   const updateDefaultTime = (
     index: number,
-    field: keyof TimeSlot,
+    field: keyof FormTimeSlot,
     value: string
   ) => {
     setFormData((prev) => ({
@@ -195,28 +299,45 @@ const ActivityForm = () => {
     }));
   };
 
+  /* ----------------------------- reviews actions ---------------------------- */
+
+  const refreshReviewsFromServer = async (activityId: number) => {
+    try {
+      const preview = await ActivitiesAPI.preview(activityId);
+      const reviews =
+        preview.reviews?.map((r) => ({
+          id: String(r.activity_review_id),
+          rating: Number(r.activity_rating),
+          description: r.activity_description ?? "",
+          createdOn: r.createdon,
+        })) ?? [];
+      setFormData((prev) => ({ ...prev, reviews }));
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to refresh reviews");
+    }
+  };
+
   const handleSaveReview = async () => {
     if (!reviewRating || !reviewFeedback) {
       toast.error("Please fill in rating and feedback");
       return;
     }
+
     if (isEdit && id) {
-      const newReview = await activityService.addReview(id, {
-        rating: Number(reviewRating),
-        description: reviewFeedback,
+      const activityId = Number(id);
+      // Backend expects: { activity_rating: string, activity_description?: string }
+      await ActivitiesAPI.addReview(activityId, {
+        activity_rating: String(reviewRating),
+        activity_description: reviewFeedback,
       });
-      if (newReview) {
-        setFormData((prev) => ({
-          ...prev,
-          reviews: [...prev.reviews, newReview],
-        }));
-        setReviewRating("");
-        setReviewFeedback("");
-        toast.success("Review added successfully");
-      }
+      await refreshReviewsFromServer(activityId);
+      setReviewRating("");
+      setReviewFeedback("");
+      toast.success("Review added successfully");
     } else {
-      // For new activity, add to local state
-      const newReview: ActivityReview = {
+      // For new activity (not saved yet), keep it local
+      const newReview: FormReview = {
         id: String(Date.now()),
         rating: Number(reviewRating),
         description: reviewFeedback,
@@ -234,14 +355,19 @@ const ActivityForm = () => {
 
   const deleteReview = async (reviewId: string) => {
     if (isEdit && id) {
-      await activityService.deleteReview(id, reviewId);
+      const activityId = Number(id);
+      await ActivitiesAPI.deleteReview(activityId, Number(reviewId));
+      await refreshReviewsFromServer(activityId);
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        reviews: prev.reviews.filter((r) => r.id !== reviewId),
+      }));
     }
-    setFormData((prev) => ({
-      ...prev,
-      reviews: prev.reviews.filter((r) => r.id !== reviewId),
-    }));
     toast.success("Review deleted");
   };
+
+  /* --------------------------- pricing + submit ---------------------------- */
 
   const handleUpdatePricing = () => {
     setFormData((prev) => ({
@@ -255,16 +381,140 @@ const ActivityForm = () => {
     toast.success("Pricing dates updated");
   };
 
+  /** Upload selected files to Multer endpoint, then persist filenames into gallery table.
+   * Expects backend route: POST /activities/:id/images/upload (Multer, files field = 'files')
+   * Returns server JSON: { files: Array<{ filename: string }> }
+   */
+// put near other helpers in ActivityForm.tsx
+
+async function uploadImagesAndSaveGallery(activityId: number, files: File[]) {
+  if (!files || files.length === 0) return;
+
+  const fd = new FormData();
+  // NOTE: the backend interceptor expects field name "images"
+  files.forEach((f) => fd.append("images", f));
+  fd.append("createdby", "0");
+
+  // IMPORTANT: go through api() so it prefixes API_BASE_URL + /api/v1
+  // Resulting URL: http://localhost:4006/api/v1/activities/:id/images/upload
+  console.log("[upload] to", `/activities/${activityId}/images/upload`);
+  await api(`/activities/${activityId}/images/upload`, {
+    method: "POST",
+    body: fd, // do NOT set Content-Type manually
+  });
+}
+
+/** Persist locally-added reviews (added during create flow) after the activity is created */
+const persistPendingReviews = async (activityId: number) => {
+  if (!formData.reviews?.length) return;
+  // Only send those without a numeric server id (heuristic: non-numeric ids are local)
+  const pending = formData.reviews.filter((r) => Number.isNaN(Number(r.id)));
+  if (!pending.length) return;
+
+  await Promise.all(
+    pending.map((r) =>
+      ActivitiesAPI.addReview(activityId, {
+        activity_rating: String(r.rating ?? ""),
+        activity_description: r.description ?? "",
+        createdby: 1,
+      })
+    )
+  );
+
+  // Refresh from server to get canonical ids/timestamps
+  await refreshReviewsFromServer(activityId);
+};
+
   const handleSubmit = async () => {
-    if (isEdit && id) {
-      await activityService.updateActivity(id, formData);
-      toast.success("Activity updated successfully");
-    } else {
-      await activityService.createActivity(formData);
-      toast.success("Activity saved successfully");
+    try {
+      setLoading(true);
+      // ----------------- BASIC -----------------
+      const basicPayload = {
+        activity_title: formData.title,
+        hotspot_id: formData.hotspotId ?? 0,
+        max_allowed_person_count: formData.maxAllowedPersonCount,
+        activity_duration: formData.duration,
+        activity_description: formData.description,
+      };
+
+      let activityIdNum: number;
+
+      if (isEdit && id) {
+        activityIdNum = Number(id);
+        await ActivitiesAPI.update(activityIdNum, basicPayload);
+      } else {
+        const created = await ActivitiesAPI.create(basicPayload);
+        activityIdNum = created.activity_id;
+      }
+
+      // ----------------- IMAGES -----------------
+      // Upload actual files to Multer, then save filenames to DB
+      if (imageFiles.length > 0) {
+        await uploadImagesAndSaveGallery(activityIdNum, imageFiles);
+      }
+
+      // ----------------- TIME SLOTS -----------------
+      await ActivitiesAPI.saveTimeSlots(activityIdNum, {
+        defaultSlots: formData.defaultAvailableTimes
+          .filter((t) => t.startTime && t.endTime)
+          .map((t) => ({
+            start_time: t.startTime,
+            end_time: t.endTime,
+          })),
+        specialEnabled: formData.isSpecialDay,
+        specialSlots: formData.isSpecialDay
+          ? formData.specialDays.flatMap((day) =>
+              day.timeSlots
+                .filter((t) => t.startTime && t.endTime)
+                .map((t) => ({
+                  date: day.date,
+                  start_time: t.startTime,
+                  end_time: t.endTime,
+                }))
+            )
+          : [],
+      });
+
+      // ----------------- PRICEBOOK -----------------
+      if (formData.pricing.startDate && formData.pricing.endDate) {
+        await ActivitiesAPI.savePriceBook(activityIdNum, {
+          hotspot_id: formData.hotspotId ?? 0,
+          start_date: formData.pricing.startDate,
+          end_date: formData.pricing.endDate,
+          indian: {
+            adult_cost: formData.pricing.adult,
+            child_cost: formData.pricing.children,
+            infant_cost: formData.pricing.infant,
+          },
+          nonindian: {
+            adult_cost: formData.pricing.foreignAdult,
+            child_cost: formData.pricing.foreignChildren,
+            infant_cost: formData.pricing.foreignInfant,
+          },
+        });
+      }
+
+      // ----------------- REVIEWS (create-flow pending ones) -----------------
+      if (!isEdit && formData.reviews.length) {
+        try {
+          await persistPendingReviews(activityIdNum);
+        } catch (e) {
+          console.warn("Reviews save failed (non-blocking):", e);
+        }
+      }
+
+      toast.success(isEdit ? "Activity updated successfully" : "Activity saved successfully");
+      navigate("/activities");
+    } catch (err: unknown) {
+      console.error(err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to save activity";
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
     }
-    navigate("/activities");
   };
+
+  /* ------------------------------- misc helpers ------------------------------ */
 
   const goToNextTab = () => {
     if (activeTab < 4) setActiveTab(activeTab + 1);
@@ -302,6 +552,8 @@ const ActivityForm = () => {
       </div>
     );
   }
+
+  /* ----------------------------------- UI ----------------------------------- */
 
   return (
     <div className="p-6 bg-pink-50/30 min-h-screen">
@@ -383,14 +635,20 @@ const ActivityForm = () => {
                     Hotspot Places <span className="text-red-500">*</span>
                   </Label>
                   <Select
-                    value={formData.hotspot}
+                    value={
+                      formData.hotspotId !== undefined && formData.hotspotId !== null
+                        ? String(formData.hotspotId)
+                        : ""
+                    }
                     onValueChange={(v) => {
-                      const opt = HOTSPOT_OPTIONS.find((o) => o.value === v);
-                      handleInputChange("hotspot", opt?.label.split(",")[0] || v);
-                      handleInputChange(
-                        "hotspotPlace",
-                        opt?.label.split(",")[1]?.trim() || ""
-                      );
+                      const idNum = Number(v);
+                      const opt = hotspotOptions.find((o) => o.id === idNum);
+                      handleInputChange("hotspotId", idNum);
+                      if (opt) {
+                        const [name, place] = opt.label.split(",");
+                        handleInputChange("hotspot", name?.trim() || "");
+                        handleInputChange("hotspotPlace", place?.trim() || "");
+                      }
                     }}
                     disabled={isReadonly}
                   >
@@ -398,8 +656,8 @@ const ActivityForm = () => {
                       <SelectValue placeholder="Select hotspot" />
                     </SelectTrigger>
                     <SelectContent>
-                      {HOTSPOT_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
+                      {hotspotOptions.map((opt) => (
+                        <SelectItem key={opt.id} value={String(opt.id)}>
                           {opt.label}
                         </SelectItem>
                       ))}
@@ -546,11 +804,11 @@ const ActivityForm = () => {
                     <Checkbox
                       checked={formData.isSpecialDay}
                       onCheckedChange={(checked) =>
-                        handleInputChange("isSpecialDay", checked)
+                        handleInputChange("isSpecialDay", !!checked)
                       }
                       disabled={isReadonly}
                     />
-                    <Label>Special Day ?</Label>
+                    <Label>Special Day </Label>
                   </div>
                   {formData.isSpecialDay && !isReadonly && (
                     <Button
@@ -607,9 +865,7 @@ const ActivityForm = () => {
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-[150px]">
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {priceEndDate
-                          ? format(priceEndDate, "PP")
-                          : "End date"}
+                        {priceEndDate ? format(priceEndDate, "PP") : "End date"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -685,7 +941,10 @@ const ActivityForm = () => {
                     placeholder="Enter Price"
                     value={formData.pricing.foreignAdult || ""}
                     onChange={(e) =>
-                      handlePricingChange("foreignAdult", Number(e.target.value))
+                      handlePricingChange(
+                        "foreignAdult",
+                        Number(e.target.value)
+                      )
                     }
                     disabled={isReadonly}
                   />
