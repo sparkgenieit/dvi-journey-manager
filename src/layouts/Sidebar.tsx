@@ -73,10 +73,6 @@ const menuItems: MenuItem[] = [
     ],
   },
 
-  // Single links
-  { id: "hotspots-link", title: "Hotspot", icon: MapPin, path: "/hotspots" },
-  { id: "activities-link", title: "Activity", icon: Map, path: "/activities" },
-
   // Submenu with same title as a single link (OK now because ids differ)
   {
     id: "hotspots-submenu",
@@ -89,10 +85,9 @@ const menuItems: MenuItem[] = [
       { id: "parking-charge", title: "Parking Charge", path: "/parking-charge-bulk-import" },
     ],
   },
-
-  // Duplicate “Activity” link (id is unique so no key clash)
-  { id: "activities-link-2", title: "Activity", icon: Map, path: "/activities" },
-
+    // Single links
+  { id: "activities-link", title: "Activity", icon: Map, path: "/activities" },
+  
   {
     id: "locations",
     title: "Locations",
