@@ -1,29 +1,6 @@
 // FILE: src/services/hotels.ts
 import { api,RAW_API_BASE } from "@/lib/api";
 
-/**
- * UI-facing types stay the same.
- * Internally we map to/from backend field names:
- *  - hotel_id        ↔ id
- *  - hotel_name      ↔ name
- *  - hotel_code      ↔ code
- *  - hotel_state     ↔ state
- *  - hotel_city      ↔ city
- *  - hotel_place     ↔ place
- *  - hotel_mobile    ↔ phone
- *  - hotel_email     ↔ email
- *  - hotel_address   ↔ addressLine1
- *  - hotel_pincode   ↔ pinCode
- *  - hotel_rating    ↔ starRating
- *  - hotel_latitude  ↔ latitude
- *  - hotel_longitude ↔ longitude
- *  - hotel_margin    ↔ margin
- *  - hotel_margin_gst_type        ↔ gstType
- *  - hotel_margin_gst_percentage  ↔ gstPercent
- *  - hotel_powerbackup            ↔ powerBackup (boolean)
- *  - hotel_hotspot_status         ↔ hotSpot (boolean)
- *  - status (0|1)    ↔ isActive (boolean)
- */
 export type Hotel = {
   id?: string;
   name: string;

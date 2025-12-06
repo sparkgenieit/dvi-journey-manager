@@ -41,6 +41,7 @@ import ParkingChargeBulkImport from "./pages/hotspot/ParkingChargeBulkImport";
 import ActivityForm from "./pages/activity/ActivityForm";
 import ActivityListPage from "./pages/activity/ActivityListPage";
 import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
+import LocationsPage from "./pages/locations/LocationsPage";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -382,7 +383,7 @@ const App = () => (
               }
             />
           </Route>
-                      <Route
+              <Route
               path="/activities/:id/preview"
               element={
                 <MainLayout>
@@ -399,7 +400,15 @@ const App = () => (
               </MainLayout>
             }
           />
-
+          {/* Locations Management */}
+          <Route
+            path="/locations"
+            element={
+              <MainLayout>
+                <LocationsPage />
+              </MainLayout>
+            }
+          />
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>
