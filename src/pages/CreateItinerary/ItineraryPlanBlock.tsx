@@ -1,14 +1,10 @@
-// FILE: src/pages/CreateItinerary/ItineraryPlanBlock.tsx
+import { useEffect, useState, Dispatch, SetStateAction } from "react";
 
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  RadioGroup,
-  RadioGroupItem,
-} from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -17,11 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
 import {
@@ -30,10 +22,7 @@ import {
 } from "@/components/AutoSuggestSelect";
 import { RoomsBlock } from "./RoomsBlock";
 import { AgentOption } from "@/services/accountsManagerApi";
-import {
-  LocationOption,
-  SimpleOption,
-} from "@/services/itineraryDropdownsMock";
+import { LocationOption, SimpleOption } from "@/services/itineraryDropdownsMock";
 
 type RoomRow = {
   id: number;
@@ -57,7 +46,6 @@ type ItineraryPlanBlockProps = {
   departureLocation: string;
   setDepartureLocation: (val: string) => void;
 
-  // only options come from parent; selections are handled locally
   hotelCategoryOptions: SimpleOption[];
   hotelFacilityOptions: SimpleOption[];
 
@@ -65,6 +53,16 @@ type ItineraryPlanBlockProps = {
   tripEndDate: string;
   setTripStartDate: (val: string) => void;
   setTripEndDate: (val: string) => void;
+
+  // ✅ lifted time fields so parent can build DateTime payload
+  startTime: string;
+  setStartTime: (val: string) => void;
+  endTime: string;
+  setEndTime: (val: string) => void;
+
+  // Pick Up time (time part)
+  pickupTime: string;
+  setPickupTime: (val: string) => void;
 
   itineraryTypes: SimpleOption[];
   itineraryTypeSelect: string;
@@ -84,7 +82,7 @@ type ItineraryPlanBlockProps = {
   setBudget: (val: number | "") => void;
 
   rooms: RoomRow[];
-  setRooms: React.Dispatch<React.SetStateAction<RoomRow[]>>;
+  setRooms: Dispatch<SetStateAction<RoomRow[]>>;
   addRoom: () => void;
   removeRoom: (id: number) => void;
 
@@ -97,9 +95,51 @@ type ItineraryPlanBlockProps = {
   setNationality: (val: string) => void;
 
   foodPreferences: SimpleOption[];
-  foodPreference: string;
+  foodPreference: string; // ✅ stores option id (e.g. "1","2","3")
   setFoodPreference: (val: string) => void;
+
+  selectedHotelCategoryIds: number[];
+  setSelectedHotelCategoryIds: Dispatch<SetStateAction<number[]>>;
+
+  selectedHotelFacilityIds: string[];
+  setSelectedHotelFacilityIds: Dispatch<SetStateAction<string[]>>;
+  // ✅ lifted special instructions so it goes in payload
+  specialInstructions: string;
+  setSpecialInstructions: (val: string) => void;
+
+  validationErrors?: { [key: string]: string };
 };
+
+
+function mapMultiValuesToStringIds(vals: unknown, options: SimpleOption[]): string[] {
+  const arr = Array.isArray(vals) ? vals : [];
+
+  const byId = new Map(options.map((o) => [String(o.id), String(o.id)]));
+  const byLabel = new Map(
+    options.map((o) => [o.label.trim().toLowerCase(), String(o.id)])
+  );
+
+  const out: string[] = [];
+
+  for (const raw of arr) {
+    const s = String(raw ?? "").trim();
+    if (!s) continue;
+
+    // if AutoSuggestSelect emits id values
+    const direct = byId.get(s);
+    if (direct) {
+      out.push(direct);
+      continue;
+    }
+
+    // if AutoSuggestSelect emits labels
+    const fromLabel = byLabel.get(s.toLowerCase());
+    if (fromLabel) out.push(fromLabel);
+  }
+
+  // unique
+  return Array.from(new Set(out));
+}
 
 function parseDDMMYYYY(str: string): Date | undefined {
   if (!str) return undefined;
@@ -113,6 +153,14 @@ function formatDDMMYYYY(date: Date): string {
   const mm = (date.getMonth() + 1).toString().padStart(2, "0");
   const yy = date.getFullYear();
   return `${dd}/${mm}/${yy}`;
+}
+
+function findIdByLabel(
+  options: SimpleOption[],
+  matcher: (labelLower: string) => boolean
+): string | undefined {
+  const opt = options.find((o) => matcher(o.label.toLowerCase()));
+  return opt ? String(opt.id) : undefined;
 }
 
 export const ItineraryPlanBlock = ({
@@ -132,6 +180,12 @@ export const ItineraryPlanBlock = ({
   tripEndDate,
   setTripStartDate,
   setTripEndDate,
+  startTime,
+  setStartTime,
+  endTime,
+  setEndTime,
+  pickupTime,
+  setPickupTime,
   itineraryTypes,
   itineraryTypeSelect,
   setItineraryTypeSelect,
@@ -158,24 +212,42 @@ export const ItineraryPlanBlock = ({
   foodPreferences,
   foodPreference,
   setFoodPreference,
+  selectedHotelCategoryIds,
+  setSelectedHotelCategoryIds,
+  selectedHotelFacilityIds,
+  setSelectedHotelFacilityIds,
+
+  specialInstructions,
+  setSpecialInstructions,
+  validationErrors,
 }: ItineraryPlanBlockProps) => {
-  // Popover open state for calendars
   const [isTripStartOpen, setIsTripStartOpen] = useState(false);
   const [isTripEndOpen, setIsTripEndOpen] = useState(false);
   const [isPickupOpen, setIsPickupOpen] = useState(false);
 
-  // hotel category / facility selections are handled locally
-  const [hotelCategory, setHotelCategory] = useState<string[]>([]);
-  const [hotelFacility, setHotelFacility] = useState<string[]>([]);
+  const hotelCategory: string[] = selectedHotelCategoryIds.map((id) => String(id));
+  const handleHotelCategoryChange = (vals: string[]) => {
+    const ids = (vals || [])
+      .map((v) => Number(v))
+      .filter((n) => !Number.isNaN(n));
+    setSelectedHotelCategoryIds(ids);
+  };
+
+  // hotel facilities still local (no backend field yet)
+  const hotelFacility: string[] = selectedHotelFacilityIds;
+
+const handleHotelFacilityChange = (vals: string[]) => {
+  setSelectedHotelFacilityIds(mapMultiValuesToStringIds(vals, hotelFacilityOptions));
+};
+
 
   // Disable all dates before tomorrow (including today)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   const disablePastAndToday = (date: Date) => {
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
-    return d <= today; // true => disabled
+    return d <= today;
   };
 
   const agentOptions: AutoSuggestOption[] = agents.map((a) => ({
@@ -188,27 +260,87 @@ export const ItineraryPlanBlock = ({
     label: loc.name,
   }));
 
-  const hotelCategoryAutoOptions: AutoSuggestOption[] =
-    hotelCategoryOptions.map((item) => ({
-      value: String(item.id),
-      label: item.label,
-    }));
-
-  const hotelFacilityAutoOptions: AutoSuggestOption[] =
-    hotelFacilityOptions.map((item) => ({
-      value: String(item.id),
-      label: item.label,
-    }));
-
-  const nationalityOptions: AutoSuggestOption[] = nationalities.map(
+  const hotelCategoryAutoOptions: AutoSuggestOption[] = hotelCategoryOptions.map(
     (item) => ({
       value: String(item.id),
       label: item.label,
     })
   );
 
+  const hotelFacilityAutoOptions: AutoSuggestOption[] = hotelFacilityOptions.map(
+    (item) => ({
+      value: String(item.id),
+      label: item.label,
+    })
+  );
+
+  const nationalityOptions: AutoSuggestOption[] = nationalities.map((item) => ({
+    value: String(item.id),
+    label: item.label,
+  }));
+
   const tripStartDateObj = parseDDMMYYYY(tripStartDate);
   const tripEndDateObj = parseDDMMYYYY(tripEndDate);
+
+  // Itinerary Type default → "Customize"
+  useEffect(() => {
+    if (!itineraryTypeSelect && itineraryTypes.length) {
+      const defId = findIdByLabel(itineraryTypes, (l) => l.includes("custom"));
+      if (defId) setItineraryTypeSelect(defId);
+    }
+  }, [itineraryTypeSelect, itineraryTypes, setItineraryTypeSelect]);
+
+  // Arrival / Departure Type default → "By Flight"
+  useEffect(() => {
+    if (!travelTypes.length) return;
+    const flightId = findIdByLabel(travelTypes, (l) => l.includes("flight"));
+    if (flightId) {
+      if (!arrivalType) setArrivalType(flightId);
+      if (!departureType) setDepartureType(flightId);
+    }
+  }, [arrivalType, departureType, travelTypes, setArrivalType, setDepartureType]);
+
+  // Entry Ticket default → "No"
+  useEffect(() => {
+    if (!entryTicketRequired && entryTicketOptions.length) {
+      const defId = findIdByLabel(entryTicketOptions, (l) => l === "no");
+      if (defId) setEntryTicketRequired(defId);
+    }
+  }, [entryTicketRequired, entryTicketOptions, setEntryTicketRequired]);
+
+  // Guide default → "No"
+  useEffect(() => {
+    if (!guideRequired && guideOptions.length) {
+      const defId = findIdByLabel(guideOptions, (l) => l === "no");
+      if (defId) setGuideRequired(defId);
+    }
+  }, [guideRequired, guideOptions, setGuideRequired]);
+
+  // Nationality default → "India"
+  useEffect(() => {
+    if (!nationality && nationalities.length) {
+      const defId = findIdByLabel(nationalities, (l) => l.includes("india"));
+      if (defId) setNationality(defId);
+    }
+  }, [nationality, nationalities, setNationality]);
+
+  // Food Preference default → "Vegetarian"
+  useEffect(() => {
+    if (!foodPreference && foodPreferences.length) {
+      const defId = findIdByLabel(foodPreferences, (l) => l.includes("veg"));
+      if (defId) setFoodPreference(defId);
+    }
+  }, [foodPreference, foodPreferences, setFoodPreference]);
+
+  // Budget default → 15000
+  useEffect(() => {
+    if (budget === "" || budget === 0) setBudget(15000);
+  }, [budget, setBudget]);
+
+  // Pick Up Time default: mirror Start Time (only if pickupTime is empty)
+  useEffect(() => {
+    if (!pickupTime && startTime) setPickupTime(startTime);
+  }, [pickupTime, startTime, setPickupTime]);
 
   return (
     <Card className="border border-[#efdef8] rounded-lg bg-white shadow-none">
@@ -242,24 +374,36 @@ export const ItineraryPlanBlock = ({
             </RadioGroup>
           </div>
 
-          {/* Agent dropdown (autosuggest single) */}
-          <div className="flex-1">
+          <div
+            className={`flex-1 ${
+              validationErrors?.agentId ? "border border-red-500 rounded-md p-2" : ""
+            }`}
+            data-field="agentId"
+          >
             <Label className="text-sm block mb-1">Agent *</Label>
             <AutoSuggestSelect
               mode="single"
               value={agentId ? String(agentId) : ""}
-              onChange={(val) =>
-                setAgentId(val ? Number(val as string) : null)
-              }
+              onChange={(val) => setAgentId(val ? Number(val as string) : null)}
               options={agentOptions}
               placeholder="Select Agent"
             />
+            {validationErrors?.agentId && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.agentId}</p>
+            )}
           </div>
         </div>
 
         {/* ROW 2: Arrival | Departure */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
+          <div
+            className={`flex-1 ${
+              validationErrors?.arrivalLocation
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }`}
+            data-field="arrivalLocation"
+          >
             <Label className="text-sm block mb-1">Arrival *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -268,8 +412,21 @@ export const ItineraryPlanBlock = ({
               options={locationOptions}
               placeholder="Choose Location"
             />
+            {validationErrors?.arrivalLocation && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.arrivalLocation}
+              </p>
+            )}
           </div>
-          <div className="flex-1">
+
+          <div
+            className={`flex-1 ${
+              validationErrors?.departureLocation
+                ? "border border-red-500 rounded-md p-2"
+                : ""
+            }`}
+            data-field="departureLocation"
+          >
             <Label className="text-sm block mb-1">Departure *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -278,50 +435,58 @@ export const ItineraryPlanBlock = ({
               options={locationOptions}
               placeholder="Choose Location"
             />
+            {validationErrors?.departureLocation && (
+              <p className="mt-1 text-xs text-red-500">
+                {validationErrors.departureLocation}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* ROW 3: Hotel category / facilities */}
+        {/* ROW 3 */}
         <div className="flex flex-col md:flex-row gap-4">
-          {/* Hotel Category multi-select */}
-          <div className="flex-1">
+          <div
+            className={`flex-1 ${
+              validationErrors?.hotelCategory ? "border border-red-500 rounded-md p-2" : ""
+            }`}
+            data-field="hotelCategory"
+          >
             <Label className="text-[12px] block mb-1">
               Hotel Category (Maximum 4 Only)*
             </Label>
             <AutoSuggestSelect
               mode="multi"
               value={hotelCategory}
-              onChange={(vals) => setHotelCategory(vals as string[])}
+              onChange={(vals) => handleHotelCategoryChange(vals as string[])}
               options={hotelCategoryAutoOptions}
               placeholder="Choose Category"
               maxSelected={4}
             />
+            {validationErrors?.hotelCategory && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.hotelCategory}</p>
+            )}
           </div>
 
-          {/* Hotel Facilities multi-select */}
           <div className="flex-1">
-            <Label className="text-[12px] block mb-1">
-              Hotel Facilities (Optional)
-            </Label>
+            <Label className="text-[12px] block mb-1">Hotel Facilities (Optional)</Label>
             <AutoSuggestSelect
               mode="multi"
               value={hotelFacility}
-              onChange={(vals) => setHotelFacility(vals as string[])}
+              onChange={(vals) => handleHotelFacilityChange(vals as string[])}
               options={hotelFacilityAutoOptions}
               placeholder="Choose Hotel Facilities"
             />
           </div>
         </div>
 
-        {/* ROW 4: dates etc */}
+        {/* ROW 4 */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          {/* Trip Start Date with Calendar popup */}
-          <div>
+          <div
+            className={validationErrors?.tripStartDate ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="tripStartDate"
+          >
             <Label className="text-sm block mb-1">Trip Start Date *</Label>
-            <Popover
-              open={isTripStartOpen}
-              onOpenChange={setIsTripStartOpen}
-            >
+            <Popover open={isTripStartOpen} onOpenChange={setIsTripStartOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -343,26 +508,33 @@ export const ItineraryPlanBlock = ({
                   }}
                   disabled={disablePastAndToday}
                   initialFocus
-                  classNames={{
-                    day_today: "",
-                  }}
+                  classNames={{ day_today: "" }}
                 />
               </PopoverContent>
             </Popover>
+            {validationErrors?.tripStartDate && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.tripStartDate}</p>
+            )}
           </div>
 
-          {/* ✅ Start Time as time picker */}
           <div>
             <Label className="text-sm block mb-1">Start Time *</Label>
             <Input
               type="time"
               className="h-9 border-[#e5d7f6]"
-              defaultValue="12:00"
+              value={startTime}
+              onChange={(e) => {
+                const newTime = e.target.value;
+                setStartTime(newTime);
+                if (!pickupTime) setPickupTime(newTime);
+              }}
             />
           </div>
 
-          {/* Trip End Date with Calendar popup */}
-          <div>
+          <div
+            className={validationErrors?.tripEndDate ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="tripEndDate"
+          >
             <Label className="text-sm block mb-1">Trip End Date *</Label>
             <Popover open={isTripEndOpen} onOpenChange={setIsTripEndOpen}>
               <PopoverTrigger asChild>
@@ -386,32 +558,35 @@ export const ItineraryPlanBlock = ({
                   }}
                   disabled={disablePastAndToday}
                   initialFocus
-                  classNames={{
-                    day_today: "",
-                  }}
+                  classNames={{ day_today: "" }}
                 />
               </PopoverContent>
             </Popover>
+            {validationErrors?.tripEndDate && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.tripEndDate}</p>
+            )}
           </div>
 
-          {/* ✅ End Time as time picker */}
           <div>
             <Label className="text-sm block mb-1">End Time *</Label>
             <Input
               type="time"
               className="h-9 border-[#e5d7f6]"
-              defaultValue="12:00"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
             />
           </div>
 
-          <div>
+          <div
+            className={
+              validationErrors?.itineraryTypeSelect ? "border border-red-500 rounded-md p-2" : ""
+            }
+            data-field="itineraryTypeSelect"
+          >
             <Label className="text-sm block mb-1">Itinerary Type *</Label>
-            <Select
-              value={itineraryTypeSelect}
-              onValueChange={setItineraryTypeSelect}
-            >
+            <Select value={itineraryTypeSelect} onValueChange={setItineraryTypeSelect}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
-                <SelectValue placeholder="Select Type" />
+                <SelectValue placeholder="Customize" />
               </SelectTrigger>
               <SelectContent
                 position="popper"
@@ -426,16 +601,22 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.itineraryTypeSelect && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.itineraryTypeSelect}</p>
+            )}
           </div>
         </div>
 
         {/* ROW 5 */}
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div>
+          <div
+            className={validationErrors?.arrivalType ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="arrivalType"
+          >
             <Label className="text-sm block mb-1">Arrival Type *</Label>
             <Select value={arrivalType} onValueChange={setArrivalType}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
-                <SelectValue placeholder="Choose" />
+                <SelectValue placeholder="By Flight" />
               </SelectTrigger>
               <SelectContent
                 position="popper"
@@ -450,12 +631,19 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.arrivalType && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.arrivalType}</p>
+            )}
           </div>
-          <div>
+
+          <div
+            className={validationErrors?.departureType ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="departureType"
+          >
             <Label className="text-sm block mb-1">Departure Type *</Label>
             <Select value={departureType} onValueChange={setDepartureType}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
-                <SelectValue placeholder="Choose" />
+                <SelectValue placeholder="By Flight" />
               </SelectTrigger>
               <SelectContent
                 position="popper"
@@ -470,44 +658,47 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.departureType && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.departureType}</p>
+            )}
           </div>
+
           <div>
             <Label className="text-sm block mb-1">Number of Nights</Label>
-            <Input
-              defaultValue={0}
-              type="number"
-              className="h-9 border-[#e5d7f6]"
-            />
+            <Input defaultValue={0} type="number" className="h-9 border-[#e5d7f6]" />
           </div>
+
           <div>
             <Label className="text-sm block mb-1">Number of Days</Label>
-            <Input
-              defaultValue={1}
-              type="number"
-              className="h-9 border-[#e5d7f6]"
-            />
+            <Input defaultValue={1} type="number" className="h-9 border-[#e5d7f6]" />
           </div>
-          <div>
+
+          <div
+            className={validationErrors?.budget ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="budget"
+          >
             <Label className="text-sm block mb-1">Budget *</Label>
             <Input
               type="number"
               className="h-9 border-[#e5d7f6]"
               value={budget === "" ? "" : budget}
               onChange={(e) =>
-                setBudget(
-                  e.target.value === "" ? "" : Number(e.target.value) || 0
-                )
+                setBudget(e.target.value === "" ? "" : Number(e.target.value) || 0)
               }
             />
+            {validationErrors?.budget && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.budget}</p>
+            )}
           </div>
-          <div>
-            <Label className="text-sm block mb-1">
-              Entry Ticket Required? *
-            </Label>
-            <Select
-              value={entryTicketRequired}
-              onValueChange={setEntryTicketRequired}
-            >
+
+          <div
+            className={
+              validationErrors?.entryTicketRequired ? "border border-red-500 rounded-md p-2" : ""
+            }
+            data-field="entryTicketRequired"
+          >
+            <Label className="text-sm block mb-1">Entry Ticket Required? *</Label>
+            <Select value={entryTicketRequired} onValueChange={setEntryTicketRequired}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="No" />
               </SelectTrigger>
@@ -524,6 +715,9 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.entryTicketRequired && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.entryTicketRequired}</p>
+            )}
           </div>
         </div>
 
@@ -536,12 +730,13 @@ export const ItineraryPlanBlock = ({
           removeRoom={removeRoom}
         />
 
-        {/* ROW 6: Guide / Nationality / Food / Meal plan */}
+        {/* ROW 6 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <Label className="text-sm block mb-1">
-              Guide for Whole Itinerary *
-            </Label>
+          <div
+            className={validationErrors?.guideRequired ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="guideRequired"
+          >
+            <Label className="text-sm block mb-1">Guide for Whole Itinerary *</Label>
             <Select value={guideRequired} onValueChange={setGuideRequired}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="No" />
@@ -559,8 +754,15 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.guideRequired && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.guideRequired}</p>
+            )}
           </div>
-          <div>
+
+          <div
+            className={validationErrors?.nationality ? "border border-red-500 rounded-md p-2" : ""}
+            data-field="nationality"
+          >
             <Label className="text-sm block mb-1">Nationality *</Label>
             <AutoSuggestSelect
               mode="single"
@@ -569,8 +771,17 @@ export const ItineraryPlanBlock = ({
               options={nationalityOptions}
               placeholder="India"
             />
+            {validationErrors?.nationality && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.nationality}</p>
+            )}
           </div>
-          <div>
+
+          <div
+            className={
+              validationErrors?.foodPreference ? "border border-red-500 rounded-md p-2" : ""
+            }
+            data-field="foodPreference"
+          >
             <Label className="text-sm block mb-1">Food Preferences *</Label>
             <Select value={foodPreference} onValueChange={setFoodPreference}>
               <SelectTrigger className="h-9 border-[#e5d7f6]">
@@ -589,16 +800,16 @@ export const ItineraryPlanBlock = ({
                 ))}
               </SelectContent>
             </Select>
+            {validationErrors?.foodPreference && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.foodPreference}</p>
+            )}
           </div>
+
           <div>
             <Label className="text-sm block mb-1">Meal Plan</Label>
             <div className="flex items-center gap-3 mt-1">
               <label className="flex items-center gap-1 text-sm">
-                <input
-                  type="checkbox"
-                  defaultChecked
-                  className="accent-[#5c2db1]"
-                />
+                <input type="checkbox" defaultChecked className="accent-[#5c2db1]" />
                 Breakfast
               </label>
               <label className="flex items-center gap-1 text-sm">
@@ -613,12 +824,15 @@ export const ItineraryPlanBlock = ({
           </div>
         </div>
 
-        {/* ROW 7: Pick up / Instructions */}
+        {/* ROW 7 */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="md:w-[30%]">
-            <Label className="text-sm block mb-1">
-              Pick Up Date &amp; Time *
-            </Label>
+          <div
+            className={`md:w-[30%] ${
+              validationErrors?.pickupDateTime ? "border border-red-500 rounded-md p-2" : ""
+            }`}
+            data-field="pickupDateTime"
+          >
+            <Label className="text-sm block mb-1">Pick Up Date &amp; Time *</Label>
 
             <div className="flex items-center gap-2">
               <Popover open={isPickupOpen} onOpenChange={setIsPickupOpen}>
@@ -643,9 +857,7 @@ export const ItineraryPlanBlock = ({
                     }}
                     disabled={disablePastAndToday}
                     initialFocus
-                    classNames={{
-                      day_today: "",
-                    }}
+                    classNames={{ day_today: "" }}
                   />
                 </PopoverContent>
               </Popover>
@@ -653,9 +865,14 @@ export const ItineraryPlanBlock = ({
               <Input
                 type="time"
                 className="h-9 border-[#e5d7f6] w-[90px]"
-                defaultValue="12:00"
+                value={pickupTime}
+                onChange={(e) => setPickupTime(e.target.value)}
               />
             </div>
+
+            {validationErrors?.pickupDateTime && (
+              <p className="mt-1 text-xs text-red-500">{validationErrors.pickupDateTime}</p>
+            )}
           </div>
 
           <div className="flex-1">
@@ -664,6 +881,8 @@ export const ItineraryPlanBlock = ({
               rows={2}
               placeholder="Enter the Special Instruction"
               className="border-[#e5d7f6]"
+              value={specialInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
             />
           </div>
         </div>

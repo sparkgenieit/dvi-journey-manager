@@ -40,6 +40,8 @@ import HotspotPreview from "./pages/hotspot/HotspotPreview";
 import ParkingChargeBulkImport from "./pages/hotspot/ParkingChargeBulkImport";
 import ActivityForm from "./pages/activity/ActivityForm";
 import ActivityListPage from "./pages/activity/ActivityListPage";
+import GuideListPage from "./pages/guide/GuideListPage";
+import GuideFormPage from "./pages/guide/GuideFormPage";
 import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
 import LocationsPage from "./pages/locations/LocationsPage";
 

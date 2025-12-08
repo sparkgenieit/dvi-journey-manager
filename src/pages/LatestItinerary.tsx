@@ -1,6 +1,7 @@
-// src/pages/LatestItinerary.tsx
+// REPLACE-WHOLE-FILE: src/pages/LatestItinerary.tsx
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,11 +21,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Eye, Copy, Calendar as CalendarIcon } from "lucide-react";
+import {
+  Download,
+  Eye,
+  Copy,
+  Calendar as CalendarIcon,
+} from "lucide-react";
 
-// 👇 these two must exist (you already have them in src/components/ui/)
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+
+import { ItineraryService } from "@/services/itinerary";
 
 // ------------------------------------------------------------------
 // small local util (no date-fns)
@@ -38,197 +49,24 @@ function formatToDDMMYYYY(date: Date | undefined) {
 }
 
 // ------------------------------------------------------------------
-// MOCK DATA SOURCE  (replace with real API later)
+// STATIC DROPDOWN OPTIONS (can later be replaced with API-driven lists)
 // ------------------------------------------------------------------
-const BASE_ROWS = [
-  {
-    quoteId: "DVI2025102",
-    arrival: "Madurai Airport",
-    departure: "Trivandrum, Domestic Airport",
-    createdBy: "admindvi",
-    startDate: "20/10/2025 12:00 PM",
-    endDate: "24/10/2025 12:00 PM",
-    createdOn: "Wed, Oct 15, 2025",
-    nights: 4,
-    persons: 2,
-  },
-  {
-    quoteId: "DVI2025101",
-    arrival: "Chennai International Airport",
-    departure: "Trivandrum, Domestic Airport",
-    createdBy: "admindvi",
-    startDate: "21/12/2025 12:00 PM",
-    endDate: "26/12/2025 12:00 PM",
-    createdOn: "Wed, Oct 15, 2025",
-    nights: 5,
-    persons: 4,
-  },
-  {
-    quoteId: "DVI2050928",
-    arrival: "Chennai Domestic Airport",
-    departure: "Chennai Domestic Airport",
-    createdBy: "admindvi",
-    startDate: "05/10/2025 12:00 PM",
-    endDate: "09/10/2025 12:00 PM",
-    createdOn: "Tue, Sep 23, 2025",
-    nights: 4,
-    persons: 3,
-  },
-  {
-    quoteId: "DVI2050927",
-    arrival: "Cochin Airport",
-    departure: "Cochin Airport",
-    createdBy: "admindvi",
-    startDate: "01/10/2025 12:00 PM",
-    endDate: "04/10/2025 12:00 PM",
-    createdOn: "Tue, Sep 23, 2025",
-    nights: 3,
-    persons: 2,
-  },
-  {
-    quoteId: "DVI2050926",
-    arrival: "Chennai International Airport",
-    departure: "Chennai",
-    createdBy: "admindvi",
-    startDate: "28/09/2025 12:00 PM",
-    endDate: "01/10/2025 12:00 PM",
-    createdOn: "Tue, Sep 23, 2025",
-    nights: 3,
-    persons: 6,
-  },
-  {
-    quoteId: "DVI2050925",
-    arrival: "Chennai",
-    departure: "Chennai",
-    createdBy: "admindvi",
-    startDate: "03/10/2025 12:00 PM",
-    endDate: "07/10/2025 12:00 PM",
-    createdOn: "Tue, Sep 23, 2025",
-    nights: 4,
-    persons: 5,
-  },
+const STATIC_ORIGINS = [
+  "Madurai Airport",
+  "Chennai International Airport",
+  "Chennai Domestic Airport",
+  "Cochin Airport",
 ];
 
-// build 400 rows to paginate
-const buildAllRows = () => {
-  const out: any[] = [];
-  for (let i = 0; i < 400; i++) {
-    const b = BASE_ROWS[i % BASE_ROWS.length];
-    out.push({
-      ...b,
-      id: i + 1,
-      quoteId: b.quoteId.replace(/\d+$/, (m) =>
-        String(Number(m) + i).padStart(m.length, "0")
-      ),
-    });
-  }
-  return out;
-};
-const ALL_ROWS = buildAllRows();
+const STATIC_DESTINATIONS = [
+  "Trivandrum, Domestic Airport",
+  "Chennai",
+  "Cochin Airport",
+  "Chennai Domestic Airport",
+];
 
-// this simulates a backend
-async function mockFetchItineraries({
-  page,
-  pageSize,
-  search,
-  sortField,
-  sortDir,
-  filters,
-}: {
-  page: number;
-  pageSize: number;
-  search: string;
-  sortField:
-    | "sno"
-    | "quoteId"
-    | "arrival"
-    | "departure"
-    | "createdBy"
-    | "startDate"
-    | "endDate"
-    | "createdOn"
-    | "nights"
-    | "persons";
-  sortDir: "asc" | "desc";
-  filters: {
-    origin: string;
-    destination: string;
-    agentName: string;
-    agentStaff: string;
-    startDate: string;
-    endDate: string;
-  };
-}) {
-  // 1) filter
-  let rows = ALL_ROWS.filter((r) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      !search ||
-      r.quoteId.toLowerCase().includes(q) ||
-      r.arrival.toLowerCase().includes(q) ||
-      r.departure.toLowerCase().includes(q);
-
-    const matchesOrigin = !filters.origin || r.arrival === filters.origin;
-    const matchesDest = !filters.destination || r.departure === filters.destination;
-    const matchesAgent = !filters.agentName || r.createdBy === filters.agentName;
-
-    // date filter: we only compare DD/MM/YYYY prefix
-    const matchesStart =
-      !filters.startDate || r.startDate.startsWith(filters.startDate);
-    const matchesEnd = !filters.endDate || r.endDate.startsWith(filters.endDate);
-
-    return (
-      matchesSearch &&
-      matchesOrigin &&
-      matchesDest &&
-      matchesAgent &&
-      matchesStart &&
-      matchesEnd
-    );
-  });
-
-  // 2) sort (server side)
-  rows = rows.sort((a: any, b: any) => {
-    const dir = sortDir === "asc" ? 1 : -1;
-    if (sortField === "sno") return (a.id - b.id) * dir;
-    if (sortField === "nights" || sortField === "persons")
-      return (a[sortField] - b[sortField]) * dir;
-    return a[sortField].toString().localeCompare(b[sortField].toString()) * dir;
-  });
-
-  const total = rows.length;
-
-  // 3) pagination
-  const start = (page - 1) * pageSize;
-  const data = rows.slice(start, start + pageSize);
-
-  // 4) dropdowns (also from API)
-  const dropdowns = {
-    origins: [
-      "Madurai Airport",
-      "Chennai International Airport",
-      "Chennai Domestic Airport",
-      "Cochin Airport",
-    ],
-    destinations: [
-      "Trivandrum, Domestic Airport",
-      "Chennai",
-      "Cochin Airport",
-      "Chennai Domestic Airport",
-    ],
-    agents: ["admindvi", "agent1", "agent2"],
-    staffs: ["staff1", "staff2", "staff3"],
-  };
-
-  // simulate network
-  await new Promise((res) => setTimeout(res, 80));
-
-  return {
-    data,
-    total,
-    dropdowns,
-  };
-}
+const STATIC_AGENTS = ["admindvi", "agent1", "agent2"];
+const STATIC_STAFFS = ["staff1", "staff2", "staff3"];
 
 // ------------------------------------------------------------------
 // COMPONENT
@@ -243,15 +81,19 @@ export const LatestItinerary = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // dropdown options from API
-  const [origins, setOrigins] = useState<string[]>([]);
-  const [destinations, setDestinations] = useState<string[]>([]);
-  const [agents, setAgents] = useState<string[]>([]);
-  const [staffs, setStaffs] = useState<string[]>([]);
+  // dropdown options (currently static – later can come from API)
+  const [origins] = useState<string[]>(STATIC_ORIGINS);
+  const [destinations] = useState<string[]>(STATIC_DESTINATIONS);
+  const [agents] = useState<string[]>(STATIC_AGENTS);
+  const [staffs] = useState<string[]>(STATIC_STAFFS);
 
   // date objects for calendar
-  const [startDateObj, setStartDateObj] = useState<Date | undefined>(undefined);
-  const [endDateObj, setEndDateObj] = useState<Date | undefined>(undefined);
+  const [startDateObj, setStartDateObj] = useState<Date | undefined>(
+    undefined,
+  );
+  const [endDateObj, setEndDateObj] = useState<Date | undefined>(
+    undefined,
+  );
 
   // filters -> to be sent to API
   const [filters, setFilters] = useState({
@@ -263,7 +105,7 @@ export const LatestItinerary = () => {
     endDate: "",
   });
 
-  // sort (server side)
+  // sort (UI only for now; backend always sorts by latest plan ID desc)
   const [sortConfig, setSortConfig] = useState<{
     field:
       | "sno"
@@ -285,30 +127,81 @@ export const LatestItinerary = () => {
   // fetch whenever deps change
   useEffect(() => {
     const load = async () => {
-      const res = await mockFetchItineraries({
+      const pageSize = Number(entriesPerPage);
+
+      const res: any = await ItineraryService.getLatest({
         page: currentPage,
-        pageSize: Number(entriesPerPage),
+        pageSize,
         search: searchQuery,
-        sortField: sortConfig.field,
-        sortDir: sortConfig.dir,
-        filters: {
-          origin: filters.origin,
-          destination: filters.destination,
-          agentName: filters.agentName,
-          agentStaff: filters.agentStaff,
-          startDate: filters.startDate,
-          endDate: filters.endDate,
-        },
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate || undefined,
+        sourceLocation: filters.origin || undefined,
+        destinationLocation: filters.destination || undefined,
+        // agentId / staffId wiring can be added later when you have real IDs
+        agentId: undefined,
+        staffId: undefined,
       });
 
-      setRows(res.data);
-      setTotal(res.total);
+      // API shape from service:
+      // {
+      //   draw,
+      //   recordsTotal,
+      //   recordsFiltered,
+      //   data: [
+      //     {
+      //       counter,
+      //       modify,
+      //       itinerary_quote_ID,
+      //       itinerary_booking_ID,
+      //       arrival_location,
+      //       departure_location,
+      //       itinerary_preference,
+      //       no_of_days_and_nights, // "N& D"
+      //       no_of_person,          // HTML span
+      //       trip_start_date_and_time,
+      //       trip_end_date_and_time,
+      //       total_adult,
+      //       total_children,
+      //       total_infants,
+      //       username,
+      //       createdon,
+      //     }
+      //   ]
+      // }
 
-      // set dropdowns
-      setOrigins(res.dropdowns.origins);
-      setDestinations(res.dropdowns.destinations);
-      setAgents(res.dropdowns.agents);
-      setStaffs(res.dropdowns.staffs);
+      const totalRecords = res?.recordsFiltered ?? res?.recordsTotal ?? 0;
+      setTotal(totalRecords);
+
+      const mapped =
+        (res?.data ?? []).map((r: any) => {
+          const quoteId =
+            r.itinerary_quote_ID || r.itinerary_booking_ID || "";
+
+          const ndStr = String(r.no_of_days_and_nights ?? "0&0");
+          const [nightsStr] = ndStr.split("&");
+          const nights = Number(nightsStr) || 0;
+
+          const total_adult = Number(r.total_adult ?? 0) || 0;
+          const total_children = Number(r.total_children ?? 0) || 0;
+          const total_infants = Number(r.total_infants ?? 0) || 0;
+          const persons =
+            total_adult + total_children + total_infants;
+
+          return {
+            id: Number(r.modify ?? 0) || 0,
+            quoteId,
+            arrival: r.arrival_location ?? "",
+            departure: r.departure_location ?? "",
+            createdBy: r.username ?? "",
+            startDate: r.trip_start_date_and_time ?? "",
+            endDate: r.trip_end_date_and_time ?? "",
+            createdOn: r.createdon ?? "",
+            nights,
+            persons,
+          };
+        }) ?? [];
+
+      setRows(mapped);
     };
 
     load();
@@ -316,7 +209,7 @@ export const LatestItinerary = () => {
     currentPage,
     entriesPerPage,
     searchQuery,
-    sortConfig,
+    sortConfig, // kept for future server-side sort if needed
     filters.origin,
     filters.destination,
     filters.agentName,
@@ -357,7 +250,7 @@ export const LatestItinerary = () => {
       | "endDate"
       | "createdOn"
       | "nights"
-      | "persons"
+      | "persons",
   ) => {
     setSortConfig((prev) => {
       if (prev.field === field) {
@@ -366,7 +259,7 @@ export const LatestItinerary = () => {
       }
       return { field, dir: "asc" };
     });
-    // new sort = go to page 1
+    // For now backend sort is fixed (latest first); this is just UI state.
     setCurrentPage(1);
   };
 
@@ -407,12 +300,16 @@ export const LatestItinerary = () => {
       {/* FILTER CARD */}
       <Card className="border-none shadow-none bg-white">
         <CardContent className="pt-6">
-          <h2 className="text-base font-semibold mb-4 text-[#4a4260]">FILTER</h2>
+          <h2 className="text-base font-semibold mb-4 text-[#4a4260]">
+            FILTER
+          </h2>
           {/* 6 fields like PHP */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
             {/* Start Date (calendar) */}
             <div className="space-y-2">
-              <Label className="text-sm text-[#4a4260]">Start Date</Label>
+              <Label className="text-sm text-[#4a4260]">
+                Start Date
+              </Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -431,9 +328,12 @@ export const LatestItinerary = () => {
                     selected={startDateObj}
                     onSelect={(date) => {
                       setStartDateObj(date ?? undefined);
-                      const formatted = formatToDDMMYYYY(date ?? undefined);
-                      setFilters((p) => ({ ...p, startDate: formatted }));
-                      // go to first page when filter changes
+                      const formatted =
+                        formatToDDMMYYYY(date ?? undefined);
+                      setFilters((p) => ({
+                        ...p,
+                        startDate: formatted,
+                      }));
                       setCurrentPage(1);
                     }}
                     initialFocus
@@ -444,7 +344,9 @@ export const LatestItinerary = () => {
 
             {/* End Date (calendar) */}
             <div className="space-y-2">
-              <Label className="text-sm text-[#4a4260]">End Date</Label>
+              <Label className="text-sm text-[#4a4260]">
+                End Date
+              </Label>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -463,8 +365,12 @@ export const LatestItinerary = () => {
                     selected={endDateObj}
                     onSelect={(date) => {
                       setEndDateObj(date ?? undefined);
-                      const formatted = formatToDDMMYYYY(date ?? undefined);
-                      setFilters((p) => ({ ...p, endDate: formatted }));
+                      const formatted =
+                        formatToDDMMYYYY(date ?? undefined);
+                      setFilters((p) => ({
+                        ...p,
+                        endDate: formatted,
+                      }));
                       setCurrentPage(1);
                     }}
                     initialFocus
@@ -498,7 +404,9 @@ export const LatestItinerary = () => {
 
             {/* Destination */}
             <div className="space-y-2">
-              <Label className="text-sm text-[#4a4260]">Destination</Label>
+              <Label className="text-sm text-[#4a4260]">
+                Destination
+              </Label>
               <Select
                 value={filters.destination}
                 onValueChange={(v) => {
@@ -521,7 +429,9 @@ export const LatestItinerary = () => {
 
             {/* Agent Name */}
             <div className="space-y-2">
-              <Label className="text-sm text-[#4a4260]">Agent Name</Label>
+              <Label className="text-sm text-[#4a4260]">
+                Agent Name
+              </Label>
               <Select
                 value={filters.agentName}
                 onValueChange={(v) => {
@@ -545,7 +455,9 @@ export const LatestItinerary = () => {
             {/* Agent Staff + Clear */}
             <div className="space-y-2 flex flex-col gap-2">
               <div>
-                <Label className="text-sm text-[#4a4260]">Agent Staff</Label>
+                <Label className="text-sm text-[#4a4260]">
+                  Agent Staff
+                </Label>
                 <Select
                   value={filters.agentStaff}
                   onValueChange={(v) => {
@@ -584,7 +496,7 @@ export const LatestItinerary = () => {
             <h2 className="text-base md:text-lg font-semibold text-[#4a4260]">
               List of Itinerary{" "}
               <span className="text-[#828282] text-sm">
-                (Total Itinerary Count : 17910)
+                (Total Itinerary Count : {total})
               </span>
             </h2>
             <Button className="bg-gradient-to-r from-[#ae3bd0] to-[#f057b8] hover:from-[#9b31bd] hover:to-[#e048a7]">
@@ -701,13 +613,20 @@ export const LatestItinerary = () => {
               </TableHeader>
               <TableBody>
                 {rows.map((itinerary, idx) => (
-                  <TableRow key={itinerary.id} className="hover:bg-[#fdf6ff]">
+                  <TableRow
+                    key={itinerary.id ?? idx}
+                    className="hover:bg-[#fdf6ff]"
+                  >
                     <TableCell className="text-sm">
-                      {(currentPage - 1) * Number(entriesPerPage) + idx + 1}
+                      {(currentPage - 1) * Number(entriesPerPage) +
+                        idx +
+                        1}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Link to={`/itinerary-details/${itinerary.quoteId}`}>
+                        <Link
+                          to={`/itinerary-details/${itinerary.quoteId}`}
+                        >
                           <div className="h-8 w-8 rounded-md bg-[#f057b8] flex items-center justify-center text-white cursor-pointer hover:bg-[#d546ab]">
                             <Eye className="h-4 w-4" />
                           </div>
@@ -726,23 +645,39 @@ export const LatestItinerary = () => {
                         >
                           <Download className="h-4 w-4" />
                         </Button>
-                        <Link to={`/itinerary-details/${itinerary.quoteId}`}>
+                        <Link
+                          to={`/itinerary-details/${itinerary.quoteId}`}
+                        >
                           <span className="font-semibold text-[#3b2f55] hover:text-[#d546ab] cursor-pointer">
                             {itinerary.quoteId}
                           </span>
                         </Link>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">{itinerary.arrival}</TableCell>
-                    <TableCell className="text-sm">{itinerary.departure}</TableCell>
-                    <TableCell className="text-sm">{itinerary.createdBy}</TableCell>
-                    <TableCell className="text-sm">{itinerary.startDate}</TableCell>
-                    <TableCell className="text-sm">{itinerary.endDate}</TableCell>
-                    <TableCell className="text-sm">{itinerary.createdOn}</TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.arrival}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.departure}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.createdBy}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.startDate}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.endDate}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.createdOn}
+                    </TableCell>
                     <TableCell className="text-sm">
                       {itinerary.nights}N / {itinerary.nights + 1}D
                     </TableCell>
-                    <TableCell className="text-sm">{itinerary.persons}</TableCell>
+                    <TableCell className="text-sm">
+                      {itinerary.persons}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -752,7 +687,8 @@ export const LatestItinerary = () => {
           {/* bottom */}
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mt-4">
             <p className="text-sm text-[#4a4260]">
-              Showing <span className="font-semibold">{startItem}</span> to{" "}
+              Showing{" "}
+              <span className="font-semibold">{startItem}</span> to{" "}
               <span className="font-semibold">{endItem}</span> of{" "}
               <span className="font-semibold">{total}</span> entries
             </p>
@@ -760,7 +696,9 @@ export const LatestItinerary = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleChangePage(currentPage - 1)}
+                onClick={() =>
+                  handleChangePage(currentPage - 1)
+                }
                 disabled={currentPage === 1}
                 className="h-8 px-3"
               >
@@ -770,7 +708,9 @@ export const LatestItinerary = () => {
                 typeof p === "number" ? (
                   <Button
                     key={i}
-                    variant={p === currentPage ? "default" : "outline"}
+                    variant={
+                      p === currentPage ? "default" : "outline"
+                    }
                     size="sm"
                     onClick={() => handleChangePage(p)}
                     className={
@@ -782,15 +722,20 @@ export const LatestItinerary = () => {
                     {p}
                   </Button>
                 ) : (
-                  <span key={i} className="px-2 text-sm text-[#6c6c6c]">
+                  <span
+                    key={i}
+                    className="px-2 text-sm text-[#6c6c6c]"
+                  >
                     ...
                   </span>
-                )
+                ),
               )}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleChangePage(currentPage + 1)}
+                onClick={() =>
+                  handleChangePage(currentPage + 1)
+                }
                 disabled={currentPage === totalPages}
                 className="h-8 px-3"
               >
