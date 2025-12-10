@@ -228,7 +228,7 @@ export default function GuideListPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">List of Guide</h2>
           <Button
-            onClick={() => navigate("/guide/add")}
+            onClick={() => navigate("/guide/new")}
             className="bg-gradient-to-r from-primary to-pink-500 hover:from-primary/90 hover:to-pink-500/90"
           >
             <Plus className="mr-2 h-4 w-4" />

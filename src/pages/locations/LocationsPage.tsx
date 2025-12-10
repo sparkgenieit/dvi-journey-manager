@@ -1,0 +1,490 @@
+// FILE: src/pages/locations/LocationsPage.tsx
+import { useEffect, useMemo, useState } from "react";
+import { Eye, Pencil, Trash2, Plus, IndianRupee } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { toast } from "sonner";
+import { locationsApi, LocationRow, TollRow } from "@/services/locations";
+import { useNavigate } from "react-router-dom";
+
+const PAGE_SIZES = [10, 25, 50];
+
+// safe lowercase helper
+const lo = (v: unknown) => (v === null || v === undefined ? "" : String(v)).toLowerCase();
+
+// normalize a backend row to our UI shape (handles mismatched keys)
+function normalizeRow(raw: any): LocationRow {
+  return {
+    location_ID: Number(raw.location_ID ?? raw.location_id ?? raw.id ?? 0),
+
+    source_location: raw.source_location ?? "",
+    source_city: raw.source_city ?? raw.source_location_city ?? "",
+    source_state: raw.source_state ?? raw.source_location_state ?? "",
+    source_latitude:
+      raw.source_latitude ??
+      raw.source_location_latitude ??
+      raw.source_location_lattitude ?? // typo from API
+      "",
+    source_longitude:
+      raw.source_longitude ??
+      raw.source_location_longitude ??
+      "",
+
+    destination_location: raw.destination_location ?? "",
+    destination_city: raw.destination_city ?? raw.destination_location_city ?? "",
+    destination_state: raw.destination_state ?? raw.destination_location_state ?? "",
+    destination_latitude:
+      raw.destination_latitude ??
+      raw.destination_location_latitude ??
+      raw.destination_location_lattitude ?? // typo from API
+      "",
+    destination_longitude:
+      raw.destination_longitude ??
+      raw.destination_location_longitude ??
+      "",
+
+    distance_km: Number(
+      raw.distance_km ?? raw.distance ?? 0
+    ),
+    duration_text: String(raw.duration_text ?? raw.duration ?? ""),
+
+    location_description: raw.location_description ?? null,
+  };
+}
+
+export default function LocationsPage() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState<LocationRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const [sources, setSources] = useState<string[]>([]);
+  const [destinations, setDestinations] = useState<string[]>([]);
+  const [source, setSource] = useState<string>("");
+  const [destination, setDestination] = useState<string>("");
+  const [search, setSearch] = useState("");
+
+  // dialogs
+  const [addOpen, setAddOpen] = useState(false);
+  const [editRow, setEditRow] = useState<LocationRow | null>(null);
+  const [renameInfo, setRenameInfo] = useState<{
+    open: boolean;
+    row: LocationRow | null;
+    scope: "source" | "destination";
+  }>({ open: false, row: null, scope: "source" });
+  const [deleteRow, setDeleteRow] = useState<LocationRow | null>(null);
+  const [tollInfo, setTollInfo] = useState<{ open: boolean; row: LocationRow | null; items: TollRow[] }>({ open: false, row: null, items: [] });
+
+  useEffect(() => {
+    loadDropdowns();
+  }, []);
+
+  // fetch on page/pageSize/source/destination change
+  useEffect(() => {
+    loadList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, source, destination]);
+
+  // debounced fetch on search change
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPage(1);
+      loadList();
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  async function loadDropdowns() {
+    const d = await locationsApi.dropdowns();
+    setSources(d?.sources || []);
+    setDestinations(d?.destinations || []);
+  }
+
+  async function loadList() {
+    const data = await locationsApi.list({ page, pageSize, source, destination, search });
+    const normalized = Array.isArray(data?.rows) ? data.rows.map(normalizeRow) : [];
+    setRows(normalized);
+    setTotal(Number(data?.total ?? normalized.length));
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  // client-side filter fallback (resilient if backend search is absent)
+  const filtered = useMemo(() => {
+    if (!search) return rows;
+    const s = lo(search);
+    return rows.filter((r) =>
+      [r.source_location, r.destination_location, r.source_city, r.destination_city]
+        .some((v) => lo(v).includes(s))
+    );
+  }, [rows, search]);
+
+  // ---------- handlers ----------
+  async function handleCreate(payload: Omit<LocationRow, "location_ID">) {
+    await locationsApi.create(payload);
+    toast.success("Location added");
+    setAddOpen(false);
+    setPage(1);
+    await loadList();
+  }
+
+  async function handleUpdate(payload: Partial<LocationRow>) {
+    if (!editRow) return;
+    await locationsApi.update(editRow.location_ID, payload);
+    toast.success("Location updated");
+    setEditRow(null);
+    await loadList();
+  }
+
+  async function handleRename(new_name: string) {
+    const { row, scope } = renameInfo;
+    if (!row) return;
+    await locationsApi.modifyName(row.location_ID, scope, new_name);
+    toast.success("Location name updated");
+    setRenameInfo({ open: false, row: null, scope: "source" });
+    await loadList();
+  }
+
+  async function handleDelete() {
+    if (!deleteRow) return;
+    await locationsApi.remove(deleteRow.location_ID);
+    toast.success("Location deleted");
+    setDeleteRow(null);
+    await loadList();
+  }
+
+  async function openTolls(row: LocationRow) {
+    const items = await locationsApi.tolls(row.location_ID);
+    setTollInfo({ open: true, row, items });
+  }
+  async function saveTolls() {
+    if (!tollInfo.row) return;
+    await locationsApi.saveTolls(
+      tollInfo.row.location_ID,
+      tollInfo.items.map((i) => ({ vehicle_type_id: i.vehicle_type_id, toll_charge: Number(i.toll_charge || 0) }))
+    );
+    toast.success("Toll charges saved");
+    setTollInfo({ open: false, row: null, items: [] });
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-primary">List of Locations</h1>
+        <div className="flex gap-2">
+          <Button onClick={() => setAddOpen(true)}><Plus className="mr-2 h-4 w-4" />Add Locations</Button>
+          <Button variant="outline" onClick={() => rows[0] && setRenameInfo({ open: true, row: rows[0], scope: "source" })}>Modify Location Name</Button>
+          <Button variant="outline" onClick={() => rows[0] && setDeleteRow(rows[0])}>Delete Location Name</Button>
+          <Button variant="outline" onClick={() => rows[0] && openTolls(rows[0])}><IndianRupee className="mr-2 h-4 w-4" />Toll Charges</Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-lg border p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <div className="text-xs mb-1">Source Location *</div>
+            <Select value={source} onValueChange={(v) => { setSource(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+              <SelectContent>
+                {sources.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="text-xs mb-1">Destination Location *</div>
+            <Select value={destination} onValueChange={(v) => { setDestination(v); setPage(1); }}>
+              <SelectTrigger><SelectValue placeholder="Select destination" /></SelectTrigger>
+              <SelectContent>
+                {destinations.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setSource(""); setDestination(""); setSearch(""); setPage(1); }}
+            >
+              Clear
+            </Button>
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-sm">Search:</span>
+              <Input className="w-64" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Type to search…" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-lg border p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">Show</span>
+            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+              <SelectContent>{PAGE_SIZES.map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
+            </Select>
+            <span className="text-sm">entries</span>
+          </div>
+        </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>S.NO</TableHead>
+              <TableHead>ACTION</TableHead>
+              <TableHead>SOURCE LOCATION</TableHead>
+              <TableHead>DESTINATION LOCATION</TableHead>
+              <TableHead>DISTANCE (KM)</TableHead>
+              <TableHead>DURATION</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((r, idx) => (
+              <TableRow key={r.location_ID}>
+                <TableCell>{(page - 1) * pageSize + idx + 1}</TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => navigate(`/locations/${r.location_ID}/preview`)}><Eye className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditRow(r)}><Pencil className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteRow(r)}><Trash2 className="h-4 w-4 text-red-600" /></Button>
+                  </div>
+                </TableCell>
+                <TableCell>{r.source_location}</TableCell>
+                <TableCell>{r.destination_location}</TableCell>
+                <TableCell>{Number(r.distance_km ?? 0).toFixed(6)}</TableCell>
+                <TableCell>{r.duration_text}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, search ? filtered.length : total)} of {search ? filtered.length : total} entries
+          </div>
+          <div className="flex gap-1">
+            <Button size="sm" variant="outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
+            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Modal */}
+      <LocationFormDialog
+        open={addOpen}
+        title="Add Location"
+        onClose={() => setAddOpen(false)}
+        onSubmit={handleCreate}
+      />
+
+      {/* Edit Modal */}
+      {editRow && (
+        <LocationFormDialog
+          open
+          title="Edit Location"
+          initial={editRow}
+          onClose={() => setEditRow(null)}
+          onSubmit={(payload) => handleUpdate(payload)}
+        />
+      )}
+
+      {/* Modify Name */}
+      {renameInfo.open && renameInfo.row && (
+        <SimpleRenameDialog
+          open
+          title={`Modify ${renameInfo.scope === "source" ? "Source" : "Destination"} Name`}
+          currentName={renameInfo.scope === "source" ? renameInfo.row.source_location : renameInfo.row.destination_location}
+          onClose={() => setRenameInfo({ open: false, row: null, scope: "source" })}
+          onSubmit={handleRename}
+        />
+      )}
+
+      {/* Delete confirm */}
+      {deleteRow && (
+        <SimpleConfirmDialog
+          open
+          title="Delete Location"
+          message="Do you really want to delete this record? This process cannot be undone."
+          onClose={() => setDeleteRow(null)}
+          onConfirm={handleDelete}
+        />
+      )}
+
+      {/* Toll charges */}
+      {tollInfo.open && tollInfo.row && (
+        <TollDialog
+          open
+          rows={tollInfo.items}
+          title={`Toll Charges — ${tollInfo.row.source_location} → ${tollInfo.row.destination_location}`}
+          onClose={() => setTollInfo({ open: false, row: null, items: [] })}
+          onChange={(items) => setTollInfo((s) => ({ ...s, items }))}
+          onSubmit={saveTolls}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------- Dialogs ----------
+function SimpleConfirmDialog(props: { open: boolean; title: string; message: string; onConfirm: () => void; onClose: () => void }) {
+  const { open, title, message, onConfirm, onClose } = props;
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="text-sm">{message}</div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="destructive" onClick={onConfirm}>Delete</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SimpleRenameDialog(props: { open: boolean; title: string; currentName: string; onSubmit: (v: string) => void; onClose: () => void }) {
+  const { open, title, currentName, onSubmit, onClose } = props;
+  const [value, setValue] = useState(currentName);
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <Input value={value} onChange={(e) => setValue(e.target.value)} />
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={() => onSubmit(value)}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TollDialog(props: { open: boolean; title: string; rows: TollRow[]; onClose: () => void; onSubmit: () => void; onChange: (r: TollRow[]) => void }) {
+  const { open, title, rows, onClose, onSubmit, onChange } = props;
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="border rounded-md">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Vehicle Type</TableHead>
+                <TableHead className="text-right">Toll (₹)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r, idx) => (
+                <TableRow key={r.vehicle_type_id}>
+                  <TableCell>{r.vehicle_type_name}</TableCell>
+                  <TableCell className="text-right">
+                    <Input
+                      className="w-32 ml-auto"
+                      type="number"
+                      value={String(r.toll_charge ?? 0)}
+                      onChange={(e) => {
+                        const v = Number(e.target.value || 0);
+                        const next = [...rows];
+                        next[idx] = { ...r, toll_charge: v };
+                        onChange(next);
+                      }}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={onSubmit}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function LocationFormDialog(props: {
+  open: boolean;
+  title: string;
+  initial?: LocationRow;
+  onSubmit: (payload: Omit<LocationRow, "location_ID"> | Partial<LocationRow>) => void;
+  onClose: () => void;
+}) {
+  const { open, title, initial, onSubmit, onClose } = props;
+  const [form, setForm] = useState<Omit<LocationRow, "location_ID">>({
+    source_location: initial?.source_location ?? "",
+    source_city: initial?.source_city ?? "",
+    source_state: initial?.source_state ?? "",
+    source_latitude: initial?.source_latitude ?? "",
+    source_longitude: initial?.source_longitude ?? "",
+
+    destination_location: initial?.destination_location ?? "",
+    destination_city: initial?.destination_city ?? "",
+    destination_state: initial?.destination_state ?? "",
+    destination_latitude: initial?.destination_latitude ?? "",
+    destination_longitude: initial?.destination_longitude ?? "",
+
+    distance_km: initial?.distance_km ?? 0,
+    duration_text: initial?.duration_text ?? "0 hours 0 mins",
+    location_description: initial?.location_description ?? "",
+  });
+
+  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Source */}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Source</div>
+            <Input placeholder="Source Location" value={form.source_location} onChange={(e) => set("source_location", e.target.value)} />
+            <div className="grid grid-cols-3 gap-2">
+              <Input placeholder="City" value={form.source_city} onChange={(e) => set("source_city", e.target.value)} />
+              <Input placeholder="State" value={form.source_state} onChange={(e) => set("source_state", e.target.value)} />
+              <Input placeholder="Latitude" value={form.source_latitude} onChange={(e) => set("source_latitude", e.target.value)} />
+            </div>
+            <Input placeholder="Longitude" value={form.source_longitude} onChange={(e) => set("source_longitude", e.target.value)} />
+          </div>
+
+          {/* Destination */}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Destination</div>
+            <Input placeholder="Destination Location" value={form.destination_location} onChange={(e) => set("destination_location", e.target.value)} />
+            <div className="grid grid-cols-3 gap-2">
+              <Input placeholder="City" value={form.destination_city} onChange={(e) => set("destination_city", e.target.value)} />
+              <Input placeholder="State" value={form.destination_state} onChange={(e) => set("destination_state", e.target.value)} />
+              <Input placeholder="Latitude" value={form.destination_latitude} onChange={(e) => set("destination_latitude", e.target.value)} />
+            </div>
+            <Input placeholder="Longitude" value={form.destination_longitude} onChange={(e) => set("destination_longitude", e.target.value)} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <Input placeholder="Distance (KM)" type="number" value={String(form.distance_km)} onChange={(e) => set("distance_km", Number(e.target.value || 0))} />
+          <Input placeholder="Duration (eg: 5 hours 22 mins)" value={form.duration_text} onChange={(e) => set("duration_text", e.target.value)} />
+        </div>
+
+        <div className="mt-2">
+          <Input placeholder="Description" value={form.location_description || ""} onChange={(e) => set("location_description", e.target.value)} />
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button onClick={() => onSubmit(form)}>{initial ? "Update" : "Save"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

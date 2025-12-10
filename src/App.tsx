@@ -42,7 +42,9 @@ import ActivityForm from "./pages/activity/ActivityForm";
 import ActivityListPage from "./pages/activity/ActivityListPage";
 import GuideListPage from "./pages/guide/GuideListPage";
 import GuideFormPage from "./pages/guide/GuideFormPage";
+import GuidePreview from "./pages/guide/GuidePreview";
 import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
+import LocationsPage from "./pages/locations/LocationsPage";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -384,11 +386,45 @@ const App = () => (
               }
             />
           </Route>
-                      <Route
+              <Route
               path="/activities/:id/preview"
               element={
                 <MainLayout>
                   <ActivityPreviewPage />
+                </MainLayout>
+              }
+            />
+            {/* ✅ Guide Routes */}
+            <Route
+              path="/guide"
+              element={
+                <MainLayout>
+                  <GuideListPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/guide/new"
+              element={
+                <MainLayout>
+                  <GuideFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/guide/:id/edit"
+              element={
+                <MainLayout>
+                  <GuideFormPage />
+                </MainLayout>
+              }
+            />
+            {/* Optional alias: /guide/:id opens edit wizard */}
+            <Route
+              path="/guide/:id/preview"
+              element={
+                <MainLayout>
+                  <GuidePreview />
                 </MainLayout>
               }
             />
@@ -401,7 +437,15 @@ const App = () => (
               </MainLayout>
             }
           />
-
+          {/* Locations Management */}
+          <Route
+            path="/locations"
+            element={
+              <MainLayout>
+                <LocationsPage />
+              </MainLayout>
+            }
+          />
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>

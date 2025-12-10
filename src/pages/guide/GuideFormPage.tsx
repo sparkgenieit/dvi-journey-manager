@@ -1,6 +1,6 @@
 // FILE: src/pages/guide/GuideFormPage.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChevronRight, Eye, EyeOff, Star, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,24 +26,27 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { GuideAPI } from "@/services/guideService";
 import type {
-  Guide,
   GuideBankDetails,
   GuidePreferredFor,
   GuidePricebook,
   GuideReview,
 } from "@/types/guide";
-import {
-  BLOOD_GROUPS,
-  GENDERS,
-  ROLES,
-  LANGUAGES,
-  GST_TYPES,
-  GST_PERCENTAGES,
-  COUNTRIES,
-  STATES,
-  CITIES,
-  GUIDE_SLOTS,
-} from "@/types/guide";
+import { BLOOD_GROUPS, GENDERS, GUIDE_SLOTS } from "@/types/guide";
+import { api } from "@/lib/api";
+
+/* ------------------------------------------------------------------
+   Dynamic option types (all dropdowns pull from backend)
+-------------------------------------------------------------------*/
+type Opt = { id: string | number; name: string };
+type CountryOpt = { id: number; name: string };
+type StateOpt = { id: number; name: string; countryId?: number };
+type CityOpt = { id: number; name: string; stateId?: number };
+
+/** Fixed GST Type mapping: UI shows label, payload must send 1/2 */
+const GST_TYPE_OPTIONS: Opt[] = [
+  { id: "1", name: "Included" },
+  { id: "2", name: "Excluded" },
+];
 
 const STEPS = [
   { id: 1, label: "Guide Basic Info" },
@@ -93,15 +96,15 @@ export default function GuideFormPage() {
   const [email, setEmail] = useState("");
   const [emergencyMobile, setEmergencyMobile] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("");
+  const [role, setRole] = useState(""); // value = role_id (string) from dvi_rolemenu
   const [experience, setExperience] = useState<number>(0);
   const [aadharCardNo, setAadharCardNo] = useState("");
-  const [languageProficiency, setLanguageProficiency] = useState("");
-  const [country, setCountry] = useState("");
-  const [state, setState] = useState("");
-  const [city, setCity] = useState("");
-  const [gstType, setGstType] = useState("");
-  const [gstPercentage, setGstPercentage] = useState("");
+  const [languageProficiency, setLanguageProficiency] = useState(""); // value = language_id (string)
+  const [country, setCountry] = useState(""); // value = country_id (string)
+  const [state, setState] = useState(""); // value = state_id (string)
+  const [city, setCity] = useState(""); // value = city_id (string)
+  const [gstType, setGstType] = useState(""); // "1" | "2"
+  const [gstPercentage, setGstPercentage] = useState(""); // value = gst_title (string)
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [bankDetails, setBankDetails] = useState<GuideBankDetails>(defaultBankDetails);
   const [preferredFor, setPreferredFor] = useState<GuidePreferredFor>(defaultPreferredFor);
@@ -114,7 +117,149 @@ export default function GuideFormPage() {
   const [newRating, setNewRating] = useState<number>(0);
   const [newFeedback, setNewFeedback] = useState("");
 
-  // Load guide if editing
+  /* ------------------------------------------------------------------
+     Dynamic dropdown option state
+  -------------------------------------------------------------------*/
+  const [roleOptions, setRoleOptions] = useState<Opt[]>([]);
+  const [languageOptions, setLanguageOptions] = useState<Opt[]>([]);
+  const [countryOptions, setCountryOptions] = useState<CountryOpt[]>([]);
+  const [stateOptions, setStateOptions] = useState<StateOpt[]>([]);
+  const [cityOptions, setCityOptions] = useState<CityOpt[]>([]);
+  const [gstPercentOptions, setGstPercentOptions] = useState<Opt[]>([]);
+
+  /* ------------------------------------------------------------------
+     Bootstrap dropdowns on page load
+  -------------------------------------------------------------------*/
+  useEffect(() => {
+    (async () => {
+      try {
+        // roles: dvi_rolemenu.role_name
+        const roles = await api("/guides/dropdowns/roles", { method: "GET" }).catch(() => []);
+        setRoleOptions(
+          (Array.isArray(roles) ? roles : [])
+            .map((r: any) => {
+              const id = String(r?.role_id ?? r?.id ?? r?.ROLE_ID ?? r?.value ?? "").trim();
+              const name = String(r?.role_name ?? r?.name ?? r?.ROLE_NAME ?? "").trim();
+              return { id, name };
+            })
+            .filter((o: Opt) => o.id !== "" && o.name !== "")
+        );
+
+        // languages: dvi_language.language
+        const languages = await api("/guides/dropdowns/languages", { method: "GET" }).catch(() => []);
+        setLanguageOptions(
+          (Array.isArray(languages) ? languages : [])
+            .map((l: any) => {
+              const id = String(l?.language_id ?? l?.id ?? l?.LANGUAGE_ID ?? l?.value ?? "").trim();
+              const name = String(l?.language ?? l?.name ?? l?.LANGUAGE ?? "").trim();
+              return { id, name };
+            })
+            .filter((o: Opt) => o.id !== "" && o.name !== "")
+        );
+
+        // countries
+        const countries = await api("/guides/dropdowns/countries", { method: "GET" }).catch(() => []);
+        setCountryOptions(
+          (Array.isArray(countries) ? countries : [])
+            .map((c: any) => {
+              const idRaw = c?.country_id ?? c?.id ?? c?.COUNTRY_ID ?? 0;
+              const id = Number(idRaw);
+              const name = String(c?.country_name ?? c?.name ?? c?.COUNTRY_NAME ?? "").trim();
+              return { id, name };
+            })
+            .filter((o: CountryOpt) => !!o.id && o.name !== "")
+        );
+
+        // GST %: dvi_gst_setting.gst_title
+        const gst = await api("/guides/dropdowns/gst-percentages", { method: "GET" }).catch(() => []);
+        setGstPercentOptions(
+          (Array.isArray(gst) ? gst : [])
+            .map((g: any) => {
+              // Keep value as gst_title (string) for payload, but ensure it's not empty
+              const title = String(g?.gst_title ?? g?.title ?? g?.name ?? "").trim();
+              const id = title; // use title as value consistently
+              return { id, name: title };
+            })
+            .filter((o: Opt) => o.id !== "" && o.name !== "")
+        );
+      } catch {
+        // never block the page for options; user can still type/save
+      }
+    })();
+  }, []);
+
+  /* ------------------------------------------------------------------
+     When country changes → fetch states
+  -------------------------------------------------------------------*/
+  useEffect(() => {
+    if (!country) {
+      setStateOptions([]);
+      setState("");
+      setCityOptions([]);
+      setCity("");
+      return;
+    }
+    (async () => {
+      try {
+        const states = await api(`/guides/dropdowns/states?countryId=${country}`, { method: "GET" }).catch(
+          () => []
+        );
+        setStateOptions(
+          Array.isArray(states)
+            ? states.map((s: any) => ({
+                id: Number(s?.state_id ?? s?.id ?? s?.STATE_ID ?? 0),
+                name: String(s?.state_name ?? s?.name ?? s?.STATE_NAME ?? ""),
+                countryId: Number(s?.country_id ?? s?.COUNTRY_ID ?? 0),
+              }))
+            : []
+        );
+        // clear stale selections
+        setState("");
+        setCityOptions([]);
+        setCity("");
+      } catch {
+        setStateOptions([]);
+        setState("");
+        setCityOptions([]);
+        setCity("");
+      }
+    })();
+  }, [country]);
+
+  /* ------------------------------------------------------------------
+     When state changes → fetch cities
+  -------------------------------------------------------------------*/
+  useEffect(() => {
+    if (!state) {
+      setCityOptions([]);
+      setCity("");
+      return;
+    }
+    (async () => {
+      try {
+        const cities = await api(`/guides/dropdowns/cities?stateId=${state}`, { method: "GET" }).catch(
+          () => []
+        );
+        setCityOptions(
+          Array.isArray(cities)
+            ? cities.map((c: any) => ({
+                id: Number(c?.city_id ?? c?.id ?? c?.CITY_ID ?? 0),
+                name: String(c?.city_name ?? c?.name ?? c?.CITY_NAME ?? ""),
+                stateId: Number(c?.state_id ?? c?.STATE_ID ?? 0),
+              }))
+            : []
+        );
+        setCity("");
+      } catch {
+        setCityOptions([]);
+        setCity("");
+      }
+    })();
+  }, [state]);
+
+  /* ------------------------------------------------------------------
+     Load guide for edit
+  -------------------------------------------------------------------*/
   useEffect(() => {
     if (isEdit && id) {
       (async () => {
@@ -131,20 +276,20 @@ export default function GuideFormPage() {
             setEmail(guide.email);
             setEmergencyMobile(guide.emergencyMobile);
             setPassword(guide.password);
-            setRole(guide.role);
+            setRole(String(guide.role ?? "")); // keep as string id
             setExperience(guide.experience);
             setAadharCardNo(guide.aadharCardNo);
-            setLanguageProficiency(guide.languageProficiency);
-            setCountry(guide.country);
-            setState(guide.state);
-            setCity(guide.city);
-            setGstType(guide.gstType);
-            setGstPercentage(guide.gstPercentage);
-            setAvailableSlots(guide.availableSlots);
-            setBankDetails(guide.bankDetails);
-            setPreferredFor(guide.preferredFor);
-            setPricebook(guide.pricebook);
-            setReviews(guide.reviews);
+            setLanguageProficiency(String(guide.languageProficiency ?? ""));
+            setCountry(String(guide.country ?? ""));
+            setState(String(guide.state ?? ""));
+            setCity(String(guide.city ?? ""));
+            setGstType(String(guide.gstType ?? "")); // "1"/"2"
+            setGstPercentage(String(guide.gstPercentage ?? ""));
+            setAvailableSlots(guide.availableSlots || []);
+            setBankDetails(guide.bankDetails || defaultBankDetails);
+            setPreferredFor(guide.preferredFor || defaultPreferredFor);
+            setPricebook(guide.pricebook || defaultPricebook);
+            setReviews(guide.reviews || []);
           }
         } catch {
           toast.error("Failed to load guide");
@@ -154,12 +299,6 @@ export default function GuideFormPage() {
       })();
     }
   }, [id, isEdit]);
-
-  const handleSlotToggle = (slotId: string) => {
-    setAvailableSlots((prev) =>
-      prev.includes(slotId) ? prev.filter((s) => s !== slotId) : [...prev, slotId]
-    );
-  };
 
   const handleSaveBasicInfo = async () => {
     if (!name || !primaryMobile || !email) {
@@ -179,15 +318,15 @@ export default function GuideFormPage() {
         email,
         emergencyMobile,
         password,
-        role,
+        role, // role_id string
         experience,
         aadharCardNo,
-        languageProficiency,
-        country,
-        state,
-        city,
-        gstType,
-        gstPercentage,
+        languageProficiency, // language_id string
+        country, // country_id string
+        state, // state_id string
+        city, // city_id string
+        gstType, // "1" | "2" as required
+        gstPercentage, // gst_title string
         availableSlots,
         bankDetails,
         preferredFor,
@@ -201,7 +340,6 @@ export default function GuideFormPage() {
         toast.success("Guide updated successfully");
       } else {
         const created = await GuideAPI.create(guideData);
-        // Navigate to edit mode
         navigate(`/guide/${created.id}/edit`, { replace: true });
         toast.success("Guide created successfully");
       }
@@ -281,9 +419,6 @@ export default function GuideFormPage() {
     navigate("/guide");
   };
 
-  const stateOptions = country ? STATES[country] || [] : [];
-  const cityOptions = state ? CITIES[state] || [] : [];
-
   const renderStars = (count: number) => {
     return Array.from({ length: 5 }, (_, i) => (
       <Star
@@ -295,6 +430,24 @@ export default function GuideFormPage() {
       />
     ));
   };
+
+  // derive labels for preview
+  const gstTypeLabel = useMemo(
+    () => GST_TYPE_OPTIONS.find((g) => String(g.id) === String(gstType))?.name ?? "",
+    [gstType]
+  );
+  const countryLabel = useMemo(
+    () => countryOptions.find((c) => String(c.id) === String(country))?.name ?? "",
+    [country, countryOptions]
+  );
+  const stateLabel = useMemo(
+    () => stateOptions.find((s) => String(s.id) === String(state))?.name ?? "",
+    [state, stateOptions]
+  );
+  const cityLabel = useMemo(
+    () => cityOptions.find((c) => String(c.id) === String(city))?.name ?? "",
+    [city, cityOptions]
+  );
 
   if (loading && isEdit && currentStep === 1) {
     return (
@@ -462,9 +615,9 @@ export default function GuideFormPage() {
                       <SelectValue placeholder="Select Role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {ROLES.map((r) => (
-                        <SelectItem key={r} value={r}>
-                          {r}
+                      {roleOptions.map((r) => (
+                        <SelectItem key={r.id} value={String(r.id)}>
+                          {r.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -479,14 +632,17 @@ export default function GuideFormPage() {
                 </div>
                 <div>
                   <Label>Language Proficiency *</Label>
-                  <Select value={languageProficiency} onValueChange={setLanguageProficiency}>
+                  <Select
+                    value={languageProficiency}
+                    onValueChange={setLanguageProficiency}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Language" />
                     </SelectTrigger>
                     <SelectContent>
-                      {LANGUAGES.map((l) => (
-                        <SelectItem key={l} value={l}>
-                          {l}
+                      {languageOptions.map((l) => (
+                        <SelectItem key={l.id} value={String(l.id)}>
+                          {l.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -503,14 +659,20 @@ export default function GuideFormPage() {
                 </div>
                 <div>
                   <Label>Country</Label>
-                  <Select value={country} onValueChange={(v) => { setCountry(v); setState(""); setCity(""); }}>
+                  <Select
+                    value={country}
+                    onValueChange={(v) => {
+                      setCountry(v);
+                      // state / city cleared by effects
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select Country" />
                     </SelectTrigger>
                     <SelectContent>
-                      {COUNTRIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
+                      {countryOptions.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -518,14 +680,20 @@ export default function GuideFormPage() {
                 </div>
                 <div>
                   <Label>State</Label>
-                  <Select value={state} onValueChange={(v) => { setState(v); setCity(""); }}>
+                  <Select
+                    value={state}
+                    onValueChange={(v) => {
+                      setState(v);
+                      // city cleared by effect
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Select State" />
                     </SelectTrigger>
                     <SelectContent>
                       {stateOptions.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {s}
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          {s.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -540,8 +708,8 @@ export default function GuideFormPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {cityOptions.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -554,9 +722,9 @@ export default function GuideFormPage() {
                       <SelectValue placeholder="Select GST Type" />
                     </SelectTrigger>
                     <SelectContent>
-                      {GST_TYPES.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
+                      {GST_TYPE_OPTIONS.map((g) => (
+                        <SelectItem key={g.id} value={String(g.id)}>
+                          {g.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -569,9 +737,9 @@ export default function GuideFormPage() {
                       <SelectValue placeholder="Select GST%" />
                     </SelectTrigger>
                     <SelectContent>
-                      {GST_PERCENTAGES.map((g) => (
-                        <SelectItem key={g} value={g}>
-                          {g}
+                      {gstPercentOptions.map((g) => (
+                        <SelectItem key={g.id} value={g.name}>
+                          {g.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -582,23 +750,21 @@ export default function GuideFormPage() {
               {/* Available Slots */}
               <div>
                 <Label className="mb-2 block">Guide Available Slots *</Label>
-                <div className="border rounded-lg p-4 flex flex-wrap gap-2">
-                  {GUIDE_SLOTS.map((slot) => (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      onClick={() => handleSlotToggle(slot.id)}
-                      className={cn(
-                        "px-3 py-1 rounded-full text-sm border transition-colors",
-                        availableSlots.includes(slot.id)
-                          ? "bg-gray-100 border-gray-400"
-                          : "bg-white border-gray-200 hover:bg-gray-50"
-                      )}
-                    >
-                      {slot.label}
-                    </button>
-                  ))}
-                </div>
+                <Select
+                  value={availableSlots[0] ?? ""}
+                  onValueChange={(v) => setAvailableSlots(v ? [v] : [])}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose Slot Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GUIDE_SLOTS.map((slot) => (
+                      <SelectItem key={slot.id} value={slot.id}>
+                        {slot.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Divider with star */}
@@ -1080,7 +1246,10 @@ export default function GuideFormPage() {
                   </div>
                   <div>
                     <p className="text-gray-500">Language Preference</p>
-                    <p className="font-medium">{languageProficiency || "-"}</p>
+                    <p className="font-medium">
+                      {languageOptions.find((x) => String(x.id) === String(languageProficiency))
+                        ?.name || "-"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-500">Experience</p>
@@ -1088,19 +1257,25 @@ export default function GuideFormPage() {
                   </div>
                   <div>
                     <p className="text-gray-500">Country</p>
-                    <p className="font-medium">{country || "-"}</p>
+                    <p className="font-medium">{countryLabel || "-"}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">State</p>
-                    <p className="font-medium">{state || "-"}</p>
+                    <p className="font-medium">{stateLabel || "-"}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">City</p>
-                    <p className="font-medium">{city || "-"}</p>
+                    <p className="font-medium">{cityLabel || "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">GST Type</p>
+                    <p className="font-medium">{gstTypeLabel || "-"}</p>
                   </div>
                   <div>
                     <p className="text-gray-500">GST%</p>
-                    <p className="font-medium">{gstPercentage ? gstPercentage.split(" ")[0] : "-"}</p>
+                    <p className="font-medium">
+                      {gstPercentage ? gstPercentage.split(" ")[0] : "-"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-gray-500">Guide Available Slots</p>
@@ -1156,43 +1331,6 @@ export default function GuideFormPage() {
               </div>
 
               {/* Preferred For Preview */}
-              <div>
-                <h3 className="text-lg font-semibold text-pink-500 mb-4">Guide Prefered For</h3>
-                <div className="flex items-center gap-6">
-                  {preferredFor.hotspot && (
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked disabled />
-                      <span>Hotspot</span>
-                    </div>
-                  )}
-                  {preferredFor.activity && (
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked disabled />
-                      <span>Activity</span>
-                    </div>
-                  )}
-                  {preferredFor.itinerary && (
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked disabled />
-                      <span>Itinerary</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4 bg-pink-50 border border-pink-200 rounded-lg p-4 text-pink-600 text-sm">
-                  From the beginning to the end of each day, the itinerary and all the hotspots
-                  serve as a guide for the entire journey.
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center justify-center">
-                <div className="flex-1 border-t border-dashed border-gray-300" />
-                <Star className="mx-4 h-5 w-5 text-gray-300" />
-                <div className="flex-1 border-t border-dashed border-gray-300" />
-              </div>
-
-              {/* Reviews Preview */}
               <div>
                 <h3 className="text-lg font-semibold text-pink-500 mb-4">Feedback & Review</h3>
                 <Table>
