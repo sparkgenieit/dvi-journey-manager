@@ -1,5 +1,4 @@
-// src/pages/staff/StaffListPage.tsx
-
+// FILE: src/pages/staff/StaffListPage.tsx
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -159,7 +158,6 @@ export default function StaffListPage() {
       setRows((r) => r.filter((x) => x.id !== deletingId));
       setFiltered((r) => r.filter((x) => x.id !== deletingId));
       toast.success("Staff deleted successfully");
-      console.log("Deleted staff ID:", deletingId);
     } catch {
       toast.error("Failed to delete staff");
     } finally {
@@ -181,7 +179,7 @@ export default function StaffListPage() {
     if (!canExport) return;
     try {
       await navigator.clipboard.writeText(toCSV(dataset));
-      toast.success("Copied 55 rows to clipboard");
+      toast.success(`Copied ${filtered.length} rows to clipboard`);
     } catch {
       toast.error("Copy failed");
     }
@@ -197,8 +195,36 @@ export default function StaffListPage() {
     downloadBlob("staff.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
   };
 
-  const onPDF = () => {
-    toast.info("PDF export coming soon");
+  // --- PDF export (working) ---
+  const onPDF = async () => {
+    if (!canExport) return;
+    try {
+      const [{ default: jsPDF }] = await Promise.all([import("jspdf")]);
+      const autoTable = (await import("jspdf-autotable")).default;
+
+      const doc = new jsPDF();
+      // Title + timestamp
+      doc.setFontSize(14);
+      doc.text("Staff List", 14, 12);
+      doc.setFontSize(10);
+      doc.text(new Date().toLocaleString(), 14, 18);
+
+      autoTable(doc, {
+        head: [dataset.headers],
+        body: dataset.data,
+        startY: 22,
+        styles: { fontSize: 9, cellPadding: 2 },
+        headStyles: { fillColor: [0, 0, 0] },
+        margin: { left: 14, right: 14 },
+      });
+
+      doc.save("staff-list.pdf");
+      toast.success("PDF exported");
+    } catch (e) {
+      console.error("PDF export failed:", e);
+      toast.error("PDF export failed — opening print dialog");
+      window.print(); // fallback so the user can "Save as PDF"
+    }
   };
 
   // Pagination helper

@@ -1,5 +1,4 @@
-// src/pages/staff/StaffPreviewPage.tsx
-
+// FILE: src/pages/staff/StaffPreviewPage.tsx
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,8 @@ export default function StaffPreviewPage() {
         .then((data) => setStaff(data))
         .catch(() => toast.error("Failed to load staff"))
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, [id]);
 

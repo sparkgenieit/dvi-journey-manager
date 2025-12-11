@@ -1,5 +1,4 @@
-// src/pages/staff/StaffFormPage.tsx
-
+// FILE: src/pages/staff/StaffFormPage.tsx
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
@@ -14,8 +13,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { StaffAPI } from "@/services/staffService";
-import { ROLE_OPTIONS } from "@/types/staff";
+import { StaffAPI, fetchStaffRoles } from "@/services/staffService";
+
+type RoleOption = { id: number; label: string };
 
 export default function StaffFormPage() {
   const navigate = useNavigate();
@@ -26,14 +26,31 @@ export default function StaffFormPage() {
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // dynamic roles
+  const [roles, setRoles] = useState<RoleOption[]>([]);
+
+  // form state
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     mobileNumber: "",
     password: "",
-    role: "staff",
+    roleId: undefined as number | undefined, // ← dynamic numeric role
   });
 
+  // load roles once
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetchStaffRoles();
+        setRoles(r || []);
+      } catch {
+        // optional toast/log
+      }
+    })();
+  }, []);
+
+  // load staff if editing
   useEffect(() => {
     if (isEditMode && id) {
       setLoading(true);
@@ -45,7 +62,7 @@ export default function StaffFormPage() {
               email: staff.email,
               mobileNumber: staff.mobileNumber,
               password: "",
-              role: staff.roleAccess.toLowerCase().replace(" ", "_"),
+              roleId: staff.roleId ?? undefined, // backend already returns roleId
             });
           }
         })
@@ -54,26 +71,42 @@ export default function StaffFormPage() {
     }
   }, [id, isEditMode]);
 
+  // helper for selected role label (for any custom UI needs)
+  const selectedRoleLabel =
+    roles.find((r) => r.id === formData.roleId)?.label ?? "Select Role";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
 
     try {
+      if (!formData.roleId || Number.isNaN(formData.roleId)) {
+        toast.error("Please select a role");
+        setSaving(false);
+        return;
+      }
+
       if (isEditMode && id) {
         await StaffAPI.update(Number(id), {
-          name: formData.name,
-          email: formData.email,
-          mobileNumber: formData.mobileNumber,
-          roleAccess: ROLE_OPTIONS.find((r) => r.value === formData.role)?.label || "Staff",
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          mobileNumber: formData.mobileNumber.trim(),
+          roleId: formData.roleId, // ← pass numeric roleId
           password: formData.password || undefined,
         });
         toast.success("Staff updated successfully");
       } else {
+        // Create requires password (backend creates login)
+        if (!formData.password || formData.password.trim().length < 6) {
+          toast.error("Password must be at least 6 characters");
+          setSaving(false);
+          return;
+        }
         await StaffAPI.create({
-          name: formData.name,
-          email: formData.email,
-          mobileNumber: formData.mobileNumber,
-          roleAccess: ROLE_OPTIONS.find((r) => r.value === formData.role)?.label || "Staff",
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          mobileNumber: formData.mobileNumber.trim(),
+          roleId: formData.roleId, // ← pass numeric roleId
           agentName: "--",
           status: 1,
           password: formData.password,
@@ -148,15 +181,30 @@ export default function StaffFormPage() {
               </Label>
               <Input
                 id="mobile"
+                inputMode="numeric"
+                pattern="\d{10,}"
+                title="Enter at least 10 digits"
                 value={formData.mobileNumber}
-                onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    mobileNumber: e.target.value.replace(/[^\d]/g, ""),
+                  })
+                }
                 required
               />
             </div>
 
             {/* Password */}
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">
+                Password{" "}
+                {isEditMode ? (
+                  <span className="text-gray-400">(optional)</span>
+                ) : (
+                  <span className="text-red-500">*</span>
+                )}
+              </Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -164,6 +212,8 @@ export default function StaffFormPage() {
                   placeholder="Password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required={!isEditMode}
+                  minLength={isEditMode ? 0 : 6}
                 />
                 <button
                   type="button"
@@ -177,23 +227,30 @@ export default function StaffFormPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            {/* Role */}
+            {/* Role (dynamic) */}
             <div className="space-y-2">
               <Label htmlFor="role">
                 Role <span className="text-red-500">*</span>
               </Label>
-              <Select value={formData.role} onValueChange={(v) => setFormData({ ...formData, role: v })}>
+              <Select
+                value={formData.roleId !== undefined ? String(formData.roleId) : ""}
+                onValueChange={(v) =>
+                  setFormData({ ...formData, roleId: v ? Number(v) : undefined })
+                }
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Select Role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
+                  {roles.map((opt) => (
+                    <SelectItem key={opt.id} value={String(opt.id)}>
                       {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {/* Optional helper text */}
+              <p className="text-xs text-muted-foreground">{selectedRoleLabel}</p>
             </div>
           </div>
 
