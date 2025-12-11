@@ -45,7 +45,11 @@ import GuideFormPage from "./pages/guide/GuideFormPage";
 import GuidePreview from "./pages/guide/GuidePreview";
 import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
 import LocationsPage from "./pages/locations/LocationsPage";
-
+import StaffListPage from "./pages/staff/StaffListPage";
+import StaffFormPage from "./pages/staff/StaffFormPage";
+import StaffPreviewPage from "./pages/staff/StaffPreviewPage";
+import AgentListPage from "./pages/agent/AgentListPage";
+import AgentFormPage from "./pages/agent/AgentFormPage";
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
   const { id } = useParams();
