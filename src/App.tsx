@@ -50,6 +50,7 @@ import StaffFormPage from "./pages/staff/StaffFormPage";
 import StaffPreviewPage from "./pages/staff/StaffPreviewPage";
 import AgentListPage from "./pages/agent/AgentListPage";
 import AgentFormPage from "./pages/agent/AgentFormPage";
+import AgentPreviewPage from "./pages/agent/AgentPreviewPage";
 
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -443,10 +444,10 @@ const App = () => (
               }
             />
             <Route
-              path="/agent/new"
+              path="/agent/:id/preview/"
               element={
                 <MainLayout>
-                  <AgentFormPage />
+                  <AgentPreviewPage />
                 </MainLayout>
               }
             />
