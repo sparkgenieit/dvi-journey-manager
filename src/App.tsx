@@ -50,6 +50,8 @@ import StaffFormPage from "./pages/staff/StaffFormPage";
 import StaffPreviewPage from "./pages/staff/StaffPreviewPage";
 import AgentListPage from "./pages/agent/AgentListPage";
 import AgentFormPage from "./pages/agent/AgentFormPage";
+import AgentPreviewPage from "./pages/agent/AgentPreviewPage";
+
 import PricebookExportPage from "./pages/pricebook-export/PricebookExportPage";
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
@@ -301,7 +303,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Drivers Edit (use DriverFormPage just like VendorFormPage) */}
+            {/* ✅ Drivers Edit */}
             <Route
               path="/drivers/:id/edit"
               element={
@@ -311,7 +313,7 @@ const App = () => (
               }
             />
 
-            {/* Drivers View (placeholder, can be changed to DriverFormPage if you want exact vendor parity) */}
+            {/* Drivers View (placeholder) */}
             <Route
               path="/drivers/:id"
               element={
@@ -366,14 +368,14 @@ const App = () => (
             />
 
             {/* ✅ Activity Routes */}
-          <Route
-            path="/activities"
-            element={
-              <MainLayout>
-                <ActivityListPage />
-              </MainLayout>
-            }
-          />
+            <Route
+              path="/activities"
+              element={
+                <MainLayout>
+                  <ActivityListPage />
+                </MainLayout>
+              }
+            />
             <Route
               path="/activities/new"
               element={
@@ -390,8 +392,7 @@ const App = () => (
                 </MainLayout>
               }
             />
-          </Route>
-              <Route
+            <Route
               path="/activities/:id/preview"
               element={
                 <MainLayout>
@@ -399,6 +400,67 @@ const App = () => (
                 </MainLayout>
               }
             />
+
+            {/* ✅ Staff Routes */}
+            <Route
+              path="/staff"
+              element={
+                <MainLayout>
+                  <StaffListPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/staff/new"
+              element={
+                <MainLayout>
+                  <StaffFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/staff/:id/edit"
+              element={
+                <MainLayout>
+                  <StaffFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/staff/:id/preview"
+              element={
+                <MainLayout>
+                  <StaffPreviewPage />
+                </MainLayout>
+              }
+            />
+
+            {/* ✅ Agent Routes */}
+            <Route
+              path="/agent"
+              element={
+                <MainLayout>
+                  <AgentListPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/agent/:id/preview/"
+              element={
+                <MainLayout>
+                  <AgentPreviewPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/agent/:id/edit"
+              element={
+                <MainLayout>
+                  <AgentFormPage />
+                </MainLayout>
+              }
+            />
+
             {/* ✅ Guide Routes */}
             <Route
               path="/guide"

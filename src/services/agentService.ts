@@ -1,170 +1,301 @@
-// src/services/agentService.ts
+// FILE: src/services/agentService.ts
+import { api } from "../lib/api";
 
-import type { 
-  Agent, 
-  AgentListRow, 
-  AgentStaff, 
-  WalletTransaction, 
-  AgentSubscription, 
-  AgentConfig 
-} from "@/types/agent";
+/** ========= Frontend-facing types (used by your pages) ========= */
+export interface AgentListRow {
+  id: number;
+  name: string;
+  email: string;
+  mobileNumber: string;
+  travelExpert: string;
+  city: string;
+  state: string;
+  nationality: string;
+  subscriptionType: string;
+}
 
-// Mock agent data matching screenshots
-const mockAgents: Agent[] = [
-  { id: 1, firstName: "VINODH", lastName: "", email: "vinodh@baradiaholidays.com", mobileNumber: "9894148383", travelExpert: "--", city: "Chennai", state: "Tamil Nadu", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 2, firstName: "SONU", lastName: "SURI", email: "shyamrailtravels@gmail.com", mobileNumber: "9837579333", alternativeMobile: "9837114723", travelExpert: "--", city: "BULANDSHAHR", state: "Uttar Pradesh", nationality: "India", subscriptionType: "Free /", gstin: "09AUPPS4307P1ZQ", status: 1 },
-  { id: 3, firstName: "Karthik", lastName: "", email: "connect@hygeelfe.com", mobileNumber: "9916436414", travelExpert: "--", city: "Bengaluru", state: "Karnataka", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 4, firstName: "Dhruv", lastName: "", email: "spedizonetravels@gmail.com", mobileNumber: "7709122894", travelExpert: "--", city: "Mohali", state: "Punjab", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 5, firstName: "Mrs Neelam", lastName: "", email: "trawelhub@gmail.com", mobileNumber: "9721036121", travelExpert: "--", city: "Varanasi", state: "Uttar Pradesh", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 6, firstName: "R", lastName: "", email: "inquiry.freelancetourism@gmail.com", mobileNumber: "9618273119", travelExpert: "--", city: "Rajahmundry", state: "Andhra Pradesh", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 7, firstName: "Muhammad", lastName: "", email: "operations@waycay.in", mobileNumber: "9076061987", travelExpert: "--", city: "Mumbai", state: "Maharashtra", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 8, firstName: "Lakshmipriya", lastName: "", email: "trv@clubtoursonline.com", mobileNumber: "9633967478", travelExpert: "--", city: "TRIVANDRUM", state: "Kerala", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 9, firstName: "OMPRAKASH", lastName: "", email: "sales2.trv@akbarholidays.com", mobileNumber: "9387544112", travelExpert: "--", city: "TRIVANDRUM", state: "Kerala", nationality: "India", subscriptionType: "Free /", status: 1 },
-  { id: 10, firstName: "Sona", lastName: "", email: "yellowsunshine077@gmail.com", mobileNumber: "8593969636", travelExpert: "--", city: "Kochi", state: "Kerala", nationality: "India", subscriptionType: "Free /", status: 1 },
-];
+export interface Agent {
+  id: number;
+  firstName: string;
+  lastName?: string | null;
+  email: string;
+  nationality: string; // pretty label from backend, read-only on UI
+  state: string;       // pretty label from backend, read-only on UI
+  city: string;        // pretty label from backend, read-only on UI
+  mobileNumber: string;
+  alternativeMobile?: string | null;
+  gstin?: string | null;
+  gstAttachment?: string | null;
+}
 
-let agentData = [...mockAgents];
+/** ========= Backend DTO shapes (Nest responses we expect) ========= */
+/** Mode A: DataTables-like rows (legacy list) */
+type AgentListRowDTO = {
+  sno: string;
+  agentname: string;
+  agentemail: string;
+  mobilenumber: string;
+  travelexpert: string | null;
+  city: string | null;
+  state: string | null;
+  nationality: string | null;
+  subscription_title: string;
+  status: "0" | "1";
+  modify: string; // agent_ID
+};
+type AgentListResponseDTO =
+  | { data: AgentListRowDTO[]; draw?: string; recordsTotal?: number; recordsFiltered?: number }
+  | { data: AgentListRowDTO[]; total?: number; filtered?: number; page?: number; limit?: number };
 
-const mockAgentStaff: AgentStaff[] = [
-  { id: 1, name: "test", mobileNumber: "21111", email: "ttest@dsdsd.com", status: 1 },
-];
+/** Mode B: Minimal list (your old /agents?limit=1000) */
+type AgentMinimalDTO = { id: number; name: string };
 
-const mockCashWalletHistory: WalletTransaction[] = [
-  { id: 1, transactionDate: "11 Dec 2025", transactionAmount: 12.00, transactionType: "Credit", remark: "sdsad" },
-];
+/** Mode C: FULL list items returned by /agents/full */
+type AgentFullItem = {
+  agent_ID: number;
+  agent_name: string | null;
+  agent_lastname: string | null;
+  agent_email_id: string | null;
+  agent_primary_mobile_number: string | null;
+  agent_alternative_mobile_number?: string | null;
+  agent_country?: number | null;
+  agent_state?: number | null;
+  agent_city?: number | null;
+  agent_gst_number?: string | null;
+  agent_gst_attachment?: string | null;
+  subscription_plan_id?: number | null;
+  travel_expert_id?: number | null;
+  login_enabled?: boolean;
 
-const mockCouponWalletHistory: WalletTransaction[] = [
-  { id: 1, transactionDate: "15 Oct 2025", transactionAmount: 10000.00, transactionType: "Credit", remark: "Agent Free Subscription Joining Bonus" },
-];
+  // Labels already computed by backend full endpoint
+  country_label?: string | null;
+  state_label?: string | null;
+  city_label?: string | null;
+  subscription_title?: string | null;
+  travel_expert_label?: string | null;
+};
+type AgentFullEnvelope =
+  | { data: AgentFullItem[]; total?: number; filtered?: number; page?: number; limit?: number }
+  | { data: AgentFullItem[]; draw?: string; recordsTotal?: number; recordsFiltered?: number };
 
-const mockSubscriptions: AgentSubscription[] = [
-  { id: 1, subscriptionTitle: "Free", amount: 0.00, validityStart: "15 Oct 2025", validityEnd: "15 Oct 2026", transactionId: "--", paymentStatus: "Free" },
-];
-
-const mockAgentConfigs: Record<number, AgentConfig> = {
-  2: {
-    itineraryDiscountMargin: 0,
-    serviceCharge: 0,
-    agentMarginGstType: "Included",
-    agentMarginGstPercentage: "0",
-    companyName: "SHYAM RAIL TRAVELS SERVIE AGENT",
-    address: "",
-    termsAndCondition: "",
-    gstinNumber: "",
-    panNo: "",
-    invoiceAddress: "",
-  },
+/** Preview/Edit payload (GET /agents/:id) */
+type AgentViewDTO = AgentFullItem & {
+  // same fields as AgentFullItem
 };
 
+/** Subscriptions endpoint (GET /agents/:id/subscriptions) */
+type AgentSubscriptionsDTO = {
+  data: Array<{
+    id: number;
+    subscription_title: string;
+    amount: string;
+    validity_start: string;
+    validity_end: string;
+    transaction_id: string;
+    payment_status: string;
+  }>;
+  total?: number;
+  page?: number;
+  limit?: number;
+};
+
+/** ========= Local caches / helpers ========= */
+const subscriptionTitleCache = new Map<number, string>(); // agentId -> title
+
+const toListRowFromLegacyDTO = (r: AgentListRowDTO): AgentListRow => ({
+  id: Number(r.modify),
+  name: r.agentname || "",
+  email: r.agentemail || "",
+  mobileNumber: r.mobilenumber || "",
+  travelExpert: r.travelexpert || "",
+  city: r.city || "",
+  state: r.state || "",
+  nationality: r.nationality || "",
+  subscriptionType: r.subscription_title || "",
+});
+
+const toAgentFromView = (v: AgentViewDTO): Agent => ({
+  id: v.agent_ID,
+  firstName: v.agent_name ?? "",
+  lastName: v.agent_lastname ?? "",
+  email: v.agent_email_id ?? "",
+  nationality: v.country_label ?? "",
+  state: v.state_label ?? "",
+  city: v.city_label ?? "",
+  mobileNumber: v.agent_primary_mobile_number ?? "",
+  alternativeMobile: v.agent_alternative_mobile_number ?? "",
+  gstin: v.agent_gst_number ?? "",
+  gstAttachment: v.agent_gst_attachment ?? "",
+});
+
+/** Map an item from FULL list → table row */
+const toListRowFromFullItem = (v: AgentFullItem, idx?: number): AgentListRow => ({
+  id: Number(v.agent_ID),
+  name: [v.agent_name, v.agent_lastname].filter(Boolean).join(" ").trim(),
+  email: v.agent_email_id ?? "",
+  mobileNumber: v.agent_primary_mobile_number ?? "",
+  travelExpert: v.travel_expert_label ?? "",
+  city: v.city_label ?? "",
+  state: v.state_label ?? "",
+  nationality: v.country_label ?? "",
+  subscriptionType: (v.subscription_title ?? "").toString() || "—",
+});
+
+/** Concurrency helper kept unchanged */
+async function withConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const run = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
+
+/** Try to resolve a subscription title for an agent (fallback when list item lacks it). */
+async function resolveSubscriptionTitle(agentId: number): Promise<string> {
+  if (subscriptionTitleCache.has(agentId)) return subscriptionTitleCache.get(agentId)!;
+
+  try {
+    const subs = (await api(`/agents/${agentId}/subscriptions`)) as AgentSubscriptionsDTO;
+    const title =
+      subs?.data?.[0]?.subscription_title?.toString()?.trim() || "Free";
+    subscriptionTitleCache.set(agentId, title);
+    return title;
+  } catch {
+    const fallback = "Free";
+    subscriptionTitleCache.set(agentId, fallback);
+    return fallback;
+  }
+}
+
+/** ========= Public API consumed by your pages ========= */
 export const AgentAPI = {
+  /**
+   * Fetch list of agents.
+   * NEW: Prefer the FULL endpoint so your table gets all labels in one go.
+   * Fallbacks:
+   *  - legacy {data:[…]} (DataTables-like)
+   *  - minimal [{id,name}] → enrich via /agents/:id
+   */
   async list(): Promise<AgentListRow[]> {
-    await new Promise((r) => setTimeout(r, 200));
-    return agentData.map((a) => ({
-      id: a.id,
-      name: a.firstName + (a.lastName ? " " + a.lastName : ""),
-      email: a.email,
-      mobileNumber: a.mobileNumber,
-      travelExpert: a.travelExpert || "--",
-      city: a.city,
-      state: a.state,
-      nationality: a.nationality,
-      subscriptionType: a.subscriptionType,
-    }));
+    // 1) Try FULL endpoint first
+    try {
+      const full = (await api("/agents/full?limit=1000")) as AgentFullEnvelope | AgentFullItem[];
+      const arr: AgentFullItem[] = Array.isArray(full)
+        ? full as AgentFullItem[]
+        : (Array.isArray((full as any)?.data) ? (full as any).data : []);
+
+      if (arr.length && typeof arr[0] === "object" && "agent_ID" in arr[0]) {
+        const mapped = arr.map(toListRowFromFullItem);
+
+        // Fill subscriptionType if some are empty
+        const fixed = await withConcurrency(mapped, 8, async (r) => {
+          if (r.subscriptionType && r.subscriptionType.trim() && r.subscriptionType !== "—") return r;
+          return { ...r, subscriptionType: await resolveSubscriptionTitle(r.id) };
+        });
+
+        // Dedupe by id (safety)
+        const byId = new Map<number, AgentListRow>();
+        for (const r of fixed) byId.set(r.id, r);
+        return Array.from(byId.values());
+      }
+      // If FULL returned unexpected shape, fall through to legacy/minimal paths
+    } catch {
+      // ignore and try other shapes
+    }
+
+    // 2) Legacy list (DataTables-like) shape
+    try {
+      const res = (await api("/agents?limit=1000")) as AgentListResponseDTO | AgentMinimalDTO[];
+
+      if ((res as any)?.data && Array.isArray((res as any).data)) {
+        const rows = (res as any).data as AgentListRowDTO[];
+        return rows.map(toListRowFromLegacyDTO);
+      }
+
+      // 3) Minimal list → enrich to table rows
+      if (Array.isArray(res) && res.length && typeof res[0] === "object" && "id" in (res[0] as any)) {
+        const minimal = res as AgentMinimalDTO[];
+        const enriched = await withConcurrency(minimal, 6, async (m) => {
+          try {
+            const view = (await api(`/agents/${m.id}`)) as AgentViewDTO;
+            const row = toListRowFromFullItem(view); // reuse same mapper
+            if (!row.subscriptionType || !row.subscriptionType.trim() || row.subscriptionType === "—") {
+              row.subscriptionType = await resolveSubscriptionTitle(m.id);
+            }
+            return row;
+          } catch {
+            // fallback minimal row
+            return {
+              id: m.id,
+              name: m.name || "",
+              email: "",
+              mobileNumber: "",
+              travelExpert: "",
+              city: "",
+              state: "",
+              nationality: "",
+              subscriptionType: await resolveSubscriptionTitle(m.id),
+            } as AgentListRow;
+          }
+        });
+
+        // Dedupe
+        const byId = new Map<number, AgentListRow>();
+        for (const r of enriched) byId.set(r.id, r);
+        return Array.from(byId.values());
+      }
+    } catch {
+      // swallow and fall through
+    }
+
+    // Unknown / empty
+    return [];
   },
 
-  async get(id: number): Promise<Agent | null> {
-    await new Promise((r) => setTimeout(r, 100));
-    return agentData.find((a) => a.id === id) ?? null;
+  /** Fetch a single agent (used by preview/edit prefill) */
+  async get(id: number): Promise<Agent> {
+    const res = (await api(`/agents/${id}`)) as AgentViewDTO;
+    return toAgentFromView(res);
   },
 
-  async create(payload: Omit<Agent, "id">): Promise<Agent> {
-    await new Promise((r) => setTimeout(r, 200));
-    const newAgent: Agent = {
-      ...payload,
-      id: Math.max(...agentData.map((a) => a.id)) + 1,
-    };
-    agentData.push(newAgent);
-    return newAgent;
+  // --- Placeholders: wire later when you expose create/update endpoints ---
+  async create(_input: {
+    firstName: string;
+    lastName?: string | null;
+    email: string;
+    mobileNumber: string;
+    alternativeMobile?: string | null;
+    countryId?: number;
+    stateId?: number;
+    cityId?: number;
+    gstin?: string | null;
+  }): Promise<Agent> {
+    throw new Error("Agent create API not implemented yet");
   },
 
-  async update(id: number, payload: Partial<Agent>): Promise<Agent> {
-    await new Promise((r) => setTimeout(r, 200));
-    const idx = agentData.findIndex((a) => a.id === id);
-    if (idx === -1) throw new Error("Agent not found");
-    agentData[idx] = { ...agentData[idx], ...payload };
-    return agentData[idx];
-  },
-
-  async delete(id: number): Promise<void> {
-    await new Promise((r) => setTimeout(r, 200));
-    agentData = agentData.filter((a) => a.id !== id);
-  },
-
-  async getStaff(agentId: number): Promise<AgentStaff[]> {
-    await new Promise((r) => setTimeout(r, 100));
-    return mockAgentStaff;
-  },
-
-  async getCashWalletHistory(agentId: number): Promise<WalletTransaction[]> {
-    await new Promise((r) => setTimeout(r, 100));
-    return mockCashWalletHistory;
-  },
-
-  async getCouponWalletHistory(agentId: number): Promise<WalletTransaction[]> {
-    await new Promise((r) => setTimeout(r, 100));
-    return mockCouponWalletHistory;
-  },
-
-  async getSubscriptions(agentId: number): Promise<AgentSubscription[]> {
-    await new Promise((r) => setTimeout(r, 100));
-    return mockSubscriptions;
-  },
-
-  async getConfig(agentId: number): Promise<AgentConfig> {
-    await new Promise((r) => setTimeout(r, 100));
-    return mockAgentConfigs[agentId] || {
-      itineraryDiscountMargin: 0,
-      serviceCharge: 0,
-      agentMarginGstType: "Included",
-      agentMarginGstPercentage: "0",
-      companyName: "",
-      address: "",
-      termsAndCondition: "",
-      gstinNumber: "",
-      panNo: "",
-      invoiceAddress: "",
-    };
-  },
-
-  async updateConfig(agentId: number, config: Partial<AgentConfig>): Promise<AgentConfig> {
-    await new Promise((r) => setTimeout(r, 200));
-    mockAgentConfigs[agentId] = { ...mockAgentConfigs[agentId] || {}, ...config } as AgentConfig;
-    return mockAgentConfigs[agentId];
-  },
-
-  async addCashWallet(agentId: number, amount: number, remark: string): Promise<WalletTransaction> {
-    await new Promise((r) => setTimeout(r, 200));
-    const transaction: WalletTransaction = {
-      id: mockCashWalletHistory.length + 1,
-      transactionDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      transactionAmount: amount,
-      transactionType: "Credit",
-      remark,
-    };
-    mockCashWalletHistory.push(transaction);
-    return transaction;
-  },
-
-  async addCouponWallet(agentId: number, amount: number, remark: string): Promise<WalletTransaction> {
-    await new Promise((r) => setTimeout(r, 200));
-    const transaction: WalletTransaction = {
-      id: mockCouponWalletHistory.length + 1,
-      transactionDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-      transactionAmount: amount,
-      transactionType: "Credit",
-      remark,
-    };
-    mockCouponWalletHistory.push(transaction);
-    return transaction;
+  async update(
+    _id: number,
+    _input: Partial<{
+      firstName: string;
+      lastName: string | null;
+      email: string;
+      mobileNumber: string;
+      alternativeMobile?: string | null;
+      countryId?: number;
+      stateId?: number;
+      cityId?: number;
+      gstin?: string | null;
+    }>,
+  ): Promise<Agent> {
+    throw new Error("Agent update API not implemented yet");
   },
 };

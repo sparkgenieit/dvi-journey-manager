@@ -1,68 +1,190 @@
-// src/services/staffService.ts
+// FILE: src/services/staffService.ts
+import { api } from "../lib/api";
 
-import type { Staff, StaffListRow } from "@/types/staff";
+/** ========= Frontend-facing types (used by your pages) ========= */
+export interface StaffListRow {
+  id: number;
+  name: string;
+  mobileNumber: string;
+  email: string;
+  agentName: string;
+  status: 0 | 1;
+  roleAccess: string; // human label (now uses backend roleName)
+  roleId: number;     // carry roleId for edits
+}
 
-// Mock data matching screenshots
-const mockStaff: Staff[] = [
-  { id: 1, name: "Nisha", mobileNumber: "9595959595", email: "sales5@dvi.co.in", agentName: "--", status: 1, roleAccess: "Travel Expert" },
-  { id: 2, name: "Virendra Patil 2", mobileNumber: "9999999876", email: "shubhamfunholidays@gmail.com", agentName: "--", status: 1, roleAccess: "Agent" },
-  { id: 3, name: "Yogesh Sharma", mobileNumber: "9555131777", email: "YogeshV.Sharma@tctours.in", agentName: "Amit Semwal", status: 1, roleAccess: "Staff" },
-  { id: 4, name: "Deva", mobileNumber: "7743852271", email: "deva.ingale@sotc.in", agentName: "Amit Semwal", status: 1, roleAccess: "Staff" },
-  { id: 5, name: "Sharmishtha Shukla", mobileNumber: "8400299329", email: "ops@simplyindiaholidays.com", agentName: "Praveen Chaturvedi", status: 1, roleAccess: "Agent" },
-  { id: 6, name: "Aulendra Kumar", mobileNumber: "8470014509", email: "aulendra.kumar@easemytrip.com", agentName: "Aman Verma", status: 1, roleAccess: "Staff" },
-  { id: 7, name: "Prasoon Jain", mobileNumber: "7827318371", email: "prasoon.jain@easemytrip.com", agentName: "Aman Verma", status: 1, roleAccess: "Staff" },
-  { id: 8, name: "Suraj Srivastav", mobileNumber: "9654004687", email: "suraj.srivastava@easemytrip.com", agentName: "Aman Verma", status: 1, roleAccess: "Staff" },
-  { id: 9, name: "Chetak Sharma", mobileNumber: "9355030304", email: "chetak3.sharma@easemytrip.com", agentName: "Aman Verma", status: 1, roleAccess: "Staff" },
-  { id: 10, name: "Janhvi Manjrekar", mobileNumber: "8424884579", email: "janhvi.manjrekar@tctours.in", agentName: "Amit Semwal", status: 1, roleAccess: "Staff" },
-];
+export interface Staff {
+  id: number;
+  name: string;
+  mobileNumber: string;
+  email: string;
+  roleAccess: string; // human label (now uses backend roleName)
+  roleId: number;     // needed by form / preview
+  status: 0 | 1;
+  agentName: string;
+}
 
-let staffData = [...mockStaff];
+/** ========= Backend DTO shapes (Nest responses) ========= */
+type StaffLoginDTO =
+  | {
+      userId: number;
+      userEmail: string;
+      lastLoggedOn: string | null;
+      status: number;
+    }
+  | null;
 
+type StaffViewDTO = {
+  staffId: number;
+  agentId: number;
+  staffName: string;
+  staffMobile: string;
+  staffEmail: string;
+  roleId: number;
+  status: number;
+  deleted: number;
+  createdOn: string | null;
+  updatedOn: string | null;
+  login: StaffLoginDTO;
+  /** Enriched by backend (dvi_rolemenu.role_name) */
+  roleName?: string;
+  /** Enriched by backend (dvi_agent.agent_name + agent_lastname) */
+  agentName?: string;
+};
+
+type ListResponseDTO = {
+  total: number;
+  page: number;
+  pageSize: number;
+  data: StaffViewDTO[];
+};
+
+/** ========= Local map helpers ========= */
+const toListRow = (r: StaffViewDTO): StaffListRow => ({
+  id: r.staffId,
+  name: r.staffName,
+  mobileNumber: r.staffMobile,
+  email: r.staffEmail,
+  agentName: r.agentName ?? "-", // now uses backend-provided full name
+  status: (r.status ?? 0) as 0 | 1,
+  roleId: r.roleId ?? 0,
+  roleAccess: r.roleName ?? `Role ${r.roleId}`, // use real role name when provided
+});
+
+const toStaff = (r: StaffViewDTO): Staff => ({
+  id: r.staffId,
+  name: r.staffName,
+  mobileNumber: r.staffMobile,
+  email: r.staffEmail,
+  roleId: r.roleId ?? 0,
+  roleAccess: r.roleName ?? `Role ${r.roleId}`,
+  status: (r.status ?? 0) as 0 | 1,
+  agentName: r.agentName ?? "-",
+});
+
+/** ========= Public API consumed by your pages ========= */
 export const StaffAPI = {
+  /** Fetch list (server returns {total, page, pageSize, data}) */
   async list(): Promise<StaffListRow[]> {
-    await new Promise((r) => setTimeout(r, 200));
-    return staffData.map((s) => ({
-      id: s.id,
-      name: s.name,
-      mobileNumber: s.mobileNumber,
-      email: s.email,
-      agentName: s.agentName,
-      status: s.status,
-      roleAccess: s.roleAccess,
-    }));
+    const res = (await api("/staff")) as ListResponseDTO;
+    if (!res || !Array.isArray(res.data)) {
+      throw new Error("Unexpected staff list response");
+    }
+    return res.data.map(toListRow);
   },
 
-  async get(id: number): Promise<Staff | null> {
-    await new Promise((r) => setTimeout(r, 100));
-    return staffData.find((s) => s.id === id) ?? null;
+  /** Fetch a single staff by id (used by preview/edit) */
+  async get(id: number): Promise<Staff> {
+    const res = (await api(`/staff/${id}`)) as StaffViewDTO;
+    return toStaff(res);
   },
 
-  async create(payload: Omit<Staff, "id">): Promise<Staff> {
-    await new Promise((r) => setTimeout(r, 200));
-    const newStaff: Staff = {
-      ...payload,
-      id: Math.max(...staffData.map((s) => s.id)) + 1,
+  /** Create staff (backend creates login when password is provided) */
+  async create(input: {
+    name: string;
+    email: string;
+    mobileNumber: string;
+    /** If your form has a roles dropdown, pass roleId here */
+    roleId?: number;
+    /** Optional label shown in UI; backend uses roleId */
+    roleAccess?: string;
+    agentName: string;
+    status: number;
+    password: string; // required on create
+  }): Promise<Staff> {
+    const payload = {
+      agentId: 0, // replace when you have the active agent id
+      staffName: input.name,
+      staffMobile: input.mobileNumber,
+      staffEmail: input.email,
+      roleId: input.roleId ?? 0, // <- pass real roleId (prefer)
+      status: input.status ?? 1,
+      loginEmail: input.email,
+      password: input.password,
     };
-    staffData.push(newStaff);
-    return newStaff;
+
+    const res = (await api("/staff", {
+      method: "POST",
+      body: payload,
+    })) as StaffViewDTO;
+
+    return toStaff(res);
   },
 
-  async update(id: number, payload: Partial<Staff>): Promise<Staff> {
-    await new Promise((r) => setTimeout(r, 200));
-    const idx = staffData.findIndex((s) => s.id === id);
-    if (idx === -1) throw new Error("Staff not found");
-    staffData[idx] = { ...staffData[idx], ...payload };
-    return staffData[idx];
+  /** Update staff (optionally updates login email/password) */
+  async update(
+    id: number,
+    input: {
+      name?: string;
+      email?: string;
+      mobileNumber?: string;
+      /** pass roleId to actually change role */
+      roleId?: number;
+      /** UI label only */
+      roleAccess?: string;
+      password?: string; // optional on update
+      status?: 0 | 1;
+    }
+  ): Promise<Staff> {
+    const payload: Record<string, unknown> = {
+      staffName: input.name,
+      staffEmail: input.email,
+      staffMobile: input.mobileNumber,
+      roleId: typeof input.roleId === "number" ? input.roleId : undefined,
+      status: typeof input.status === "number" ? input.status : undefined,
+    };
+
+    if (input.password && input.password.trim()) {
+      payload.password = input.password;
+      if (input.email) payload.loginEmail = input.email;
+    }
+
+    const res = (await api(`/staff/${id}`, {
+      method: "PUT",
+      body: payload,
+    })) as StaffViewDTO;
+
+    return toStaff(res);
   },
 
-  async delete(id: number): Promise<void> {
-    await new Promise((r) => setTimeout(r, 200));
-    staffData = staffData.filter((s) => s.id !== id);
-  },
-
+  /** Toggle active/inactive */
   async toggleStatus(id: number, status: 0 | 1): Promise<void> {
-    await new Promise((r) => setTimeout(r, 100));
-    const idx = staffData.findIndex((s) => s.id === id);
-    if (idx !== -1) staffData[idx].status = status;
+    await api(`/staff/${id}`, {
+      method: "PUT",
+      body: { status },
+    });
+  },
+
+  /** Soft delete */
+  async delete(id: number): Promise<void> {
+    await api(`/staff/${id}`, { method: "DELETE" });
   },
 };
+export type RoleOption = { id: number; label: string };
+
+export async function fetchStaffRoles(): Promise<RoleOption[]> {
+  // GET /api/v1/staff/roles  → [{id,label}]
+  const res = await api("/staff/roles");
+  if (!Array.isArray(res)) return [];
+  return res as RoleOption[];
+}
