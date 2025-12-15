@@ -3,6 +3,16 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 import type {
   ItineraryHotelRow,
   ItineraryHotelTab,
@@ -15,14 +25,28 @@ type HotelListProps = {
   hotelRatesVisible: boolean;
   // Optional: in case you later wire an API to persist the toggle
   onToggleHotelRates?: (visible: boolean) => void;
+  // Callback to refresh parent data after hotel update
+  onRefresh?: () => void;
+  // Callback when hotel group type (recommendation tab) changes
+  onGroupTypeChange?: (groupType: number) => void;
 };
 
 // Shape of each room item coming from /itineraries/hotel_room_details
+type RoomTypeOption = {
+  roomTypeId: number;
+  roomTypeTitle: string;
+};
+
 type HotelRoomDetail = {
   itineraryPlanId?: number;
   itineraryRouteId?: number;
   itineraryPlanHotelRoomDetailsId?: number;
+  hotelId?: number;
+  hotelName?: string;
+  hotelCategory?: number | null;
+  roomTypeId?: number;
   roomTypeName?: string;
+  availableRoomTypes?: RoomTypeOption[];
   noOfRooms?: number;
   adultCount?: number;
   childWithBed?: number;
@@ -51,6 +75,8 @@ export const HotelList: React.FC<HotelListProps> = ({
   hotelTabs,
   hotelRatesVisible,
   onToggleHotelRates,
+  onRefresh,
+  onGroupTypeChange,
 }) => {
   // quoteId from route: /itinerary-details/:id
   const { id: quoteId } = useParams<{ id: string }>();
@@ -64,13 +90,38 @@ export const HotelList: React.FC<HotelListProps> = ({
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
   const [loadingRowKey, setLoadingRowKey] = useState<string | null>(null);
   const [roomDetails, setRoomDetails] = useState<HotelRoomDetail[]>([]);
+  const [selectedHotelId, setSelectedHotelId] = useState<number | null>(null);
+
+  // Form state for each room card: key = itineraryPlanHotelRoomDetailsId or unique identifier
+  const [roomFormData, setRoomFormData] = useState<Record<string, {
+    roomTypeId: number;
+    mealAll: boolean;
+    mealBreakfast: boolean;
+    mealLunch: boolean;
+    mealDinner: boolean;
+  }>>({});
+
+  // Confirmation dialog state
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pendingHotelAction, setPendingHotelAction] = useState<{
+    room: HotelRoomDetail;
+    isReplacing: boolean;
+    previousHotelName: string;
+    newHotelName: string;
+    routeDate: string;
+  } | null>(null);
 
   // Initialise active tab from backend groups
   useEffect(() => {
     if (!activeGroupType && hotelTabs && hotelTabs.length > 0) {
-      setActiveGroupType(hotelTabs[0].groupType);
+      const initialGroupType = hotelTabs[0].groupType;
+      setActiveGroupType(initialGroupType);
+      // Notify parent of initial group type
+      if (onGroupTypeChange) {
+        onGroupTypeChange(initialGroupType);
+      }
     }
-  }, [activeGroupType, hotelTabs]);
+  }, [activeGroupType, hotelTabs, onGroupTypeChange]);
 
   // Keep local switch in sync if backend changes
   useEffect(() => {
@@ -95,10 +146,15 @@ export const HotelList: React.FC<HotelListProps> = ({
   const handleRowClick = async (hotel: ItineraryHotelRow, idx: number) => {
     const rowKey = `${hotel.groupType}-${idx}`;
 
+    console.log('=== Hotel Row Clicked ===');
+    console.log('Hotel:', hotel);
+    console.log('itineraryRouteId:', hotel.itineraryRouteId);
+
     // Collapse if already open
     if (expandedRowKey === rowKey) {
       setExpandedRowKey(null);
       setRoomDetails([]);
+      setSelectedHotelId(null);
       return;
     }
 
@@ -107,29 +163,80 @@ export const HotelList: React.FC<HotelListProps> = ({
       return;
     }
 
-    const itineraryRouteId = (hotel as any).itineraryRouteId as
-      | number
-      | undefined;
-    const groupType = hotel.groupType;
+    const itineraryRouteId = hotel.itineraryRouteId;
 
     setLoadingRowKey(rowKey);
+    setSelectedHotelId(hotel.hotelId); // Store the selected hotel ID from the row
 
     try {
-      // This assumes you have a service method like:
-      // ItineraryService.getHotelRoomDetails(quoteId, { itineraryRouteId, groupType })
-      const resp = await ItineraryService.getHotelRoomDetails(
-        quoteId
-      );
+      const resp = await ItineraryService.getHotelRoomDetails(quoteId);
+      console.log('Raw API response:', resp);
 
       // Support both shapes: resp.rooms OR resp.data.rooms
-      const rooms: HotelRoomDetail[] = Array.isArray((resp as any)?.rooms)
+      let allRooms: any[] = Array.isArray((resp as any)?.rooms)
         ? (resp as any).rooms
         : Array.isArray((resp as any)?.data?.rooms)
         ? (resp as any).data.rooms
         : [];
 
-      setRoomDetails(rooms);
+      console.log('All rooms from API:', allRooms.length);
+      if (allRooms.length > 0) {
+        console.log('Sample room:', allRooms[0]);
+      }
+      console.log('Filtering for routeId:', itineraryRouteId);
+
+      // Filter rooms for this specific route
+      if (itineraryRouteId) {
+        allRooms = allRooms.filter(
+          (r: any) => r.itineraryRouteId === itineraryRouteId
+        );
+      }
+
+      console.log('Filtered rooms count:', allRooms.length);
+      if (allRooms.length > 0) {
+        console.log('Filtered rooms:', allRooms);
+      }
+
+      // Map API response fields to component expected fields
+      const mappedRooms: HotelRoomDetail[] = allRooms.map((r: any) => ({
+        itineraryPlanId: r.itineraryPlanId,
+        itineraryRouteId: r.itineraryRouteId,
+        itineraryPlanHotelRoomDetailsId: r.itineraryPlanHotelRoomDetailsId,
+        hotelId: r.hotelId,
+        hotelName: r.hotelName,
+        hotelCategory: r.hotelCategory,
+        roomTypeId: r.roomTypeId,
+        roomTypeName: r.roomTypeName,
+        availableRoomTypes: r.availableRoomTypes || [],
+        noOfRooms: 1, // Default to 1 if not provided
+        adultCount: r.totalAdult || 0,
+        childWithBed: r.totalChildWithBed || 0,
+        childWithoutBed: r.totalChildWithoutBed || 0,
+        extraBedCount: r.totalExtraBed || 0,
+        perNightAmount: r.pricePerNight || 0,
+        taxAmount: (r.pricePerNight || 0) * (r.gstPercentage || 0) / 100,
+        totalAmount: (r.pricePerNight || 0) * (1 + (r.gstPercentage || 0) / 100),
+      }));
+
+      console.log('Mapped rooms:', mappedRooms);
+
+      setRoomDetails(mappedRooms);
       setExpandedRowKey(rowKey);
+
+      // Initialize form data for each room with default values
+      const initialFormData: Record<string, any> = {};
+      mappedRooms.forEach((room) => {
+        const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
+          `temp-${room.itineraryRouteId}-${room.hotelId}`;
+        initialFormData[roomKey] = {
+          roomTypeId: room.roomTypeId || (room.availableRoomTypes?.[0]?.roomTypeId ?? 0),
+          mealAll: false,
+          mealBreakfast: false,
+          mealLunch: false,
+          mealDinner: false,
+        };
+      });
+      setRoomFormData(initialFormData);
     } catch (err) {
       console.error("Error loading hotel room details", err);
       setRoomDetails([]);
@@ -137,6 +244,99 @@ export const HotelList: React.FC<HotelListProps> = ({
     } finally {
       setLoadingRowKey(null);
     }
+  };
+
+  // ---------- HANDLER: CHOOSE/UPDATE HOTEL ----------
+  const handleChooseOrUpdateHotel = async (room: HotelRoomDetail) => {
+    const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
+      `temp-${room.itineraryRouteId}-${room.hotelId}`;
+    
+    const formData = roomFormData[roomKey];
+    if (!formData || !room.itineraryPlanId || !room.itineraryRouteId || !room.hotelId) {
+      console.error("Missing required data for hotel selection");
+      return;
+    }
+
+    const isReplacing = room.hotelId !== selectedHotelId;
+    const currentHotel = hotels.find(h => h.itineraryRouteId === room.itineraryRouteId);
+    const routeDate = currentHotel?.day || "";
+
+    // Show confirmation dialog
+    setPendingHotelAction({
+      room,
+      isReplacing,
+      previousHotelName: currentHotel?.hotelName || "",
+      newHotelName: room.hotelName || "",
+      routeDate,
+    });
+    setShowConfirmDialog(true);
+  };
+
+  // ---------- HANDLER: CONFIRM HOTEL SELECTION ----------
+  const handleConfirmHotelSelection = async () => {
+    if (!pendingHotelAction) return;
+
+    const { room, isReplacing } = pendingHotelAction;
+    const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
+      `temp-${room.itineraryRouteId}-${room.hotelId}`;
+    const formData = roomFormData[roomKey];
+
+    try {
+      await ItineraryService.selectHotel(
+        room.itineraryPlanId!,
+        room.itineraryRouteId!,
+        room.hotelId!,
+        formData.roomTypeId,
+        {
+          all: formData.mealAll,
+          breakfast: formData.mealBreakfast,
+          lunch: formData.mealLunch,
+          dinner: formData.mealDinner,
+        }
+      );
+
+      setShowConfirmDialog(false);
+      setPendingHotelAction(null);
+
+      toast.success("Successfully Hotel Updated !!!", {
+        description: isReplacing 
+          ? `Hotel changed to ${room.hotelName}` 
+          : "Hotel details updated",
+      });
+      
+      // Refresh data without page reload
+      if (onRefresh) {
+        onRefresh();
+      }
+
+      // Collapse the expanded row after selection
+      setExpandedRowKey(null);
+      setRoomDetails([]);
+      setRoomFormData({});
+      
+      // Update selected hotel ID if it changed
+      if (isReplacing && room.hotelId) {
+        setSelectedHotelId(room.hotelId);
+      }
+    } catch (err) {
+      console.error("Error selecting/updating hotel:", err);
+      setShowConfirmDialog(false);
+      setPendingHotelAction(null);
+      toast.error("Failed to update hotel", {
+        description: "Please try again",
+      });
+    }
+  };
+
+  // ---------- HANDLER: UPDATE FORM DATA ----------
+  const updateRoomFormData = (roomKey: string, field: string, value: any) => {
+    setRoomFormData(prev => ({
+      ...prev,
+      [roomKey]: {
+        ...prev[roomKey],
+        [field]: value,
+      }
+    }));
   };
 
   // ---------- RENDER ----------
@@ -177,6 +377,10 @@ export const HotelList: React.FC<HotelListProps> = ({
                     setActiveGroupType(tab.groupType);
                     setExpandedRowKey(null);
                     setRoomDetails([]);
+                    // Notify parent that group type changed
+                    if (onGroupTypeChange) {
+                      onGroupTypeChange(tab.groupType);
+                    }
                   }}
                   className={
                     isActive
@@ -278,69 +482,167 @@ export const HotelList: React.FC<HotelListProps> = ({
                             </div>
                           ) : (
                             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                              {roomDetails.map((room) => (
+                              {roomDetails.map((room) => {
+                                const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
+                                  `temp-${room.itineraryRouteId}-${room.hotelId}`;
+                                const formData = roomFormData[roomKey] || {
+                                  roomTypeId: room.roomTypeId || (room.availableRoomTypes?.[0]?.roomTypeId ?? 0),
+                                  mealAll: false,
+                                  mealBreakfast: false,
+                                  mealLunch: false,
+                                  mealDinner: false,
+                                };
+
+                                return (
                                 <div
                                   key={
                                     room.itineraryPlanHotelRoomDetailsId ??
                                     `${room.itineraryRouteId}-${room.roomTypeName}-${room.totalAmount}`
                                   }
-                                  className="bg-white rounded-lg shadow-sm border border-[#e5d9f2] p-3"
+                                  className="bg-white rounded-lg shadow-md border border-[#e5d9f2] overflow-hidden"
                                 >
-                                  <div className="text-sm font-semibold text-[#4a4260] mb-2">
-                                    {room.roomTypeName || "Room"}
+                                  {/* Hotel Image/Header */}
+                                  <div className="relative h-40 bg-gradient-to-r from-[#7c3aed] to-[#a855f7]">
+                                    <div className="absolute inset-0 flex flex-col justify-end p-3 bg-black/30">
+                                      <h3 className="text-white font-semibold text-sm">
+                                        {room.hotelName || hotel.hotelName}
+                                      </h3>
+                                      <p className="text-white/90 text-xs">
+                                        Category: {room.hotelCategory ?? hotel.category}*
+                                      </p>
+                                    </div>
                                   </div>
-                                  <div className="text-xs text-[#6c6c6c] space-y-1">
-                                    <div>
-                                      Rooms:{" "}
-                                      <span className="font-medium">
-                                        {room.noOfRooms ?? 0}
-                                      </span>
+
+                                  <div className="p-4">
+                                    {/* Check-in/Check-out times */}
+                                    <div className="grid grid-cols-2 gap-2 mb-3 pb-3 border-b">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-[#f3e8ff] flex items-center justify-center">
+                                          <span className="text-[#7c3aed] text-xs">📥</span>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs font-semibold text-[#4a4260]">02:00 PM</p>
+                                          <p className="text-xs text-gray-500">Check In</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-[#f3e8ff] flex items-center justify-center">
+                                          <span className="text-[#7c3aed] text-xs">📤</span>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs font-semibold text-[#4a4260]">12:00 PM</p>
+                                          <p className="text-xs text-gray-500">Check Out</p>
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div>
-                                      Adults:{" "}
-                                      <span className="font-medium">
-                                        {room.adultCount ?? 0}
-                                      </span>
+
+                                    {/* Room Type Dropdown */}
+                                    <div className="mb-3">
+                                      <label className="block text-xs font-medium text-[#4a4260] mb-1">
+                                        Room Type
+                                      </label>
+                                      <select 
+                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#7c3aed] focus:border-transparent"
+                                        value={formData.roomTypeId}
+                                        onChange={(e) => updateRoomFormData(roomKey, 'roomTypeId', Number(e.target.value))}
+                                      >
+                                        {room.availableRoomTypes && room.availableRoomTypes.length > 0 ? (
+                                          room.availableRoomTypes.map((rt) => (
+                                            <option key={rt.roomTypeId} value={rt.roomTypeId}>
+                                              {rt.roomTypeTitle}
+                                            </option>
+                                          ))
+                                        ) : (
+                                          <option value="">{room.roomTypeName || "No room types available"}</option>
+                                        )}
+                                      </select>
                                     </div>
-                                    <div>
-                                      Child (with bed):{" "}
-                                      <span className="font-medium">
-                                        {room.childWithBed ?? 0}
-                                      </span>
+
+                                    {/* Meal Plan Checkboxes */}
+                                    <div className="mb-3">
+                                      <label className="block text-xs font-medium text-[#4a4260] mb-2">
+                                        Meal
+                                      </label>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
+                                            checked={formData.mealAll}
+                                            onChange={(e) => {
+                                              const checked = e.target.checked;
+                                              updateRoomFormData(roomKey, 'mealAll', checked);
+                                              if (checked) {
+                                                updateRoomFormData(roomKey, 'mealBreakfast', true);
+                                                updateRoomFormData(roomKey, 'mealLunch', true);
+                                                updateRoomFormData(roomKey, 'mealDinner', true);
+                                              }
+                                            }}
+                                          />
+                                          <span className="text-sm text-gray-700">All</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
+                                            checked={formData.mealBreakfast}
+                                            onChange={(e) => updateRoomFormData(roomKey, 'mealBreakfast', e.target.checked)}
+                                          />
+                                          <span className="text-sm text-gray-700">Breakfast</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
+                                            checked={formData.mealLunch}
+                                            onChange={(e) => updateRoomFormData(roomKey, 'mealLunch', e.target.checked)}
+                                          />
+                                          <span className="text-sm text-gray-700">Lunch</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
+                                            checked={formData.mealDinner}
+                                            onChange={(e) => updateRoomFormData(roomKey, 'mealDinner', e.target.checked)}
+                                          />
+                                          <span className="text-sm text-gray-700">Dinner</span>
+                                        </label>
+                                      </div>
                                     </div>
-                                    <div>
-                                      Child (w/o bed):{" "}
-                                      <span className="font-medium">
-                                        {room.childWithoutBed ?? 0}
-                                      </span>
+
+                                    {/* Price Summary */}
+                                    <div className="mb-3 p-2 bg-gray-50 rounded text-xs space-y-1">
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Rooms:</span>
+                                        <span className="font-medium">{room.noOfRooms ?? 1}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Per night:</span>
+                                        <span className="font-medium">{formatCurrency(room.perNightAmount)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-600">Tax:</span>
+                                        <span className="font-medium">{formatCurrency(room.taxAmount)}</span>
+                                      </div>
+                                      <div className="flex justify-between pt-1 border-t">
+                                        <span className="font-semibold">Total:</span>
+                                        <span className="font-semibold text-[#7c3aed]">
+                                          {formatCurrency(room.totalAmount)}
+                                        </span>
+                                      </div>
                                     </div>
-                                    <div>
-                                      Extra bed:{" "}
-                                      <span className="font-medium">
-                                        {room.extraBedCount ?? 0}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Per night:{" "}
-                                      <span className="font-medium">
-                                        {formatCurrency(room.perNightAmount)}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      Tax:{" "}
-                                      <span className="font-medium">
-                                        {formatCurrency(room.taxAmount)}
-                                      </span>
-                                    </div>
-                                    <div className="pt-1 border-t mt-1">
-                                      Total:{" "}
-                                      <span className="font-semibold">
-                                        {formatCurrency(room.totalAmount)}
-                                      </span>
-                                    </div>
+
+                                    {/* Choose/Update Button - Conditional based on selection status */}
+                                    <button
+                                      className="w-full py-2 px-4 bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-medium rounded-md transition-colors text-sm"
+                                      onClick={() => handleChooseOrUpdateHotel(room)}
+                                    >
+                                      {room.hotelId === selectedHotelId ? "Update" : "Choose"}
+                                    </button>
                                   </div>
                                 </div>
-                              ))}
+                              );})}
                             </div>
                           )}
                         </td>
@@ -369,6 +671,51 @@ export const HotelList: React.FC<HotelListProps> = ({
           </table>
         </div>
       </CardContent>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex justify-center mb-4">
+              <div className="rounded-full bg-yellow-100 p-3">
+                <AlertTriangle className="h-6 w-6 text-yellow-600" />
+              </div>
+            </div>
+            <DialogTitle className="text-center">
+              {pendingHotelAction?.isReplacing
+                ? `Confirm Hotel Modification for ${pendingHotelAction?.routeDate}?`
+                : "Confirm Hotel Update"}
+            </DialogTitle>
+            <DialogDescription className="text-center pt-2">
+              {pendingHotelAction?.isReplacing ? (
+                <>
+                  Are you sure you want to modify the hotel from{" "}
+                  <strong>{pendingHotelAction?.previousHotelName}</strong> to{" "}
+                  <strong>{pendingHotelAction?.newHotelName}</strong> for{" "}
+                  <strong>{pendingHotelAction?.routeDate}</strong>?
+                </>
+              ) : (
+                <>Are you sure you want to update the hotel details?</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowConfirmDialog(false);
+                setPendingHotelAction(null);
+              }}
+            >
+              Close
+            </Button>
+            <Button type="button" onClick={handleConfirmHotelSelection}>
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };

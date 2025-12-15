@@ -23,8 +23,8 @@ import {
 } from "@/components/ui/table";
 import {
   Download,
+  Edit,
   Eye,
-  Copy,
   Calendar as CalendarIcon,
 } from "lucide-react";
 
@@ -499,9 +499,11 @@ export const LatestItinerary = () => {
                 (Total Itinerary Count : {total})
               </span>
             </h2>
-            <Button className="bg-gradient-to-r from-[#ae3bd0] to-[#f057b8] hover:from-[#9b31bd] hover:to-[#e048a7]">
-              + Add Itinerary
-            </Button>
+            <Link to="/create-itinerary">
+              <Button className="bg-gradient-to-r from-[#ae3bd0] to-[#f057b8] hover:from-[#9b31bd] hover:to-[#e048a7]">
+                + Add Itinerary
+              </Button>
+            </Link>
           </div>
 
           {/* show entries + search */}
@@ -626,22 +628,33 @@ export const LatestItinerary = () => {
                       <div className="flex items-center gap-2">
                         <Link
                           to={`/itinerary-details/${itinerary.quoteId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="View Details"
                         >
                           <div className="h-8 w-8 rounded-md bg-[#f057b8] flex items-center justify-center text-white cursor-pointer hover:bg-[#d546ab]">
                             <Eye className="h-4 w-4" />
                           </div>
                         </Link>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-[#343434]"
+                        <Link
+                          to={`/create-itinerary?id=${itinerary.id}`}
+                          title="Edit Itinerary"
                         >
-                          <Copy className="h-4 w-4" />
-                        </Button>
+                          <div className="h-8 w-8 rounded-md bg-[#4CAF50] flex items-center justify-center text-white cursor-pointer hover:bg-[#45a049]">
+                            <Edit className="h-4 w-4" />
+                          </div>
+                        </Link>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-[#343434]"
+                          className="h-8 w-8 text-[#343434] hover:text-[#d546ab]"
+                          onClick={() => {
+                            // Download Excel export from NestJS backend
+                            const planId = itinerary.id;
+                            const exportUrl = `http://localhost:3000/api/v1/itineraries/export/${planId}`;
+                            window.open(exportUrl, '_blank');
+                          }}
+                          title="Download Excel"
                         >
                           <Download className="h-4 w-4" />
                         </Button>

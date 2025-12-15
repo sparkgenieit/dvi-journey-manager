@@ -1,4 +1,16 @@
 import React, { useState } from "react";
+import { toast } from "sonner";
+import { ItineraryService } from "../services/itinerary";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Button } from "../components/ui/button";
+import { AlertTriangle } from "lucide-react";
 
 export interface ItineraryVehicleRow {
   vendorName?: string | null;
@@ -26,6 +38,9 @@ export interface ItineraryVehicleRow {
   col2Duration?: string | null;
   col3Distance?: string | null;
   col3Duration?: string | null;
+  vendorEligibleId?: number;
+  vehicleTypeId?: number;
+  isAssigned?: boolean;
 }
 
 const formatCurrencyINR = (value: number | string | undefined | null) => {
@@ -44,21 +59,82 @@ export type VehicleListProps = {
   vehicleTypeLabel: string;
   vehicles: ItineraryVehicleRow[];
   itineraryPlanId?: number;
+  onRefresh?: () => void;
 };
 
 export const VehicleList: React.FC<VehicleListProps> = ({
   vehicleTypeLabel,
   vehicles,
+  itineraryPlanId,
+  onRefresh,
 }) => {
   const [expandedVendorIndex, setExpandedVendorIndex] = useState<number | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(0);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(() => {
+    // Find the first assigned vendor
+    const assignedIndex = vehicles.findIndex(v => v.isAssigned);
+    return assignedIndex >= 0 ? assignedIndex : null;
+  });
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [pendingVendorSelection, setPendingVendorSelection] = useState<{
+    index: number;
+    vendorEligibleId: number;
+    vehicleTypeId: number;
+    vendorName: string;
+  } | null>(null);
 
   const handleRowClick = (index: number) => {
     setExpandedVendorIndex((prev) => (prev === index ? null : index));
   };
 
   const handleRadioChange = (index: number) => {
-    setSelectedIndex(index);
+    const vendor = vehicles[index];
+    
+    console.log("handleRadioChange called", { 
+      index, 
+      vendor, 
+      itineraryPlanId,
+      vendorEligibleId: vendor?.vendorEligibleId,
+      vehicleTypeId: vendor?.vehicleTypeId
+    });
+
+    if (!vendor || !itineraryPlanId || !vendor.vendorEligibleId || !vendor.vehicleTypeId) {
+      console.error("Missing required vendor data", { vendor, itineraryPlanId });
+      toast.error("Missing required vendor data");
+      return;
+    }
+
+    setPendingVendorSelection({
+      index,
+      vendorEligibleId: vendor.vendorEligibleId,
+      vehicleTypeId: vendor.vehicleTypeId,
+      vendorName: vendor.vendorName || "Unknown Vendor",
+    });
+    setShowConfirmDialog(true);
+  };
+
+  const handleConfirmSelection = async () => {
+    if (!pendingVendorSelection || !itineraryPlanId) return;
+
+    try {
+      await ItineraryService.selectVehicleVendor(
+        itineraryPlanId,
+        pendingVendorSelection.vehicleTypeId,
+        pendingVendorSelection.vendorEligibleId
+      );
+
+      toast.success("Vehicle vendor changed successfully. Please update the amount.");
+      setSelectedIndex(pendingVendorSelection.index);
+      setShowConfirmDialog(false);
+      setPendingVendorSelection(null);
+      setExpandedVendorIndex(null);
+
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (error) {
+      console.error("Failed to select vehicle vendor:", error);
+      toast.error("Failed to update vehicle vendor");
+    }
   };
 
   return (
@@ -248,6 +324,40 @@ export const VehicleList: React.FC<VehicleListProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
+                <AlertTriangle className="h-5 w-5 text-orange-600" />
+              </div>
+              <DialogTitle className="text-lg">Confirm Vendor Selection</DialogTitle>
+            </div>
+            <DialogDescription className="pt-4">
+              Are you sure you want to select <strong>{pendingVendorSelection?.vendorName}</strong> as the vendor for <strong>{vehicleTypeLabel}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowConfirmDialog(false);
+                setPendingVendorSelection(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmSelection}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

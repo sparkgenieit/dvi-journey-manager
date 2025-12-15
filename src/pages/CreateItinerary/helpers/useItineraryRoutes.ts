@@ -11,6 +11,11 @@ import {
   toDDMMYYYY,
 } from "./itineraryUtils";
 
+export type ViaRouteItem = {
+  itinerary_via_location_ID: number;
+  itinerary_via_location_name: string;
+};
+
 export type RouteRow = {
   id: number;
   day: number;
@@ -18,6 +23,7 @@ export type RouteRow = {
   source: string;
   next: string;
   via: string; // comma separated hotspots for this segment
+  via_routes: ViaRouteItem[]; // array of via route objects for backend
   directVisit: "Yes" | "No";
 };
 
@@ -54,6 +60,7 @@ export function useItineraryRoutes({
       source: "",
       next: "",
       via: "",
+      via_routes: [],
       directVisit: "Yes",
     },
   ]);
@@ -98,6 +105,7 @@ export function useItineraryRoutes({
           day: i + 1,
           date: toDDMMYYYY(currentDate),
           source: existing?.source ?? "",
+          via_routes: existing?.via_routes ?? [],
           next: existing?.next ?? "",
           via: existing?.via ?? "",
           directVisit: existing?.directVisit ?? "Yes",
@@ -222,10 +230,10 @@ export function useItineraryRoutes({
           return;
         }
 
-        // Local UI: clear VIA column
+        // Local UI: clear VIA column and via_routes array
         setRouteDetails((prev) =>
           prev.map((r) =>
-            r.id === activeViaRouteRow.id ? { ...r, via: "" } : r
+            r.id === activeViaRouteRow.id ? { ...r, via: "", via_routes: [] } : r
           )
         );
 
@@ -293,12 +301,18 @@ export function useItineraryRoutes({
         return;
       }
 
-      // Local UI update – VIA column
+      // Local UI update – VIA column and via_routes array
       const viaText = selectedOptions.map((o) => o.label).join(", ");
+      const viaRoutesArray = selectedOptions.map((o) => ({
+        itinerary_via_location_ID: Number(o.id),
+        itinerary_via_location_name: o.label,
+      }));
 
       setRouteDetails((prev) =>
         prev.map((r) =>
-          r.id === activeViaRouteRow.id ? { ...r, via: viaText } : r
+          r.id === activeViaRouteRow.id
+            ? { ...r, via: viaText, via_routes: viaRoutesArray }
+            : r
         )
       );
 

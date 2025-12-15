@@ -49,12 +49,15 @@ type VehicleRow = {
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
+
+// ✅ Use UTC so "2025-12-10T11:00:00.000Z" shows as 11:00 instead of 16:30 in IST
 function safeTimeFromISO(iso?: string | null, fallback = ""): string {
   if (!iso) return fallback;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return fallback;
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
 }
+
 
 function csvToStringArray(v: unknown): string[] {
   if (!v) return [];
@@ -364,6 +367,12 @@ useEffect(() => {
                   source: r.location_name ?? "",
                   next: r.next_visiting_location ?? "",
                   via: r.via_route ?? "",
+                  via_routes: Array.isArray(r.via_routes) 
+                    ? r.via_routes.map((vr: any) => ({
+                        itinerary_via_location_ID: Number(vr.itinerary_via_location_ID),
+                        itinerary_via_location_name: String(vr.itinerary_via_location_name),
+                      }))
+                    : [],
                   directVisit: r.direct_to_next_visiting_place === 1 ? "Yes" : "No",
                 }))
               );
@@ -581,6 +590,7 @@ const buildPayload = () => {
     no_of_km: "",
     direct_to_next_visiting_place: r.directVisit === "Yes" ? 1 : 0,
     via_route: r.via || "",
+    via_routes: r.via_routes || [], // include via routes array for backend
   }));
 
   const preferred_hotel_category =
