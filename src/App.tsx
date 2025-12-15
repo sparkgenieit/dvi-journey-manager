@@ -495,91 +495,34 @@ const App = () => (
                 </MainLayout>
               }
             />
-          {/* Parking Charge Bulk Import */}
-          <Route
-            path="/parking-charge-bulk-import" 
-            element={
-              <MainLayout>
-                <ParkingChargeBulkImport />
-              </MainLayout>
-            }
-          />
-          {/* Locations Management */}
-          <Route
-            path="/locations"
-            element={
-              <MainLayout>
-                <LocationsPage />
-              </MainLayout>
-            }
-          />
-          {/* Staff Routes */}
-          <Route
-            path="/staff"
-            element={
-              <MainLayout>
-                <StaffListPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/staff/new"
-            element={
-              <MainLayout>
-                <StaffFormPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/staff/:id/edit"
-            element={
-              <MainLayout>
-                <StaffFormPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/staff/:id/preview"
-            element={
-              <MainLayout>
-                <StaffPreviewPage />
-              </MainLayout>
-            }
-          />
-          {/* Agent Routes */}
-          <Route
-            path="/agent"
-            element={
-              <MainLayout>
-                <AgentListPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/agent/new"
-            element={
-              <MainLayout>
-                <AgentFormPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/agent/:id/edit"
-            element={
-              <MainLayout>
-                <AgentFormPage />
-              </MainLayout>
-            }
-          />
-          {/* Pricebook Export */}
-          <Route
-            path="/pricebook-export"
-            element={
-              <MainLayout>
-                <PricebookExportPage />
-              </MainLayout>
-            }
-          />
+            {/* Parking Charge Bulk Import */}
+            <Route
+              path="/parking-charge-bulk-import" 
+              element={
+                <MainLayout>
+                  <ParkingChargeBulkImport />
+                </MainLayout>
+              }
+            />
+            {/* Locations Management */}
+            <Route
+              path="/locations"
+              element={
+                <MainLayout>
+                  <LocationsPage />
+                </MainLayout>
+              }
+            />
+            {/* Pricebook Export */}
+            <Route
+              path="/pricebook-export"
+              element={
+                <MainLayout>
+                  <PricebookExportPage />
+                </MainLayout>
+              }
+            />
+          </Route>
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>
