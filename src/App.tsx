@@ -54,6 +54,9 @@ import AgentFormPage from "./pages/agent/AgentFormPage";
 import AgentPreviewPage from "./pages/agent/AgentPreviewPage";
 
 import PricebookExportPage from "./pages/pricebook-export/PricebookExportPage";
+import { GlobalSettingsPage } from "./pages/Settings/GlobalSettings";
+import { CitiesPage } from "./pages/Settings/Cities";
+import { HotelCategoryPage } from "./pages/Settings/HotelCategory";
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
   const { id } = useParams();
@@ -528,6 +531,31 @@ const App = () => (
               element={
                 <MainLayout>
                   <PricebookExportPage />
+                </MainLayout>
+              }
+            />
+            {/* Settings */}
+            <Route
+              path="/settings/global"
+              element={
+                <MainLayout>
+                  <GlobalSettingsPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/cities"
+              element={
+                <MainLayout>
+                  <CitiesPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/hotel-category"
+              element={
+                <MainLayout>
+                  <HotelCategoryPage />
                 </MainLayout>
               }
             />

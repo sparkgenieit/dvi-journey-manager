@@ -105,6 +105,17 @@ const menuItems: MenuItem[] = [
     icon: Settings,
     path: "/settings",
     hasSubmenu: true,
+    children: [
+      { id: "global-settings", title: "Global Settings", path: "/settings/global" },
+      { id: "cities", title: "Cities", path: "/settings/cities" },
+      { id: "hotel-category", title: "Hotel Category", path: "/settings/hotel-category" },
+      { id: "gst", title: "GST", path: "/settings/gst" },
+      { id: "amenities", title: "Amenities", path: "/settings/amenities" },
+      { id: "vehicle-type", title: "Vehicle Type", path: "/settings/vehicle-type" },
+      { id: "language", title: "Language", path: "/settings/language" },
+      { id: "role-permission", title: "Role Permission", path: "/settings/role-permission" },
+      { id: "subscription-plan", title: "Subscription Plan", path: "/settings/subscription-plan" },
+    ],
   },
 ];
 

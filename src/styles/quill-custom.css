@@ -1,0 +1,60 @@
+/* Custom Quill Editor Styles */
+.ql-container {
+  min-height: 200px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: inherit;
+}
+
+.ql-editor {
+  min-height: 200px;
+  max-height: 400px;
+  font-size: 14px;
+}
+
+.ql-editor.ql-blank::before {
+  color: #999;
+  font-style: normal;
+}
+
+.ql-toolbar.ql-snow {
+  border: 1px solid #d9d9e3;
+  border-radius: 6px 6px 0 0;
+  background: #f9fafb;
+}
+
+.ql-container.ql-snow {
+  border: 1px solid #d9d9e3;
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  background: white;
+}
+
+/* Make sure HTML renders properly */
+.ql-editor p,
+.ql-editor ul,
+.ql-editor ol,
+.ql-editor h1,
+.ql-editor h2,
+.ql-editor h3,
+.ql-editor h4,
+.ql-editor h5,
+.ql-editor h6 {
+  margin-bottom: 8px;
+}
+
+.ql-editor strong {
+  font-weight: bold;
+}
+
+.ql-editor em {
+  font-style: italic;
+}
+
+.ql-editor u {
+  text-decoration: underline;
+}
+
+.ql-editor s {
+  text-decoration: line-through;
+}

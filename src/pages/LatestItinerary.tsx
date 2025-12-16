@@ -49,26 +49,6 @@ function formatToDDMMYYYY(date: Date | undefined) {
 }
 
 // ------------------------------------------------------------------
-// STATIC DROPDOWN OPTIONS (can later be replaced with API-driven lists)
-// ------------------------------------------------------------------
-const STATIC_ORIGINS = [
-  "Madurai Airport",
-  "Chennai International Airport",
-  "Chennai Domestic Airport",
-  "Cochin Airport",
-];
-
-const STATIC_DESTINATIONS = [
-  "Trivandrum, Domestic Airport",
-  "Chennai",
-  "Cochin Airport",
-  "Chennai Domestic Airport",
-];
-
-const STATIC_AGENTS = ["admindvi", "agent1", "agent2"];
-const STATIC_STAFFS = ["staff1", "staff2", "staff3"];
-
-// ------------------------------------------------------------------
 // COMPONENT
 // ------------------------------------------------------------------
 export const LatestItinerary = () => {
@@ -81,11 +61,11 @@ export const LatestItinerary = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // dropdown options (currently static – later can come from API)
-  const [origins] = useState<string[]>(STATIC_ORIGINS);
-  const [destinations] = useState<string[]>(STATIC_DESTINATIONS);
-  const [agents] = useState<string[]>(STATIC_AGENTS);
-  const [staffs] = useState<string[]>(STATIC_STAFFS);
+  // dropdown options (fetched from API)
+  const [origins, setOrigins] = useState<string[]>([]);
+  const [destinations, setDestinations] = useState<string[]>([]);
+  const [agents, setAgents] = useState<{ id: number; name: string; staff_name?: string }[]>([]);
+  const [staffs, setStaffs] = useState<string[]>([]);
 
   // date objects for calendar
   const [startDateObj, setStartDateObj] = useState<Date | undefined>(
@@ -99,8 +79,8 @@ export const LatestItinerary = () => {
   const [filters, setFilters] = useState({
     origin: "",
     destination: "",
-    agentName: "",
-    agentStaff: "",
+    agentId: "",
+    staffId: "",
     startDate: "",
     endDate: "",
   });
@@ -124,6 +104,35 @@ export const LatestItinerary = () => {
     dir: "asc",
   });
 
+  // Fetch filter options on mount
+  useEffect(() => {
+    const fetchFilterData = async () => {
+      try {
+        const [agentsData, locationsData] = await Promise.all([
+          ItineraryService.getLatestAgents(),
+          ItineraryService.getLatestLocations(),
+        ]);
+
+        setAgents(agentsData);
+        
+        // Extract unique locations for both origin and destination
+        const locationValues = locationsData.map((loc: { value: string }) => loc.value);
+        setOrigins(locationValues);
+        setDestinations(locationValues);
+        
+        // Extract staff names
+        const staffNames = agentsData
+          .filter((agent: { staff_name?: string }) => agent.staff_name)
+          .map((agent: { staff_name: string }) => agent.staff_name);
+        setStaffs(staffNames);
+      } catch (error) {
+        console.error('Failed to fetch filter data', error);
+      }
+    };
+
+    fetchFilterData();
+  }, []);
+
   // fetch whenever deps change
   useEffect(() => {
     const load = async () => {
@@ -137,9 +146,8 @@ export const LatestItinerary = () => {
         endDate: filters.endDate || undefined,
         sourceLocation: filters.origin || undefined,
         destinationLocation: filters.destination || undefined,
-        // agentId / staffId wiring can be added later when you have real IDs
-        agentId: undefined,
-        staffId: undefined,
+        agentId: filters.agentId ? Number(filters.agentId) : undefined,
+        staffId: filters.staffId ? Number(filters.staffId) : undefined,
       });
 
       // API shape from service:
@@ -212,8 +220,8 @@ export const LatestItinerary = () => {
     sortConfig, // kept for future server-side sort if needed
     filters.origin,
     filters.destination,
-    filters.agentName,
-    filters.agentStaff,
+    filters.agentId,
+    filters.staffId,
     filters.startDate,
     filters.endDate,
   ]);
@@ -285,8 +293,8 @@ export const LatestItinerary = () => {
     setFilters({
       origin: "",
       destination: "",
-      agentName: "",
-      agentStaff: "",
+      agentId: "",
+      staffId: "",
       startDate: "",
       endDate: "",
     });
@@ -433,9 +441,9 @@ export const LatestItinerary = () => {
                 Agent Name
               </Label>
               <Select
-                value={filters.agentName}
+                value={filters.agentId}
                 onValueChange={(v) => {
-                  setFilters((p) => ({ ...p, agentName: v }));
+                  setFilters((p) => ({ ...p, agentId: v }));
                   setCurrentPage(1);
                 }}
               >
@@ -443,9 +451,9 @@ export const LatestItinerary = () => {
                   <SelectValue placeholder="Select Agent" />
                 </SelectTrigger>
                 <SelectContent>
-                  {agents.map((a) => (
-                    <SelectItem key={a} value={a}>
-                      {a}
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id.toString()}>
+                      {agent.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -459,9 +467,9 @@ export const LatestItinerary = () => {
                   Agent Staff
                 </Label>
                 <Select
-                  value={filters.agentStaff}
+                  value={filters.staffId}
                   onValueChange={(v) => {
-                    setFilters((p) => ({ ...p, agentStaff: v }));
+                    setFilters((p) => ({ ...p, staffId: v }));
                     setCurrentPage(1);
                   }}
                 >
@@ -469,11 +477,13 @@ export const LatestItinerary = () => {
                     <SelectValue placeholder="Choose the Agent Staff" />
                   </SelectTrigger>
                   <SelectContent>
-                    {staffs.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
+                    {agents
+                      .filter((agent) => agent.staff_name)
+                      .map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id.toString()}>
+                          {agent.staff_name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

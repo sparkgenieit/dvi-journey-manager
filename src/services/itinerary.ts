@@ -251,4 +251,28 @@ export const ItineraryService = {
     });
   },
 
+  async getConfirmedAgents() {
+    return api("itineraries/confirmed/agents", {
+      method: "GET",
+    });
+  },
+
+  async getConfirmedLocations() {
+    return api("itineraries/confirmed/locations", {
+      method: "GET",
+    });
+  },
+
+  async getLatestAgents() {
+    return api("itineraries/latest/agents", {
+      method: "GET",
+    });
+  },
+
+  async getLatestLocations() {
+    return api("itineraries/latest/locations", {
+      method: "GET",
+    });
+  },
+
 };

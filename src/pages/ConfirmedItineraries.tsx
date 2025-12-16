@@ -3,11 +3,23 @@ import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Eye, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Eye, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { ItineraryService } from '@/services/itinerary';
 import { toast } from 'sonner';
+
+// Utility function to format dates
+function formatToDDMMYYYY(date: Date | undefined) {
+  if (!date) return "";
+  const d = date.getDate().toString().padStart(2, "0");
+  const m = (date.getMonth() + 1).toString().padStart(2, "0");
+  const y = date.getFullYear();
+  return `${d}/${m}/${y}`;
+}
 
 interface ConfirmedItinerary {
   itinerary_plan_ID: number;
@@ -25,11 +37,30 @@ interface ConfirmedItinerary {
   created_by: number;
 }
 
+interface Agent {
+  id: number;
+  name: string;
+  staff_name?: string;
+}
+
+interface Location {
+  value: string;
+  label: string;
+}
+
 export const ConfirmedItineraries: React.FC = () => {
   const [itineraries, setItineraries] = useState<ConfirmedItinerary[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalRecords, setTotalRecords] = useState(0);
   const [filteredRecords, setFilteredRecords] = useState(0);
+
+  // Filter dropdown data
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+
+  // Date objects for calendar
+  const [startDateObj, setStartDateObj] = useState<Date | undefined>(undefined);
+  const [endDateObj, setEndDateObj] = useState<Date | undefined>(undefined);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -73,6 +104,25 @@ export const ConfirmedItineraries: React.FC = () => {
     }
   };
 
+  const fetchFilterData = async () => {
+    try {
+      const [agentsData, locationsData] = await Promise.all([
+        ItineraryService.getConfirmedAgents(),
+        ItineraryService.getConfirmedLocations(),
+      ]);
+
+      setAgents(agentsData);
+      setLocations(locationsData);
+    } catch (error: any) {
+      console.error('Failed to fetch filter data', error);
+      toast.error('Failed to load filter options');
+    }
+  };
+
+  useEffect(() => {
+    fetchFilterData();
+  }, []);
+
   useEffect(() => {
     fetchItineraries();
   }, [currentPage, pageSize]);
@@ -95,6 +145,8 @@ export const ConfirmedItineraries: React.FC = () => {
       agentId: '',
       staffId: '',
     });
+    setStartDateObj(undefined);
+    setEndDateObj(undefined);
     setCurrentPage(1);
     // Fetch will be triggered by useEffect
     setTimeout(fetchItineraries, 0);
@@ -126,63 +178,147 @@ export const ConfirmedItineraries: React.FC = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <div>
-              <label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Start Date</label>
-              <Input
-                type="text"
-                placeholder="DD/MM/YYYY"
-                value={filters.startDate}
-                onChange={(e) => handleFilterChange('startDate', e.target.value)}
-              />
+              <Label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Start Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={`w-full justify-start text-left font-normal ${
+                      !filters.startDate ? "text-muted-foreground" : ""
+                    }`}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {filters.startDate || "DD/MM/YYYY"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={startDateObj}
+                    onSelect={(date) => {
+                      setStartDateObj(date ?? undefined);
+                      const formatted = formatToDDMMYYYY(date ?? undefined);
+                      setFilters((p) => ({
+                        ...p,
+                        startDate: formatted,
+                      }));
+                      setCurrentPage(1);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-[#6c6c6c] mb-1 block">End Date</label>
-              <Input
-                type="text"
-                placeholder="DD/MM/YYYY"
-                value={filters.endDate}
-                onChange={(e) => handleFilterChange('endDate', e.target.value)}
-              />
+              <Label className="text-sm font-medium text-[#6c6c6c] mb-1 block">End Date</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={`w-full justify-start text-left font-normal ${
+                      !filters.endDate ? "text-muted-foreground" : ""
+                    }`}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {filters.endDate || "DD/MM/YYYY"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={endDateObj}
+                    onSelect={(date) => {
+                      setEndDateObj(date ?? undefined);
+                      const formatted = formatToDDMMYYYY(date ?? undefined);
+                      setFilters((p) => ({
+                        ...p,
+                        endDate: formatted,
+                      }));
+                      setCurrentPage(1);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Origin</label>
-              <Input
-                type="text"
-                placeholder="Choose Location"
+              <Label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Origin</Label>
+              <Select
                 value={filters.origin}
-                onChange={(e) => handleFilterChange('origin', e.target.value)}
-              />
+                onValueChange={(value) => handleFilterChange('origin', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={location.value} value={location.value}>
+                      {location.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Destination</label>
-              <Input
-                type="text"
-                placeholder="Choose Location"
+              <Label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Destination</Label>
+              <Select
                 value={filters.destination}
-                onChange={(e) => handleFilterChange('destination', e.target.value)}
-              />
+                onValueChange={(value) => handleFilterChange('destination', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={location.value} value={location.value}>
+                      {location.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Agent Name</label>
-              <Input
-                type="text"
-                placeholder="Select Agent"
+              <Label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Agent Name</Label>
+              <Select
                 value={filters.agentId}
-                onChange={(e) => handleFilterChange('agentId', e.target.value)}
-              />
+                onValueChange={(value) => handleFilterChange('agentId', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id.toString()}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Agent Staff</label>
-              <Input
-                type="text"
-                placeholder="Select Staff"
+              <Label className="text-sm font-medium text-[#6c6c6c] mb-1 block">Agent Staff</Label>
+              <Select
                 value={filters.staffId}
-                onChange={(e) => handleFilterChange('staffId', e.target.value)}
-              />
+                onValueChange={(value) => handleFilterChange('staffId', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select Staff" />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents
+                    .filter((agent) => agent.staff_name)
+                    .map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id.toString()}>
+                        {agent.staff_name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

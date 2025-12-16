@@ -213,18 +213,18 @@ export const RouteDetailsBlock = ({
         <Table>
           <TableHeader>
             <TableRow className="bg-[#faf1ff]">
-              <TableHead className="text-xs text-[#4a4260]">DAY</TableHead>
-              <TableHead className="text-xs text-[#4a4260]">DATE</TableHead>
-              <TableHead className="text-xs text-[#4a4260]">
+              <TableHead className="text-xs text-[#4a4260] w-[80px]">DAY</TableHead>
+              <TableHead className="text-xs text-[#4a4260] w-[140px]">DATE</TableHead>
+              <TableHead className="text-xs text-[#4a4260] w-[200px]">
                 SOURCE DESTINATION
               </TableHead>
-              <TableHead className="text-xs text-[#4a4260]">
+              <TableHead className="text-xs text-[#4a4260] w-[280px]">
                 NEXT DESTINATION
               </TableHead>
-              <TableHead className="text-xs text-[#4a4260] text-center">
+              <TableHead className="text-xs text-[#4a4260] w-[100px] text-center">
                 VIA ROUTE
               </TableHead>
-              <TableHead className="text-xs text-[#4a4260] text-center">
+              <TableHead className="text-xs text-[#4a4260] w-[120px] text-center">
                 DIRECT DESTINATION VISIT
               </TableHead>
             </TableRow>
@@ -336,41 +336,35 @@ export const RouteDetailsBlock = ({
                     <button
                       type="button"
                       onClick={() => onOpenViaRoutes?.(row)}
-                      className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[#e5d7f6] bg-white hover:bg-[#f5e8ff]"
+                      className="btn btn-outline-primary btn-sm"
+                      title="Via Route"
                     >
-                      <i className="ti ti-route ti-tada-hover text-[#c53fb0]" />
+                      <i className="ti ti-route ti-tada-hover"></i>
                     </button>
                   </TableCell>
 
-                  {/* DIRECT DESTINATION VISIT – toggle switch */}
+                  {/* DIRECT DESTINATION VISIT – toggle button */}
                   <TableCell className="text-center">
-                    <label className="switch switch-sm">
-                      <input
-                        type="checkbox"
-                        className="switch-input"
-                        checked={row.directVisit === "Yes"}
-                        onChange={(e) =>
-                          setRouteDetails((prev) =>
-                            prev.map((r, i) =>
-                              i === idx
-                                ? {
-                                    ...r,
-                                    directVisit: e.target.checked ? "Yes" : "",
-                                  }
-                                : r
-                            )
+                    <button
+                      type="button"
+                      aria-pressed={row.directVisit === "Yes"}
+                      className={`hotel-toggle ${row.directVisit === "Yes" ? "active" : ""}`}
+                      title={row.directVisit === "Yes" ? "Active" : "Inactive"}
+                      onClick={() =>
+                        setRouteDetails((prev) =>
+                          prev.map((r, i) =>
+                            i === idx
+                              ? {
+                                  ...r,
+                                  directVisit: r.directVisit === "Yes" ? "" : "Yes",
+                                }
+                              : r
                           )
-                        }
-                      />
-                      <span className="switch-toggle-slider">
-                        <span className="switch-on">
-                          <i className="ti ti-check" />
-                        </span>
-                        <span className="switch-off">
-                          <i className="ti ti-x" />
-                        </span>
-                      </span>
-                    </label>
+                        )
+                      }
+                    >
+                      <span className="hotel-toggle-knob"></span>
+                    </button>
                   </TableCell>
                 </TableRow>
               );

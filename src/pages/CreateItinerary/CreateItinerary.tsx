@@ -27,7 +27,6 @@ import {
   toDDMMYYYY,
   toISOFromDDMMYYYY,
   toISOFromDDMMYYYYAndTime,
-  getOrCreateItinerarySessionId,
   splitViaString,
 } from "./helpers/itineraryUtils";
 import { SaveRouteConfirmDialog } from "./helpers/SaveRouteConfirmDialog";
@@ -84,8 +83,6 @@ export const CreateItinerary = () => {
 
   const itineraryPlanId = id && !Number.isNaN(Number(id)) ? Number(id) : null;
 
-  const [itinerarySessionId] = useState<string>(() => getOrCreateItinerarySessionId());
-
   // agents / dropdown data
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
@@ -101,7 +98,7 @@ export const CreateItinerary = () => {
 
   // header selections
   const [itineraryPreference, setItineraryPreference] = useState<"vehicle" | "hotel" | "both">(
-    "hotel"
+    "both"
   );
   const [agentId, setAgentId] = useState<number | null>(null);
 
@@ -161,7 +158,6 @@ export const CreateItinerary = () => {
     arrivalLocation,
     departureLocation,
     itineraryPlanId,
-    itinerarySessionId,
     toast,
   });
 
