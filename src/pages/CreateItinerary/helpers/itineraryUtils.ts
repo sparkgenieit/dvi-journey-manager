@@ -112,15 +112,5 @@ export function resolveLocationIdFromLabel(
   return Number.isFinite(n) ? n : 0;
 }
 
-// React-side equivalent of PHP session_id() for itinerary via-routes
-const ITINERARY_SESSION_KEY = "dvi_itinerary_session_id";
-
-export function getOrCreateItinerarySessionId(): string {
-  if (typeof window === "undefined") return "";
-  let current = window.localStorage.getItem(ITINERARY_SESSION_KEY);
-  if (!current) {
-    current = `react_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    window.localStorage.setItem(ITINERARY_SESSION_KEY, current);
-  }
-  return current;
-}
+// Session ID removed - via routes are now stored in frontend state only
+// and saved to database when the entire itinerary is created

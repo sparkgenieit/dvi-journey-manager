@@ -2,12 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -74,6 +69,27 @@ export const RouteDetailsBlock = ({
     {}
   );
 
+  // After adding a day: focus previous last day's "Next Destination"
+  const [focusNextIdx, setFocusNextIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (focusNextIdx === null) return;
+
+    const hostId = `next-destination-${focusNextIdx}`;
+    const t = window.setTimeout(() => {
+      const host = document.getElementById(hostId);
+      const focusTarget =
+        (host?.querySelector("input") as HTMLElement | null) ||
+        (host?.querySelector("button") as HTMLElement | null) ||
+        (host?.querySelector("[role='combobox']") as HTMLElement | null);
+
+      focusTarget?.focus();
+      setFocusNextIdx(null);
+    }, 0);
+
+    return () => window.clearTimeout(t);
+  }, [focusNextIdx]);
+
   // For each row that has a source, load destination list if we haven't yet
   useEffect(() => {
     routeDetails.forEach((row, idx) => {
@@ -109,26 +125,78 @@ export const RouteDetailsBlock = ({
     });
   }, [routeDetails, loadedSources]);
 
+  const parseDDMMYYYY = (value: string): Date | null => {
+    if (!value) return null;
+    const [d, m, y] = value.split("/").map(Number);
+    if (!d || !m || !y) return null;
+    const dt = new Date(y, m - 1, d);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  };
+
+  const addOneDay = (value: string): string => {
+    const dt = parseDDMMYYYY(value);
+    if (!dt) return "";
+    dt.setDate(dt.getDate() + 1);
+    const dd = String(dt.getDate()).padStart(2, "0");
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const yyyy = dt.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
+
   const handleAddDay = () => {
     if (addDay) {
       addDay();
       return;
     }
-    // default behaviour if parent doesn't supply addDay
+
+    // PHP-like behaviour:
+    // 1) New day date = last date + 1
+    // 2) Move final destination (last.next) down to NEW day "next"
+    // 3) Copy last.source into NEW day "source"
+    // 4) Clear last.next and focus it (user will pick new destination for last day)
     setRouteDetails((prev) => {
-      const nextDay = prev.length ? prev[prev.length - 1].day + 1 : 1;
-      return [
-        ...prev,
-        {
-          day: nextDay,
-          date: "",
-          source: "",
-          next: "",
-          via: "",
-          directVisit: "Yes",
-        },
-      ];
+      if (!prev.length) {
+        return [
+          {
+            day: 1,
+            date: "",
+            source: "",
+            next: "",
+            via: "",
+            directVisit: "Yes",
+          },
+        ];
+      }
+
+      const lastIdx = prev.length - 1;
+      const last = prev[lastIdx];
+
+      const movedFinalDestination = last.next; // goes to new day next
+      const copiedSource = last.source; // goes to new day source
+
+      const updated = [...prev];
+
+      // Clear last day destination (so user selects new Day-Last "Next Destination")
+      updated[lastIdx] = {
+        ...last,
+        next: "",
+      };
+
+      // Add new day row
+      updated.push({
+        day: last.day + 1,
+        date: addOneDay(last.date),
+        source: copiedSource,
+        next: movedFinalDestination,
+        via: "",
+        directVisit: "Yes",
+      });
+
+      return updated;
     });
+
+    // Focus previous last row's "Next Destination" (e.g., Day 8 destination)
+    setFocusNextIdx(Math.max(0, routeDetails.length - 1));
   };
 
   const firstRouteSourceError = validationErrors?.firstRouteSource;
@@ -145,18 +213,18 @@ export const RouteDetailsBlock = ({
         <Table>
           <TableHeader>
             <TableRow className="bg-[#faf1ff]">
-              <TableHead className="text-xs text-[#4a4260]">DAY</TableHead>
-              <TableHead className="text-xs text-[#4a4260]">DATE</TableHead>
-              <TableHead className="text-xs text-[#4a4260]">
+              <TableHead className="text-xs text-[#4a4260] w-[80px]">DAY</TableHead>
+              <TableHead className="text-xs text-[#4a4260] w-[140px]">DATE</TableHead>
+              <TableHead className="text-xs text-[#4a4260] w-[200px]">
                 SOURCE DESTINATION
               </TableHead>
-              <TableHead className="text-xs text-[#4a4260]">
+              <TableHead className="text-xs text-[#4a4260] w-[280px]">
                 NEXT DESTINATION
               </TableHead>
-              <TableHead className="text-xs text-[#4a4260] text-center">
+              <TableHead className="text-xs text-[#4a4260] w-[100px] text-center">
                 VIA ROUTE
               </TableHead>
-              <TableHead className="text-xs text-[#4a4260] text-center">
+              <TableHead className="text-xs text-[#4a4260] w-[120px] text-center">
                 DIRECT DESTINATION VISIT
               </TableHead>
             </TableRow>
@@ -188,7 +256,9 @@ export const RouteDetailsBlock = ({
                   {/* SOURCE DESTINATION – read only, but validated for first row */}
                   <TableCell
                     data-field={isFirstRow ? "firstRouteSource" : undefined}
-                    className={isFirstRow && firstRouteSourceError ? "align-top" : ""}
+                    className={
+                      isFirstRow && firstRouteSourceError ? "align-top" : ""
+                    }
                   >
                     <div
                       className={
@@ -214,9 +284,12 @@ export const RouteDetailsBlock = ({
                   {/* NEXT DESTINATION – autosuggest, chained to next row source */}
                   <TableCell
                     data-field={isFirstRow ? "firstRouteNext" : undefined}
-                    className={isFirstRow && firstRouteNextError ? "align-top" : ""}
+                    className={
+                      isFirstRow && firstRouteNextError ? "align-top" : ""
+                    }
                   >
                     <div
+                      id={`next-destination-${idx}`}
                       className={
                         isFirstRow && firstRouteNextError
                           ? "border border-red-500 rounded-md p-1"
@@ -263,47 +336,42 @@ export const RouteDetailsBlock = ({
                     <button
                       type="button"
                       onClick={() => onOpenViaRoutes?.(row)}
-                      className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-[#e5d7f6] bg-white hover:bg-[#f5e8ff]"
+                      className="btn btn-outline-primary btn-sm"
+                      title="Via Route"
                     >
-                      <i className="ti ti-route ti-tada-hover text-[#c53fb0]" />
+                      <i className="ti ti-route ti-tada-hover"></i>
                     </button>
                   </TableCell>
 
-                  {/* DIRECT DESTINATION VISIT – toggle switch */}
+                  {/* DIRECT DESTINATION VISIT – toggle button */}
                   <TableCell className="text-center">
-                    <label className="switch switch-sm">
-                      <input
-                        type="checkbox"
-                        className="switch-input"
-                        checked={row.directVisit === "Yes"}
-                        onChange={(e) =>
-                          setRouteDetails((prev) =>
-                            prev.map((r, i) =>
-                              i === idx
-                                ? {
-                                    ...r,
-                                    directVisit: e.target.checked ? "Yes" : "",
-                                  }
-                                : r
-                            )
+                    <button
+                      type="button"
+                      aria-pressed={row.directVisit === "Yes"}
+                      className={`hotel-toggle ${row.directVisit === "Yes" ? "active" : ""}`}
+                      title={row.directVisit === "Yes" ? "Active" : "Inactive"}
+                      onClick={() =>
+                        setRouteDetails((prev) =>
+                          prev.map((r, i) =>
+                            i === idx
+                              ? {
+                                  ...r,
+                                  directVisit: r.directVisit === "Yes" ? "" : "Yes",
+                                }
+                              : r
                           )
-                        }
-                      />
-                      <span className="switch-toggle-slider">
-                        <span className="switch-on">
-                          <i className="ti ti-check" />
-                        </span>
-                        <span className="switch-off">
-                          <i className="ti ti-x" />
-                        </span>
-                      </span>
-                    </label>
+                        )
+                      }
+                    >
+                      <span className="hotel-toggle-knob"></span>
+                    </button>
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
+
         <Button
           onClick={handleAddDay}
           className="mt-4 bg-[#f054b5] hover:bg-[#e249a9]"

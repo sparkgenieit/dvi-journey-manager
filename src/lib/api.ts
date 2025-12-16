@@ -81,6 +81,13 @@ console.debug("[api]", method, buildUrl(path));
   });
 
   if (!res.ok) {
+    // Handle 401 Unauthorized - redirect to login
+    if (res.status === 401) {
+      clearToken();
+      window.location.href = '/login';
+      throw new Error('Session expired. Please login again.');
+    }
+
     const text = await res.text().catch(() => "");
     throw new Error(
       `API ${method} ${url} failed: ${res.status} ${res.statusText} ${text}`.trim()

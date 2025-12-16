@@ -19,6 +19,7 @@ import { MainLayout } from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
+import { ConfirmedItineraries } from "./pages/ConfirmedItineraries";
 import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";
 import NotFound from "./pages/NotFound";
@@ -53,6 +54,9 @@ import AgentFormPage from "./pages/agent/AgentFormPage";
 import AgentPreviewPage from "./pages/agent/AgentPreviewPage";
 
 import PricebookExportPage from "./pages/pricebook-export/PricebookExportPage";
+import { GlobalSettingsPage } from "./pages/Settings/GlobalSettings";
+import { CitiesPage } from "./pages/Settings/Cities";
+import { HotelCategoryPage } from "./pages/Settings/HotelCategory";
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
   const { id } = useParams();
@@ -140,6 +144,14 @@ const App = () => (
               element={
                 <MainLayout>
                   <LatestItinerary />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/confirmed-itinerary"
+              element={
+                <MainLayout>
+                  <ConfirmedItineraries />
                 </MainLayout>
               }
             />
@@ -495,91 +507,59 @@ const App = () => (
                 </MainLayout>
               }
             />
-          {/* Parking Charge Bulk Import */}
-          <Route
-            path="/parking-charge-bulk-import" 
-            element={
-              <MainLayout>
-                <ParkingChargeBulkImport />
-              </MainLayout>
-            }
-          />
-          {/* Locations Management */}
-          <Route
-            path="/locations"
-            element={
-              <MainLayout>
-                <LocationsPage />
-              </MainLayout>
-            }
-          />
-          {/* Staff Routes */}
-          <Route
-            path="/staff"
-            element={
-              <MainLayout>
-                <StaffListPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/staff/new"
-            element={
-              <MainLayout>
-                <StaffFormPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/staff/:id/edit"
-            element={
-              <MainLayout>
-                <StaffFormPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/staff/:id/preview"
-            element={
-              <MainLayout>
-                <StaffPreviewPage />
-              </MainLayout>
-            }
-          />
-          {/* Agent Routes */}
-          <Route
-            path="/agent"
-            element={
-              <MainLayout>
-                <AgentListPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/agent/new"
-            element={
-              <MainLayout>
-                <AgentFormPage />
-              </MainLayout>
-            }
-          />
-          <Route
-            path="/agent/:id/edit"
-            element={
-              <MainLayout>
-                <AgentFormPage />
-              </MainLayout>
-            }
-          />
-          {/* Pricebook Export */}
-          <Route
-            path="/pricebook-export"
-            element={
-              <MainLayout>
-                <PricebookExportPage />
-              </MainLayout>
-            }
-          />
+            {/* Parking Charge Bulk Import */}
+            <Route
+              path="/parking-charge-bulk-import" 
+              element={
+                <MainLayout>
+                  <ParkingChargeBulkImport />
+                </MainLayout>
+              }
+            />
+            {/* Locations Management */}
+            <Route
+              path="/locations"
+              element={
+                <MainLayout>
+                  <LocationsPage />
+                </MainLayout>
+              }
+            />
+            {/* Pricebook Export */}
+            <Route
+              path="/pricebook-export"
+              element={
+                <MainLayout>
+                  <PricebookExportPage />
+                </MainLayout>
+              }
+            />
+            {/* Settings */}
+            <Route
+              path="/settings/global"
+              element={
+                <MainLayout>
+                  <GlobalSettingsPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/cities"
+              element={
+                <MainLayout>
+                  <CitiesPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/hotel-category"
+              element={
+                <MainLayout>
+                  <HotelCategoryPage />
+                </MainLayout>
+              }
+            />
+          </Route>
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>

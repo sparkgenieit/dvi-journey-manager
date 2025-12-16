@@ -11,6 +11,11 @@ import {
   toDDMMYYYY,
 } from "./itineraryUtils";
 
+export type ViaRouteItem = {
+  itinerary_via_location_ID: number;
+  itinerary_via_location_name: string;
+};
+
 export type RouteRow = {
   id: number;
   day: number;
@@ -18,6 +23,7 @@ export type RouteRow = {
   source: string;
   next: string;
   via: string; // comma separated hotspots for this segment
+  via_routes: ViaRouteItem[]; // array of via route objects for backend
   directVisit: "Yes" | "No";
 };
 
@@ -33,7 +39,6 @@ type UseItineraryRoutesArgs = {
   arrivalLocation: string;
   departureLocation: string;
   itineraryPlanId: number | null;
-  itinerarySessionId: string;
   toast: ToastFn;
 };
 
@@ -43,7 +48,6 @@ export function useItineraryRoutes({
   arrivalLocation,
   departureLocation,
   itineraryPlanId,
-  itinerarySessionId,
   toast,
 }: UseItineraryRoutesArgs) {
   const [routeDetails, setRouteDetails] = useState<RouteRow[]>([
@@ -54,6 +58,7 @@ export function useItineraryRoutes({
       source: "",
       next: "",
       via: "",
+      via_routes: [],
       directVisit: "Yes",
     },
   ]);
@@ -98,6 +103,7 @@ export function useItineraryRoutes({
           day: i + 1,
           date: toDDMMYYYY(currentDate),
           source: existing?.source ?? "",
+          via_routes: existing?.via_routes ?? [],
           next: existing?.next ?? "",
           via: existing?.via ?? "",
           directVisit: existing?.directVisit ?? "Yes",
@@ -138,8 +144,6 @@ export function useItineraryRoutes({
       return;
     }
 
-    // reset IDs for the newly opened row
-    setActiveViaRouteIds([]);
     setActiveViaRouteRow(row);
     setViaDialogOpen(true);
 
@@ -152,16 +156,30 @@ export function useItineraryRoutes({
         next: row.next,
         date: row.date || "",
         itineraryPlanId,
-        itinerarySessionId,
       });
 
       setViaRoutes(form.options);
-      setActiveViaRouteIds(form.existingIds ?? []);
 
-      // Prefer what backend says; fall back to whatever was already in the row
+      // For EDIT mode: use IDs from backend (form.existingIds)
+      // For NEW mode: use IDs from component state (row.via_routes)
+      let currentViaIds: string[] = [];
+      
+      if (itineraryPlanId && form.existingIds && form.existingIds.length > 0) {
+        // Editing existing itinerary - use backend data
+        currentViaIds = form.existingIds;
+      } else if (row.via_routes && row.via_routes.length > 0) {
+        // New itinerary - use state data
+        currentViaIds = row.via_routes.map(v => String(v.itinerary_via_location_ID));
+      }
+
+      setActiveViaRouteIds(currentViaIds);
+
+      // Update via text display if we have labels
       const viaLabels =
         form.existingLabels && form.existingLabels.length
           ? form.existingLabels
+          : row.via_routes && row.via_routes.length > 0
+          ? row.via_routes.map(v => v.itinerary_via_location_name)
           : splitViaString(row.via);
 
       if (viaLabels.length) {
@@ -193,39 +211,12 @@ export function useItineraryRoutes({
     try {
       const viaRouteIds = selectedOptions.map((o) => o.id);
 
-      // CASE 1: User removed all via routes → just clear them in DB
+      // CASE 1: User removed all via routes → just clear them in state
       if (!viaRouteIds.length) {
-        const clearBody = {
-          via_route_location: [], // IMPORTANT: empty array means "delete only"
-          hidden_route_date: activeViaRouteRow.date, // DD/MM/YYYY
-          hidden_source_location: activeViaRouteRow.source,
-          hidden_destination_location: activeViaRouteRow.next,
-          hidden_itineary_via_route_id: [],
-          itinerary_route_ID: null,
-          itinerary_plan_ID: itineraryPlanId,
-          itinerary_session_id: itinerarySessionId,
-        };
-
-        const clearData = await api("/itinerary-via-routes/add", {
-          method: "POST",
-          body: clearBody,
-        });
-
-        if (!clearData?.success) {
-          const msg =
-            clearData?.errors?.result_error || "Unable to clear Via Route.";
-          toast({
-            title: "Via Route Error",
-            description: msg,
-            variant: "destructive",
-          });
-          return;
-        }
-
-        // Local UI: clear VIA column
+        // Local UI: clear VIA column and via_routes array
         setRouteDetails((prev) =>
           prev.map((r) =>
-            r.id === activeViaRouteRow.id ? { ...r, via: "" } : r
+            r.id === activeViaRouteRow.id ? { ...r, via: "", via_routes: [] } : r
           )
         );
 
@@ -240,7 +231,7 @@ export function useItineraryRoutes({
         return;
       }
 
-      // CASE 2: We have via routes selected → check distance limit then save
+      // CASE 2: We have via routes selected → check distance limit then store in state
       const checkBody = {
         source: activeViaRouteRow.source,
         destination: activeViaRouteRow.next,
@@ -266,39 +257,18 @@ export function useItineraryRoutes({
         return;
       }
 
-      const addBody = {
-        via_route_location: viaRouteIds,
-        hidden_route_date: activeViaRouteRow.date, // DD/MM/YYYY
-        hidden_source_location: activeViaRouteRow.source,
-        hidden_destination_location: activeViaRouteRow.next,
-        hidden_itineary_via_route_id: [], // full replace on backend
-        itinerary_route_ID: null,
-        itinerary_plan_ID: itineraryPlanId,
-        itinerary_session_id: itinerarySessionId,
-      };
-
-      const addData = await api("/itinerary-via-routes/add", {
-        method: "POST",
-        body: addBody,
-      });
-
-      if (!addData?.success) {
-        const msg =
-          addData?.errors?.result_error || "Unable to add Via Route.";
-        toast({
-          title: "Via Route Error",
-          description: msg,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Local UI update – VIA column
+      // Local UI update – VIA column and via_routes array
       const viaText = selectedOptions.map((o) => o.label).join(", ");
+      const viaRoutesArray = selectedOptions.map((o) => ({
+        itinerary_via_location_ID: Number(o.id),
+        itinerary_via_location_name: o.label,
+      }));
 
       setRouteDetails((prev) =>
         prev.map((r) =>
-          r.id === activeViaRouteRow.id ? { ...r, via: viaText } : r
+          r.id === activeViaRouteRow.id
+            ? { ...r, via: viaText, via_routes: viaRoutesArray }
+            : r
         )
       );
 

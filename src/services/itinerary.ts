@@ -42,7 +42,7 @@ export const ItineraryService = {
   },
 
   async getOne(id: number) {
-    return api(`itineraries/${id}`, {
+    return api(`itineraries/edit/${id}`, {
       method: "GET",
     });
   },
@@ -91,8 +91,11 @@ export const ItineraryService = {
     });
   },
 
-  async getDetails(quoteId: string) {
-    return api(`itineraries/details/${encodeURIComponent(quoteId)}`, {
+  async getDetails(quoteId: string, groupType?: number) {
+    const url = groupType !== undefined 
+      ? `itineraries/details/${encodeURIComponent(quoteId)}?groupType=${groupType}`
+      : `itineraries/details/${encodeURIComponent(quoteId)}`;
+    return api(url, {
       method: "GET",
     });
   },
@@ -103,10 +106,173 @@ export const ItineraryService = {
     });
   },
 // inside ItineraryService
-  async  getHotelRoomDetails(quoteId: string) {
-  const res = await api(`/itineraries/hotel_room_details/${quoteId}`);
-  return res.data; // should match ItineraryHotelRoomDetailsResponseDto
-},
+  async getHotelRoomDetails(quoteId: string) {
+    const res = await api(`/itineraries/hotel_room_details/${quoteId}`);
+    return res; // api() already returns the JSON response directly
+  },
 
+  async deleteHotspot(planId: number, routeId: number, hotspotId: number) {
+    return api(`itineraries/hotspot/${planId}/${routeId}/${hotspotId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async getAvailableActivities(hotspotId: number) {
+    return api(`itineraries/activities/available/${hotspotId}`, {
+      method: "GET",
+    });
+  },
+
+  async addActivity(data: {
+    planId: number;
+    routeId: number;
+    routeHotspotId: number;
+    hotspotId: number;
+    activityId: number;
+    amount?: number;
+    startTime?: string;
+    endTime?: string;
+    duration?: string;
+  }) {
+    return api(`itineraries/activities/add`, {
+      method: "POST",
+      body: data,
+    });
+  },
+
+  async deleteActivity(planId: number, routeId: number, activityId: number) {
+    return api(`itineraries/activities/${planId}/${routeId}/${activityId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async getAvailableHotspots(locationId: number) {
+    return api(`itineraries/hotspots/available/${locationId}`, {
+      method: "GET",
+    });
+  },
+
+  async addHotspot(planId: number, routeId: number, hotspotId: number) {
+    return api("itineraries/hotspots/add", {
+      method: "POST",
+      body: { planId, routeId, hotspotId },
+    });
+  },
+
+  async getAvailableHotels(routeId: number) {
+    return api(`itineraries/hotels/available/${routeId}`, {
+      method: "GET",
+    });
+  },
+
+  async selectHotel(
+    planId: number,
+    routeId: number,
+    hotelId: number,
+    roomTypeId: number,
+    mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean }
+  ) {
+    return api("itineraries/hotels/select", {
+      method: "POST",
+      body: { planId, routeId, hotelId, roomTypeId, mealPlan },
+    });
+  },
+
+  async selectVehicleVendor(
+    planId: number,
+    vehicleTypeId: number,
+    vendorEligibleId: number
+  ) {
+    return api("itineraries/vehicles/select-vendor", {
+      method: "POST",
+      body: { planId, vehicleTypeId, vendorEligibleId },
+    });
+  },
+
+  async getCustomerInfoForm(planId: number) {
+    return api(`itineraries/customer-info/${planId}`, {
+      method: "GET",
+    });
+  },
+
+  async checkWalletBalance(agentId: number) {
+    return api(`itineraries/wallet-balance/${agentId}`, {
+      method: "GET",
+    });
+  },
+
+  async confirmQuotation(data: {
+    itinerary_plan_ID: number;
+    agent: number;
+    primary_guest_salutation: string;
+    primary_guest_name: string;
+    primary_guest_contact_no: string;
+    primary_guest_age: string;
+    primary_guest_alternative_contact_no?: string;
+    primary_guest_email_id?: string;
+    adult_name?: string[];
+    adult_age?: string[];
+    arrival_date_time: string;
+    arrival_place: string;
+    arrival_flight_details?: string;
+    departure_date_time: string;
+    departure_place: string;
+    departure_flight_details?: string;
+    price_confirmation_type: string;
+    hotel_group_type?: string;
+  }) {
+    return api("itineraries/confirm-quotation", {
+      method: "POST",
+      body: data,
+    });
+  },
+
+  async getConfirmedItineraries(params: {
+    draw?: number;
+    start?: number;
+    length?: number;
+    start_date?: string;
+    end_date?: string;
+    source_location?: string;
+    destination_location?: string;
+    agent_id?: number;
+    staff_id?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return api(`itineraries/confirmed?${queryParams.toString()}`, {
+      method: "GET",
+    });
+  },
+
+  async getConfirmedAgents() {
+    return api("itineraries/confirmed/agents", {
+      method: "GET",
+    });
+  },
+
+  async getConfirmedLocations() {
+    return api("itineraries/confirmed/locations", {
+      method: "GET",
+    });
+  },
+
+  async getLatestAgents() {
+    return api("itineraries/latest/agents", {
+      method: "GET",
+    });
+  },
+
+  async getLatestLocations() {
+    return api("itineraries/latest/locations", {
+      method: "GET",
+    });
+  },
 
 };

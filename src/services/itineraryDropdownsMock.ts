@@ -216,7 +216,6 @@ export async function fetchViaRouteForm(args: {
   next: string;
   date?: string;
   itineraryPlanId?: number | null;
-  itinerarySessionId?: string;
 }): Promise<ViaRouteFormResult> {
   const params = new URLSearchParams();
 
@@ -236,10 +235,7 @@ export async function fetchViaRouteForm(args: {
     params.set("itinerary_route_date", args.date);
   }
 
-  if (args.itinerarySessionId) {
-    params.set("itinerary_session_id", args.itinerarySessionId);
-  }
-
+  // Only send itinerary_plan_ID when editing an existing itinerary
   if (args.itineraryPlanId != null) {
     params.set("itinerary_plan_ID", String(args.itineraryPlanId));
   }
