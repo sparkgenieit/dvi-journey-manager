@@ -19,6 +19,7 @@ import { MainLayout } from "./layouts/MainLayout";
 import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
+import { ConfirmedItineraries } from "./pages/ConfirmedItineraries";
 import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";
 import NotFound from "./pages/NotFound";
@@ -140,6 +141,14 @@ const App = () => (
               element={
                 <MainLayout>
                   <LatestItinerary />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/confirmed-itinerary"
+              element={
+                <MainLayout>
+                  <ConfirmedItineraries />
                 </MainLayout>
               }
             />

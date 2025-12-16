@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer } from "lucide-react";
 import { ItineraryService } from "@/services/itinerary";
+import { api } from "@/lib/api";
 import { VehicleList } from "./VehicleList";
 import { HotelList } from "./HotelList";
 import { toast } from "sonner";
@@ -439,6 +440,31 @@ export const ItineraryDetails: React.FC = () => {
   const [clipboardType, setClipboardType] = useState<'recommended' | 'highlights' | 'para'>('recommended');
   const [selectedHotels, setSelectedHotels] = useState<{[key: string]: boolean}>({});
 
+  // Confirm Quotation modal state
+  const [confirmQuotationModal, setConfirmQuotationModal] = useState(false);
+  const [isConfirmingQuotation, setIsConfirmingQuotation] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<string>('');
+  const [agentInfo, setAgentInfo] = useState<{
+    quotation_no: string;
+    agent_name: string;
+    agent_id?: number;
+  } | null>(null);
+  const [guestDetails, setGuestDetails] = useState({
+    salutation: 'Mr',
+    name: '',
+    contactNo: '',
+    age: '',
+    alternativeContactNo: '',
+    emailId: '',
+    arrivalDateTime: '',
+    arrivalPlace: '',
+    arrivalFlightDetails: '',
+    departureDateTime: '',
+    departurePlace: '',
+    departureFlightDetails: '',
+  });
+  const [additionalAdults, setAdditionalAdults] = useState<Array<{ name: string; age: string }>>([]);
+
   // Refresh hotel data after hotel update
   const refreshHotelData = async () => {
     if (!quoteId) return;
@@ -855,6 +881,125 @@ export const ItineraryDetails: React.FC = () => {
     });
   };
 
+  const openConfirmQuotationModal = async () => {
+    if (!itinerary?.planId) {
+      toast.error('Plan ID not found');
+      return;
+    }
+
+    setConfirmQuotationModal(true);
+
+    try {
+      // Fetch customer info form data
+      const customerInfo = await ItineraryService.getCustomerInfoForm(itinerary.planId);
+      setAgentInfo({
+        quotation_no: customerInfo.quotation_no,
+        agent_name: customerInfo.agent_name,
+        agent_id: itinerary.planId, // We'll need to pass actual agent ID
+      });
+      setWalletBalance(customerInfo.wallet_balance);
+
+      // Check wallet balance and get plan details
+      const planDetails = await api(`itineraries/edit/${itinerary.planId}`, { method: 'GET' });
+      if (planDetails?.plan?.agent_ID) {
+        const walletData = await ItineraryService.checkWalletBalance(planDetails.plan.agent_ID);
+        setWalletBalance(walletData.formatted_balance);
+        setAgentInfo(prev => prev ? { ...prev, agent_id: planDetails.plan.agent_ID } : null);
+      }
+
+      // Prefill arrival and departure details from plan
+      if (planDetails?.plan) {
+        const plan = planDetails.plan;
+        const formatDateTime = (dateTime: string) => {
+          if (!dateTime) return '';
+          const date = new Date(dateTime);
+          const day = String(date.getDate()).padStart(2, '0');
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const year = date.getFullYear();
+          const hours = date.getHours();
+          const minutes = String(date.getMinutes()).padStart(2, '0');
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const displayHours = hours % 12 || 12;
+          return `${day}-${month}-${year} ${displayHours}:${minutes} ${ampm}`;
+        };
+
+        setGuestDetails(prev => ({
+          ...prev,
+          arrivalDateTime: plan.trip_start_date_and_time ? formatDateTime(plan.trip_start_date_and_time) : '',
+          arrivalPlace: plan.arrival_location || '',
+          departureDateTime: plan.trip_end_date_and_time ? formatDateTime(plan.trip_end_date_and_time) : '',
+          departurePlace: plan.departure_location || '',
+        }));
+      }
+    } catch (e: any) {
+      console.error('Failed to load customer info', e);
+      toast.error(e?.message || 'Failed to load customer information');
+    }
+  };
+
+  const handleConfirmQuotation = async () => {
+    if (!itinerary?.planId || !agentInfo?.agent_id) {
+      toast.error('Missing required information');
+      return;
+    }
+
+    // Validate required fields - only name and contact number are mandatory
+    if (!guestDetails.name || !guestDetails.contactNo) {
+      toast.error('Please fill in guest name and contact number');
+      return;
+    }
+
+    setIsConfirmingQuotation(true);
+
+    try {
+      await ItineraryService.confirmQuotation({
+        itinerary_plan_ID: itinerary.planId,
+        agent: agentInfo.agent_id,
+        primary_guest_salutation: guestDetails.salutation,
+        primary_guest_name: guestDetails.name,
+        primary_guest_contact_no: guestDetails.contactNo,
+        primary_guest_age: guestDetails.age,
+        primary_guest_alternative_contact_no: guestDetails.alternativeContactNo,
+        primary_guest_email_id: guestDetails.emailId,
+        adult_name: additionalAdults.map(a => a.name),
+        adult_age: additionalAdults.map(a => a.age),
+        arrival_date_time: guestDetails.arrivalDateTime,
+        arrival_place: guestDetails.arrivalPlace,
+        arrival_flight_details: guestDetails.arrivalFlightDetails,
+        departure_date_time: guestDetails.departureDateTime,
+        departure_place: guestDetails.departurePlace,
+        departure_flight_details: guestDetails.departureFlightDetails,
+        price_confirmation_type: 'old',
+        hotel_group_type: 'undefined',
+      });
+
+      toast.success('Quotation confirmed successfully!');
+      setConfirmQuotationModal(false);
+
+      // Reset form
+      setGuestDetails({
+        salutation: 'Mr',
+        name: '',
+        contactNo: '',
+        age: '',
+        alternativeContactNo: '',
+        emailId: '',
+        arrivalDateTime: '',
+        arrivalPlace: '',
+        arrivalFlightDetails: '',
+        departureDateTime: '',
+        departurePlace: '',
+        departureFlightDetails: '',
+      });
+      setAdditionalAdults([]);
+    } catch (e: any) {
+      console.error('Failed to confirm quotation', e);
+      toast.error(e?.message || 'Failed to confirm quotation');
+    } finally {
+      setIsConfirmingQuotation(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="w-full max-w-full flex justify-center items-center py-16">
@@ -929,7 +1074,7 @@ export const ItineraryDetails: React.FC = () => {
           </div>
 
           {/* Trip Details */}
-          <div className="flex flex-wrap gap-4 text-sm text-[#6c6c6c]">
+          <div className="flex flex-wrap gap-4 text-sm text-[#6c6c6c] mb-4">
             <span>Room Count: {itinerary.roomCount}</span>
             <span>Extra Bed: {itinerary.extraBed}</span>
             <span>Child with bed: {itinerary.childWithBed}</span>
@@ -939,6 +1084,17 @@ export const ItineraryDetails: React.FC = () => {
               <span>Child: {itinerary.children}</span>
               <span>Infants: {itinerary.infants}</span>
             </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <Button 
+              className="bg-[#28a745] hover:bg-[#218838]"
+              onClick={openConfirmQuotationModal}
+            >
+              <Bell className="mr-2 h-4 w-4" />
+              Confirm Quotation
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -1623,11 +1779,9 @@ export const ItineraryDetails: React.FC = () => {
         
         <Button 
           className="bg-[#d546ab] hover:bg-[#c03d9f]"
-          onClick={() => {
-            // TODO: Implement confirm quotation logic
-            toast.info("Confirm Quotation functionality coming soon");
-          }}
+          onClick={openConfirmQuotationModal}
         >
+          <Bell className="mr-2 h-4 w-4" />
           Confirm Quotation
         </Button>
 
@@ -2350,6 +2504,253 @@ export const ItineraryDetails: React.FC = () => {
               }}
             >
               Send Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Quotation Modal */}
+      <Dialog open={confirmQuotationModal} onOpenChange={setConfirmQuotationModal}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Guest Details</DialogTitle>
+            <DialogDescription>
+              Enter primary guest information and travel details
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Quotation Details */}
+            {agentInfo && (
+              <div className="bg-[#f8f9fa] p-4 rounded-lg space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6c6c6c]">Quotation No:</span>
+                  <span className="font-medium text-[#4a4260]">{agentInfo.quotation_no}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6c6c6c]">Agent Name:</span>
+                  <span className="font-medium text-[#4a4260]">{agentInfo.agent_name}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6c6c6c]">Wallet Balance:</span>
+                  <span className={`font-medium ${walletBalance.includes('-') ? 'text-red-600' : 'text-green-600'}`}>
+                    {walletBalance}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Primary Guest Details */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-[#4a4260]">Primary Guest Details - Adult 1</h3>
+              
+              <div className="grid grid-cols-4 gap-3">
+                <div className="col-span-1">
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Salutation
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    value={guestDetails.salutation}
+                    onChange={(e) => setGuestDetails({...guestDetails, salutation: e.target.value})}
+                  >
+                    <option value="Mr">Mr</option>
+                    <option value="Ms">Ms</option>
+                    <option value="Mrs">Mrs</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Name"
+                    value={guestDetails.name}
+                    onChange={(e) => setGuestDetails({...guestDetails, name: e.target.value})}
+                  />
+                </div>
+
+                <div className="col-span-1">
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Age
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Age"
+                    value={guestDetails.age}
+                    onChange={(e) => setGuestDetails({...guestDetails, age: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Primary Contact No. <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Contact No"
+                    value={guestDetails.contactNo}
+                    onChange={(e) => setGuestDetails({...guestDetails, contactNo: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Alternative Contact No.
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Alternative Contact No"
+                    value={guestDetails.alternativeContactNo}
+                    onChange={(e) => setGuestDetails({...guestDetails, alternativeContactNo: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                  Email ID
+                </label>
+                <input
+                  type="email"
+                  className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                  placeholder="Enter the Email ID"
+                  value={guestDetails.emailId}
+                  onChange={(e) => setGuestDetails({...guestDetails, emailId: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Arrival Details */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-[#4a4260]">Arrival Details</h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Date & Time
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="12-12-2025 9:00 AM"
+                    value={guestDetails.arrivalDateTime}
+                    onChange={(e) => setGuestDetails({...guestDetails, arrivalDateTime: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Arrival Place
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Chennai International Airport"
+                    value={guestDetails.arrivalPlace}
+                    onChange={(e) => setGuestDetails({...guestDetails, arrivalPlace: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                  Flight Details
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                  rows={2}
+                  placeholder="Enter the Flight Details"
+                  value={guestDetails.arrivalFlightDetails}
+                  onChange={(e) => setGuestDetails({...guestDetails, arrivalFlightDetails: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Departure Details */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-[#4a4260]">Departure Details</h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Date & Time
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="19-12-2025 4:00 PM"
+                    value={guestDetails.departureDateTime}
+                    onChange={(e) => setGuestDetails({...guestDetails, departureDateTime: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Departure Place
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Trivandrum, Domestic Airport"
+                    value={guestDetails.departurePlace}
+                    onChange={(e) => setGuestDetails({...guestDetails, departurePlace: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                  Flight Details
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                  rows={2}
+                  placeholder="Enter the Flight Details"
+                  value={guestDetails.departureFlightDetails}
+                  onChange={(e) => setGuestDetails({...guestDetails, departureFlightDetails: e.target.value})}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setConfirmQuotationModal(false);
+                setGuestDetails({
+                  salutation: 'Mr',
+                  name: '',
+                  contactNo: '',
+                  age: '',
+                  alternativeContactNo: '',
+                  emailId: '',
+                  arrivalDateTime: '',
+                  arrivalPlace: '',
+                  arrivalFlightDetails: '',
+                  departureDateTime: '',
+                  departurePlace: '',
+                  departureFlightDetails: '',
+                });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#8b43d1] hover:bg-[#7c37c1]"
+              onClick={handleConfirmQuotation}
+              disabled={isConfirmingQuotation}
+            >
+              {isConfirmingQuotation ? 'Submitting...' : 'Submit'}
             </Button>
           </DialogFooter>
         </DialogContent>

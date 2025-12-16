@@ -3,10 +3,13 @@ import { Card } from "@/components/ui/card";
 import { Carousel, CarouselContent, CarouselItem, CarouselApi } from "@/components/ui/carousel";
 import Autoplay from "embla-carousel-autoplay";
 import { useState, useEffect } from "react";
+import { DashboardService, DashboardStats } from "@/services/dashboard";
 
 export default function Dashboard() {
   const [api, setApi] = useState<CarouselApi>();
   const [current, setCurrent] = useState(0);
+  const [dashboardData, setDashboardData] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!api) return;
@@ -17,6 +20,38 @@ export default function Dashboard() {
       setCurrent(api.selectedScrollSnap());
     });
   }, [api]);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setLoading(true);
+        const data = await DashboardService.getStats();
+        setDashboardData(data);
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center">
+        <p className="text-muted-foreground">Loading dashboard...</p>
+      </div>
+    );
+  }
+
+  if (!dashboardData) {
+    return (
+      <div className="p-8 flex items-center justify-center">
+        <p className="text-muted-foreground">Failed to load dashboard data</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 space-y-6">
@@ -40,7 +75,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Agents</p>
-              <p className="text-3xl font-bold text-purple-600">263</p>
+              <p className="text-3xl font-bold text-purple-600">{dashboardData.stats.totalAgents}</p>
             </div>
           </div>
         </Card>
@@ -53,7 +88,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Driver</p>
-              <p className="text-3xl font-bold text-blue-600">122</p>
+              <p className="text-3xl font-bold text-blue-600">{dashboardData.stats.totalDrivers}</p>
             </div>
           </div>
         </Card>
@@ -66,7 +101,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Guide</p>
-              <p className="text-3xl font-bold text-orange-600">1</p>
+              <p className="text-3xl font-bold text-orange-600">{dashboardData.stats.totalGuides}</p>
             </div>
           </div>
         </Card>
@@ -79,7 +114,7 @@ export default function Dashboard() {
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">Last Month Profit</p>
             <p className="text-xs text-muted-foreground">October 2025</p>
-            <p className="text-3xl font-bold">₹ 497,538.00</p>
+            <p className="text-3xl font-bold">₹ {dashboardData.profit.lastMonth.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
         </Card>
 
@@ -89,10 +124,14 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground">Current Month Profit</p>
             <p className="text-xs text-muted-foreground">November 2025</p>
             <div className="flex items-baseline gap-3">
-              <p className="text-3xl font-bold">₹ 151,543.00</p>
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded">
+              <p className="text-3xl font-bold">₹ {dashboardData.profit.currentMonth.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${
+                dashboardData.profit.percentageChange >= 0 
+                  ? 'text-green-600 bg-green-50' 
+                  : 'text-red-600 bg-red-50'
+              }`}>
                 <TrendingDown className="h-3 w-3" />
-                69.54%
+                {Math.abs(dashboardData.profit.percentageChange).toFixed(2)}%
               </span>
             </div>
           </div>
@@ -105,7 +144,7 @@ export default function Dashboard() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-4xl font-bold mb-1">28521</p>
+              <p className="text-4xl font-bold mb-1">{dashboardData.stats.totalItineraries}</p>
               <p className="text-sm text-muted-foreground">Total Itineraries</p>
             </div>
             <div className="text-6xl">🧳</div>
@@ -116,7 +155,7 @@ export default function Dashboard() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-2xl font-bold mb-1">₹ 23,783,241.00</p>
+              <p className="text-2xl font-bold mb-1">₹ {dashboardData.stats.totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
             </div>
             <div className="text-6xl">💰</div>
@@ -163,19 +202,19 @@ export default function Dashboard() {
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">287</p>
+                      <p className="text-2xl font-bold">{dashboardData.vehicles.total}</p>
                       <p className="text-xs text-white/90">Total Vehicles</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">15</p>
+                      <p className="text-2xl font-bold">{dashboardData.vehicles.onRoute}</p>
                       <p className="text-xs text-white/90">On Route Vehicles</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">273</p>
+                      <p className="text-2xl font-bold">{dashboardData.vehicles.available}</p>
                       <p className="text-xs text-white/90">Available Vehicles</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">15</p>
+                      <p className="text-2xl font-bold">{dashboardData.vehicles.upcoming}</p>
                       <p className="text-xs text-white/90">Upcoming Vehicles</p>
                     </div>
                   </div>
@@ -196,15 +235,15 @@ export default function Dashboard() {
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">18</p>
+                      <p className="text-2xl font-bold">{dashboardData.vendors.total}</p>
                       <p className="text-xs text-white/90">Total Vendors</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">27</p>
+                      <p className="text-2xl font-bold">{dashboardData.vendors.branches}</p>
                       <p className="text-xs text-white/90">Total Branches</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">0</p>
+                      <p className="text-2xl font-bold">{dashboardData.vendors.inactive}</p>
                       <p className="text-xs text-white/90">In Active Vendors</p>
                     </div>
                   </div>
@@ -225,19 +264,19 @@ export default function Dashboard() {
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">122</p>
+                      <p className="text-2xl font-bold">{dashboardData.drivers.active}</p>
                       <p className="text-xs text-white/90">Active Drivers</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">15</p>
+                      <p className="text-2xl font-bold">{dashboardData.drivers.onRoute}</p>
                       <p className="text-xs text-white/90">On Route Drivers</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">14</p>
+                      <p className="text-2xl font-bold">{dashboardData.drivers.inactive}</p>
                       <p className="text-xs text-white/90">In-active Drivers</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">108</p>
+                      <p className="text-2xl font-bold">{dashboardData.drivers.available}</p>
                       <p className="text-xs text-white/90">Available Drivers</p>
                     </div>
                   </div>
@@ -258,19 +297,19 @@ export default function Dashboard() {
                   
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">584</p>
+                      <p className="text-2xl font-bold">{dashboardData.hotels.total}</p>
                       <p className="text-xs text-white/90">Hotel Count</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">1997</p>
+                      <p className="text-2xl font-bold">{dashboardData.hotels.rooms}</p>
                       <p className="text-xs text-white/90">Room Count</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">964</p>
+                      <p className="text-2xl font-bold">{dashboardData.hotels.amenities}</p>
                       <p className="text-xs text-white/90">Amenities Count</p>
                     </div>
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3">
-                      <p className="text-2xl font-bold">193</p>
+                      <p className="text-2xl font-bold">{dashboardData.hotels.bookings}</p>
                       <p className="text-xs text-white/90">Total Bookings</p>
                     </div>
                   </div>
@@ -288,7 +327,7 @@ export default function Dashboard() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-4xl font-bold mb-1">714</p>
+              <p className="text-4xl font-bold mb-1">{dashboardData.stats.confirmedBookings}</p>
               <p className="text-sm text-muted-foreground">Total Confirm Bookings</p>
             </div>
             <div className="text-6xl">📅</div>
@@ -299,7 +338,7 @@ export default function Dashboard() {
         <Card className="p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-4xl font-bold mb-1">20</p>
+              <p className="text-4xl font-bold mb-1">{dashboardData.stats.cancelledBookings}</p>
               <p className="text-sm text-muted-foreground">Cancelled Booking</p>
             </div>
             <div className="text-6xl">📆</div>
@@ -320,20 +359,19 @@ export default function Dashboard() {
             />
           </div>
           <div className="space-y-3">
-            <div className="flex items-center gap-4 p-4 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors cursor-pointer">
-              <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-primary">DVI10202520</p>
-                <p className="text-sm text-muted-foreground">Arrival</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 p-4 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors cursor-pointer">
-              <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-primary">DVI10202519</p>
-                <p className="text-sm text-muted-foreground">Arrival</p>
-              </div>
-            </div>
+            {dashboardData.dailyMoment.length > 0 ? (
+              dashboardData.dailyMoment.map((moment, index) => (
+                <div key={index} className="flex items-center gap-4 p-4 bg-secondary rounded-lg hover:bg-secondary/80 transition-colors cursor-pointer">
+                  <Truck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-primary">{moment.quoteId}</p>
+                    <p className="text-sm text-muted-foreground">{moment.location}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">No itineraries for today</p>
+            )}
           </div>
         </Card>
 
@@ -361,19 +399,23 @@ export default function Dashboard() {
             </button>
           </div>
 
-          <div className="flex items-center gap-4 p-4 bg-secondary rounded-lg">
-            <div className="h-12 w-12 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-medium">M</span>
+          {dashboardData.starPerformer ? (
+            <div className="flex items-center gap-4 p-4 bg-secondary rounded-lg">
+              <div className="h-12 w-12 rounded-full bg-gradient-to-r from-primary to-pink-500 flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-medium">{dashboardData.starPerformer.name.charAt(0).toUpperCase()}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium">{dashboardData.starPerformer.name}</p>
+                <p className="text-sm text-muted-foreground">{dashboardData.starPerformer.phone}</p>
+              </div>
+              <div className="flex items-center gap-1 text-green-600 font-medium">
+                <span className="text-lg">▲</span>
+                <span>{dashboardData.starPerformer.performance}%</span>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium">MMT</p>
-              <p className="text-sm text-muted-foreground">7708322045</p>
-            </div>
-            <div className="flex items-center gap-1 text-green-600 font-medium">
-              <span className="text-lg">▲</span>
-              <span>60%</span>
-            </div>
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">No performer data available</p>
+          )}
         </Card>
       </div>
     </div>

@@ -189,4 +189,66 @@ export const ItineraryService = {
     });
   },
 
+  async getCustomerInfoForm(planId: number) {
+    return api(`itineraries/customer-info/${planId}`, {
+      method: "GET",
+    });
+  },
+
+  async checkWalletBalance(agentId: number) {
+    return api(`itineraries/wallet-balance/${agentId}`, {
+      method: "GET",
+    });
+  },
+
+  async confirmQuotation(data: {
+    itinerary_plan_ID: number;
+    agent: number;
+    primary_guest_salutation: string;
+    primary_guest_name: string;
+    primary_guest_contact_no: string;
+    primary_guest_age: string;
+    primary_guest_alternative_contact_no?: string;
+    primary_guest_email_id?: string;
+    adult_name?: string[];
+    adult_age?: string[];
+    arrival_date_time: string;
+    arrival_place: string;
+    arrival_flight_details?: string;
+    departure_date_time: string;
+    departure_place: string;
+    departure_flight_details?: string;
+    price_confirmation_type: string;
+    hotel_group_type?: string;
+  }) {
+    return api("itineraries/confirm-quotation", {
+      method: "POST",
+      body: data,
+    });
+  },
+
+  async getConfirmedItineraries(params: {
+    draw?: number;
+    start?: number;
+    length?: number;
+    start_date?: string;
+    end_date?: string;
+    source_location?: string;
+    destination_location?: string;
+    agent_id?: number;
+    staff_id?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return api(`itineraries/confirmed?${queryParams.toString()}`, {
+      method: "GET",
+    });
+  },
+
 };
