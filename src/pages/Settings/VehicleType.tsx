@@ -1,4 +1,4 @@
-// FILE: src/pages/Settings/Cities.tsx
+// FILE: src/pages/Settings/VehicleType.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2, Copy as CopyIcon, FileSpreadsheet, FileText } from "lucide-react";
@@ -14,25 +14,28 @@ import {
 } from "@/components/ui/select";
 
 import { DeleteModal } from "@/components/hotspot/DeleteModal";
-import { CitiesAPI as citiesService, City, State } from "@/services/citiesService";
-import { CitiesModal, CityFormValues } from "./CitiesModal";
+import {
+  vehicleTypeService,
+  VehicleType,
+  VehicleTypeUpsertInput,
+} from "@/services/vehicleTypeService";
+import { VehicleTypeModal, VehicleTypeFormValues } from "./VehicleTypeModal";
 
-// ----- export helpers (same style as GstSettings) -----
-function to2D(rows: City[]) {
-  const headers = ["S.NO", "STATE", "CITY"];
+// ----- export helpers -----
+function to2D(rows: VehicleType[]) {
+  const headers = ["S.NO", "VEHICLE TYPE TITLE", "OCCUPANCY", "STATUS"];
   const data = rows.map((r, i) => [
     String(i + 1),
-    r.state?.state_name || "N/A",
-    r.city_name || "",
+    r.title,
+    String(r.occupancy),
+    r.status ? "Active" : "Inactive",
   ]);
   return { headers, data };
 }
-
 function toCSV({ headers, data }: { headers: string[]; data: string[][] }) {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   return [headers.map(esc).join(","), ...data.map(row => row.map(esc).join(","))].join("\n");
 }
-
 function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] }) {
   const th = headers
     .map(h => `<th style="background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">${h}</th>`)
@@ -40,16 +43,14 @@ function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] })
   const trs = data
     .map(row => `<tr>${row.map(v => `<td style="border:1px solid #e5e7eb;padding:6px 8px;">${v}</td>`).join("")}</tr>`)
     .join("");
-
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Cities</title></head>
+<html><head><meta charset="utf-8"><title>Vehicle Types</title></head>
 <body>
 <table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:12px;">
 <thead><tr>${th}</tr></thead><tbody>${trs}</tbody>
 </table>
 </body></html>`;
 }
-
 function downloadBlob(name: string, mime: string, content: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -62,20 +63,36 @@ function downloadBlob(name: string, mime: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export function CitiesPage() {
-  const [rows, setRows] = useState<City[]>([]);
-  const [states, setStates] = useState<State[]>([]);
-  const [filtered, setFiltered] = useState<City[]>([]);
-  const [search, setSearch] = useState("");
+function StatusToggle(props: { value: boolean; onChange: (v: boolean) => void }) {
+  const { value, onChange } = props;
+  return (
+    <button
+      type="button"
+      aria-pressed={value}
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+        ${value ? "bg-violet-600" : "bg-slate-300"}`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white transition
+          ${value ? "translate-x-5" : "translate-x-1"}`}
+      />
+    </button>
+  );
+}
 
-  const [pageSize, setPageSize] = useState(10); // screenshot shows 10 default
+export function VehicleTypePage() {
+  const [rows, setRows] = useState<VehicleType[]>([]);
+  const [filtered, setFiltered] = useState<VehicleType[]>([]);
+  const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | number | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editing, setEditing] = useState<City | null>(null);
+  const [editing, setEditing] = useState<VehicleType | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -83,27 +100,21 @@ export function CitiesPage() {
     const q = search.toLowerCase().trim();
     const next = !q
       ? rows
-      : rows.filter(r => {
-          const city = (r.city_name || "").toLowerCase();
-          const st = (r.state?.state_name || "").toLowerCase();
-          return city.includes(q) || st.includes(q);
-        });
-
+      : rows.filter(r =>
+          r.title.toLowerCase().includes(q) ||
+          String(r.occupancy).includes(q)
+        );
     setFiltered(next);
     setCurrentPage(1);
   }, [search, rows]);
 
   async function load() {
     try {
-      const [citiesData, statesData] = await Promise.all([
-        citiesService.getCities(),
-        citiesService.getStates(101),
-      ]);
-      setRows(citiesData);
-      setFiltered(citiesData);
-      setStates(statesData);
+      const data = await vehicleTypeService.list();
+      setRows(data);
+      setFiltered(data);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to load cities");
+      toast.error(e?.message || "Failed to load vehicle types");
     }
   }
 
@@ -111,30 +122,27 @@ export function CitiesPage() {
     () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filtered, currentPage, pageSize]
   );
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
   const canExport = filtered.length > 0;
   const dataset = useMemo(() => to2D(filtered), [filtered]);
 
   const onCopy = async () => {
     if (!canExport) return;
-    const csv = toCSV(dataset);
     try {
-      await navigator.clipboard.writeText(csv);
+      await navigator.clipboard.writeText(toCSV(dataset));
       toast.success("Copied table (filtered) to clipboard as CSV");
     } catch {
       toast.error("Copy failed");
     }
   };
-
   const onCSV = () => {
     if (!canExport) return;
-    downloadBlob("cities.csv", "text/csv;charset=utf-8;", toCSV(dataset));
+    downloadBlob("vehicle-types.csv", "text/csv;charset=utf-8;", toCSV(dataset));
   };
-
   const onExcel = () => {
     if (!canExport) return;
-    downloadBlob("cities.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
+    downloadBlob("vehicle-types.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
   };
 
   const openCreate = () => {
@@ -143,7 +151,7 @@ export function CitiesPage() {
     setModalOpen(true);
   };
 
-  const openEdit = (row: City) => {
+  const openEdit = (row: VehicleType) => {
     setModalMode("edit");
     setEditing(row);
     setModalOpen(true);
@@ -152,30 +160,42 @@ export function CitiesPage() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await citiesService.deleteCity(deleteId);
-      toast.success("City deleted");
+      await vehicleTypeService.remove(deleteId);
+      toast.success("Vehicle type deleted");
       setDeleteId(null);
       await load();
     } catch (e: any) {
-      toast.error(e?.message || "Failed to delete city");
+      toast.error(e?.message || "Failed to delete vehicle type");
     }
   };
 
-  const handleModalSubmit = async (v: CityFormValues) => {
+  const handleToggleStatus = async (row: VehicleType, nextStatus: boolean) => {
+    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: nextStatus } : r)));
+
+    try {
+      await vehicleTypeService.update(row.id, { status: nextStatus });
+      toast.success("Status updated");
+      await load();
+    } catch (e: any) {
+      setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: row.status } : r)));
+      toast.error(e?.message || "Failed to update status");
+    }
+  };
+
+  const handleModalSubmit = async (v: VehicleTypeFormValues) => {
+    const payload: VehicleTypeUpsertInput = {
+      title: v.title.trim(),
+      occupancy: Number(v.occupancy),
+    };
+
     try {
       if (modalMode === "create") {
-        await citiesService.createCity({
-          city_name: v.city_name.trim(),
-          state_id: Number(v.state_id),
-        });
-        toast.success("City created");
+        await vehicleTypeService.create(payload);
+        toast.success("Vehicle type created");
       } else {
         if (!editing) throw new Error("Missing record to update");
-        await citiesService.updateCity(editing.city_id, {
-          city_name: v.city_name.trim(),
-          state_id: Number(v.state_id),
-        });
-        toast.success("City updated");
+        await vehicleTypeService.update(editing.id, payload);
+        toast.success("Vehicle type updated");
       }
 
       setModalOpen(false);
@@ -190,10 +210,7 @@ export function CitiesPage() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Cities</h1>
-          <p className="text-sm text-muted-foreground">Manage cities and locations</p>
-        </div>
+        <h1 className="text-2xl font-bold text-primary">List of Vehicle Type</h1>
 
         <button
           type="button"
@@ -202,12 +219,12 @@ export function CitiesPage() {
                      transition-colors"
           onClick={openCreate}
         >
-          + Add City
+          + Add Vehicle Type
         </button>
       </div>
 
       <div className="bg-white rounded-lg border p-4 space-y-4">
-        {/* Top toolbar */}
+        {/* Toolbar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm">Show</span>
@@ -273,14 +290,15 @@ export function CitiesPage() {
             <TableRow>
               <TableHead>S.NO</TableHead>
               <TableHead>ACTION</TableHead>
-              <TableHead>STATE</TableHead>
-              <TableHead>CITY</TableHead>
+              <TableHead>VEHICLE TYPE TITLE</TableHead>
+              <TableHead>OCCUPANCY</TableHead>
+              <TableHead>STATUS</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {paginated.map((r, idx) => (
-              <TableRow key={String(r.city_id)}>
+              <TableRow key={String(r.id)}>
                 <TableCell>{(currentPage - 1) * pageSize + idx + 1}</TableCell>
 
                 <TableCell>
@@ -288,26 +306,25 @@ export function CitiesPage() {
                     <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                       <Pencil className="h-4 w-4 text-violet-600" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(r.city_id)}>
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(r.id)}>
                       <Trash2 className="h-4 w-4 text-red-600" />
                     </Button>
                   </div>
                 </TableCell>
 
-                <TableCell className="text-slate-600 font-medium">
-                  {r.state?.state_name || "N/A"}
-                </TableCell>
+                <TableCell className="text-slate-600 font-medium">{r.title}</TableCell>
+                <TableCell className="text-slate-600">{r.occupancy}</TableCell>
 
-                <TableCell className="text-slate-600 font-medium">
-                  {r.city_name || "--"}
+                <TableCell>
+                  <StatusToggle value={r.status} onChange={(v) => handleToggleStatus(r, v)} />
                 </TableCell>
               </TableRow>
             ))}
 
             {paginated.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-8 text-slate-500">
-                  No cities found
+                <TableCell colSpan={5} className="text-center py-8 text-slate-500">
+                  No vehicle types found
                 </TableCell>
               </TableRow>
             )}
@@ -322,25 +339,19 @@ export function CitiesPage() {
           </div>
 
           <div className="flex gap-1">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-            >
+            <Button size="sm" variant="outline" disabled={currentPage === 1} onClick={() => setCurrentPage(currentPage - 1)}>
               Previous
             </Button>
 
-            <Button size="sm" variant="default">
-              {currentPage}
-            </Button>
+            {/* matches screenshot: show current + next page if exists */}
+            <Button size="sm" variant="default">{currentPage}</Button>
+            {currentPage + 1 <= totalPages && (
+              <Button size="sm" variant="outline" onClick={() => setCurrentPage(currentPage + 1)}>
+                {currentPage + 1}
+              </Button>
+            )}
 
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-            >
+            <Button size="sm" variant="outline" disabled={currentPage === totalPages} onClick={() => setCurrentPage(currentPage + 1)}>
               Next
             </Button>
           </div>
@@ -348,16 +359,12 @@ export function CitiesPage() {
       </div>
 
       {/* Modals */}
-      <CitiesModal
+      <VehicleTypeModal
         open={modalOpen}
         mode={modalMode}
-        states={states}
         initial={
           editing
-            ? {
-                city_name: editing.city_name,
-                state_id: String(editing.state_id),
-              }
+            ? { title: editing.title, occupancy: String(editing.occupancy) }
             : undefined
         }
         onClose={() => {
@@ -367,11 +374,7 @@ export function CitiesPage() {
         onSubmit={handleModalSubmit}
       />
 
-      <DeleteModal
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
-      />
+      <DeleteModal open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} />
     </div>
   );
 }

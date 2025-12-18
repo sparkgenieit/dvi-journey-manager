@@ -1,4 +1,4 @@
-// FILE: src/pages/Settings/Cities.tsx
+// FILE: src/pages/Settings/GstSettings/GstSettings.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2, Copy as CopyIcon, FileSpreadsheet, FileText } from "lucide-react";
@@ -14,25 +14,28 @@ import {
 } from "@/components/ui/select";
 
 import { DeleteModal } from "@/components/hotspot/DeleteModal";
-import { CitiesAPI as citiesService, City, State } from "@/services/citiesService";
-import { CitiesModal, CityFormValues } from "./CitiesModal";
+import { GstSettingsAPI as gstSettingsService } from "@/services/gstSettingsService";
 
-// ----- export helpers (same style as GstSettings) -----
-function to2D(rows: City[]) {
-  const headers = ["S.NO", "STATE", "CITY"];
+import { GstSettingsModal, GstFormValues } from "./GstSettingsModal";
+
+// ----- export helpers (same style as HotspotList) -----
+function to2D(rows: GstSetting[]) {
+  const headers = ["S.NO", "GST TITLE", "GST", "CGST", "SGST", "IGST", "STATUS"];
   const data = rows.map((r, i) => [
     String(i + 1),
-    r.state?.state_name || "N/A",
-    r.city_name || "",
+    r.gstTitle,
+    String(r.gst),
+    String(r.cgst),
+    String(r.sgst),
+    String(r.igst),
+    r.status ? "Active" : "Inactive",
   ]);
   return { headers, data };
 }
-
 function toCSV({ headers, data }: { headers: string[]; data: string[][] }) {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   return [headers.map(esc).join(","), ...data.map(row => row.map(esc).join(","))].join("\n");
 }
-
 function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] }) {
   const th = headers
     .map(h => `<th style="background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">${h}</th>`)
@@ -40,16 +43,14 @@ function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] })
   const trs = data
     .map(row => `<tr>${row.map(v => `<td style="border:1px solid #e5e7eb;padding:6px 8px;">${v}</td>`).join("")}</tr>`)
     .join("");
-
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Cities</title></head>
+<html><head><meta charset="utf-8"><title>GST Settings</title></head>
 <body>
 <table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:12px;">
 <thead><tr>${th}</tr></thead><tbody>${trs}</tbody>
 </table>
 </body></html>`;
 }
-
 function downloadBlob(name: string, mime: string, content: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -62,20 +63,36 @@ function downloadBlob(name: string, mime: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export function CitiesPage() {
-  const [rows, setRows] = useState<City[]>([]);
-  const [states, setStates] = useState<State[]>([]);
-  const [filtered, setFiltered] = useState<City[]>([]);
-  const [search, setSearch] = useState("");
+function StatusToggle(props: { value: boolean; onChange: (v: boolean) => void }) {
+  const { value, onChange } = props;
+  return (
+    <button
+      type="button"
+      aria-pressed={value}
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+        ${value ? "bg-violet-600" : "bg-slate-300"}`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white transition
+          ${value ? "translate-x-5" : "translate-x-1"}`}
+      />
+    </button>
+  );
+}
 
+export function GstSettingsPage() {
+  const [rows, setRows] = useState<GstSetting[]>([]);
+  const [filtered, setFiltered] = useState<GstSetting[]>([]);
+  const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(10); // screenshot shows 10 default
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [deleteId, setDeleteId] = useState<string | number | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editing, setEditing] = useState<City | null>(null);
+  const [editing, setEditing] = useState<GstSetting | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -83,27 +100,24 @@ export function CitiesPage() {
     const q = search.toLowerCase().trim();
     const next = !q
       ? rows
-      : rows.filter(r => {
-          const city = (r.city_name || "").toLowerCase();
-          const st = (r.state?.state_name || "").toLowerCase();
-          return city.includes(q) || st.includes(q);
-        });
-
+      : rows.filter(r =>
+          r.gstTitle.toLowerCase().includes(q) ||
+          String(r.gst).includes(q) ||
+          String(r.cgst).includes(q) ||
+          String(r.sgst).includes(q) ||
+          String(r.igst).includes(q)
+        );
     setFiltered(next);
     setCurrentPage(1);
   }, [search, rows]);
 
   async function load() {
     try {
-      const [citiesData, statesData] = await Promise.all([
-        citiesService.getCities(),
-        citiesService.getStates(101),
-      ]);
-      setRows(citiesData);
-      setFiltered(citiesData);
-      setStates(statesData);
+      const data = await gstSettingsService.list();
+      setRows(data);
+      setFiltered(data);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to load cities");
+      toast.error(e?.message || "Failed to load GST settings");
     }
   }
 
@@ -111,8 +125,8 @@ export function CitiesPage() {
     () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filtered, currentPage, pageSize]
   );
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
   const canExport = filtered.length > 0;
   const dataset = useMemo(() => to2D(filtered), [filtered]);
 
@@ -126,15 +140,13 @@ export function CitiesPage() {
       toast.error("Copy failed");
     }
   };
-
   const onCSV = () => {
     if (!canExport) return;
-    downloadBlob("cities.csv", "text/csv;charset=utf-8;", toCSV(dataset));
+    downloadBlob("gst-settings.csv", "text/csv;charset=utf-8;", toCSV(dataset));
   };
-
   const onExcel = () => {
     if (!canExport) return;
-    downloadBlob("cities.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
+    downloadBlob("gst-settings.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
   };
 
   const openCreate = () => {
@@ -143,7 +155,7 @@ export function CitiesPage() {
     setModalOpen(true);
   };
 
-  const openEdit = (row: City) => {
+  const openEdit = (row: GstSetting) => {
     setModalMode("edit");
     setEditing(row);
     setModalOpen(true);
@@ -152,30 +164,47 @@ export function CitiesPage() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await citiesService.deleteCity(deleteId);
-      toast.success("City deleted");
+      await gstSettingsService.remove(deleteId);
+      toast.success("GST setting deleted");
       setDeleteId(null);
       await load();
     } catch (e: any) {
-      toast.error(e?.message || "Failed to delete city");
+      toast.error(e?.message || "Failed to delete GST setting");
     }
   };
 
-  const handleModalSubmit = async (v: CityFormValues) => {
+  const handleToggleStatus = async (row: GstSetting, nextStatus: boolean) => {
+    // optimistic UI
+    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: nextStatus } : r)));
+
+    try {
+      await gstSettingsService.update(row.id, { status: nextStatus });
+      toast.success("Status updated");
+      await load();
+    } catch (e: any) {
+      // rollback
+      setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: row.status } : r)));
+      toast.error(e?.message || "Failed to update status");
+    }
+  };
+
+  const handleModalSubmit = async (v: GstFormValues) => {
+    const payload: GstSettingUpsertInput = {
+      gstTitle: v.gstTitle.trim(),
+      gst: Number(v.gst),
+      cgst: Number(v.cgst),
+      sgst: Number(v.sgst),
+      igst: Number(v.igst),
+    };
+
     try {
       if (modalMode === "create") {
-        await citiesService.createCity({
-          city_name: v.city_name.trim(),
-          state_id: Number(v.state_id),
-        });
-        toast.success("City created");
+        await gstSettingsService.create(payload);
+        toast.success("GST setting created");
       } else {
         if (!editing) throw new Error("Missing record to update");
-        await citiesService.updateCity(editing.city_id, {
-          city_name: v.city_name.trim(),
-          state_id: Number(v.state_id),
-        });
-        toast.success("City updated");
+        await gstSettingsService.update(editing.id, payload);
+        toast.success("GST setting updated");
       }
 
       setModalOpen(false);
@@ -190,10 +219,7 @@ export function CitiesPage() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-primary">Cities</h1>
-          <p className="text-sm text-muted-foreground">Manage cities and locations</p>
-        </div>
+        <h1 className="text-2xl font-bold text-primary">List of GST Settings</h1>
 
         <button
           type="button"
@@ -202,7 +228,7 @@ export function CitiesPage() {
                      transition-colors"
           onClick={openCreate}
         >
-          + Add City
+          + Add GST Settings
         </button>
       </div>
 
@@ -273,14 +299,14 @@ export function CitiesPage() {
             <TableRow>
               <TableHead>S.NO</TableHead>
               <TableHead>ACTION</TableHead>
-              <TableHead>STATE</TableHead>
-              <TableHead>CITY</TableHead>
+              <TableHead>GST TITLE</TableHead>
+              <TableHead>STATUS</TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
             {paginated.map((r, idx) => (
-              <TableRow key={String(r.city_id)}>
+              <TableRow key={String(r.id)}>
                 <TableCell>{(currentPage - 1) * pageSize + idx + 1}</TableCell>
 
                 <TableCell>
@@ -288,18 +314,18 @@ export function CitiesPage() {
                     <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                       <Pencil className="h-4 w-4 text-violet-600" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(r.city_id)}>
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(r.id)}>
                       <Trash2 className="h-4 w-4 text-red-600" />
                     </Button>
                   </div>
                 </TableCell>
 
                 <TableCell className="text-slate-600 font-medium">
-                  {r.state?.state_name || "N/A"}
+                  {r.gstTitle}
                 </TableCell>
 
-                <TableCell className="text-slate-600 font-medium">
-                  {r.city_name || "--"}
+                <TableCell>
+                  <StatusToggle value={r.status} onChange={(v) => handleToggleStatus(r, v)} />
                 </TableCell>
               </TableRow>
             ))}
@@ -307,7 +333,7 @@ export function CitiesPage() {
             {paginated.length === 0 && (
               <TableRow>
                 <TableCell colSpan={4} className="text-center py-8 text-slate-500">
-                  No cities found
+                  No GST settings found
                 </TableCell>
               </TableRow>
             )}
@@ -348,15 +374,17 @@ export function CitiesPage() {
       </div>
 
       {/* Modals */}
-      <CitiesModal
+      <GstSettingsModal
         open={modalOpen}
         mode={modalMode}
-        states={states}
         initial={
           editing
             ? {
-                city_name: editing.city_name,
-                state_id: String(editing.state_id),
+                gstTitle: editing.gstTitle,
+                gst: String(editing.gst),
+                cgst: String(editing.cgst),
+                sgst: String(editing.sgst),
+                igst: String(editing.igst),
               }
             : undefined
         }
