@@ -1,5 +1,11 @@
 // FILE: src/services/agentService.ts
 import { api } from "../lib/api";
+import type {
+  AgentStaff,
+  WalletTransaction,
+  AgentSubscription,
+  AgentConfig,
+} from "@/types/agent";
 
 /** ========= Frontend-facing types (used by your pages) ========= */
 export interface AgentListRow {
@@ -20,8 +26,8 @@ export interface Agent {
   lastName?: string | null;
   email: string;
   nationality: string; // pretty label from backend, read-only on UI
-  state: string;       // pretty label from backend, read-only on UI
-  city: string;        // pretty label from backend, read-only on UI
+  state: string; // pretty label from backend, read-only on UI
+  city: string; // pretty label from backend, read-only on UI
   mobileNumber: string;
   alternativeMobile?: string | null;
   gstin?: string | null;
@@ -88,11 +94,11 @@ type AgentSubscriptionsDTO = {
   data: Array<{
     id: number;
     subscription_title: string;
-    amount: string;
+    amount: string; // e.g. "₹1200.00"
     validity_start: string;
     validity_end: string;
     transaction_id: string;
-    payment_status: string;
+    payment_status: string; // "Paid" | "Pending" | "Failed" | "Free"
   }>;
   total?: number;
   page?: number;
@@ -129,7 +135,7 @@ const toAgentFromView = (v: AgentViewDTO): Agent => ({
 });
 
 /** Map an item from FULL list → table row */
-const toListRowFromFullItem = (v: AgentFullItem, idx?: number): AgentListRow => ({
+const toListRowFromFullItem = (v: AgentFullItem): AgentListRow => ({
   id: Number(v.agent_ID),
   name: [v.agent_name, v.agent_lastname].filter(Boolean).join(" ").trim(),
   email: v.agent_email_id ?? "",
@@ -141,7 +147,7 @@ const toListRowFromFullItem = (v: AgentFullItem, idx?: number): AgentListRow => 
   subscriptionType: (v.subscription_title ?? "").toString() || "—",
 });
 
-/** Concurrency helper kept unchanged */
+/** Concurrency helper */
 async function withConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -165,8 +171,7 @@ async function resolveSubscriptionTitle(agentId: number): Promise<string> {
 
   try {
     const subs = (await api(`/agents/${agentId}/subscriptions`)) as AgentSubscriptionsDTO;
-    const title =
-      subs?.data?.[0]?.subscription_title?.toString()?.trim() || "Free";
+    const title = subs?.data?.[0]?.subscription_title?.toString()?.trim() || "Free";
     subscriptionTitleCache.set(agentId, title);
     return title;
   } catch {
@@ -176,11 +181,39 @@ async function resolveSubscriptionTitle(agentId: number): Promise<string> {
   }
 }
 
+/** Safe number extractor from strings like "₹1,200.00" */
+function parseAmountToNumber(v: string | number | null | undefined): number {
+  if (typeof v === "number") return v;
+  if (!v) return 0;
+  const n = Number(String(v).replace(/[^\d.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Wallet history common mapper (server shape is not fixed yet) */
+function mapWalletRows(rows: any[] | undefined): WalletTransaction[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((r, i) => ({
+    id: Number(r.id ?? i + 1),
+    transactionDate:
+      r.transactionDate ??
+      r.createdOn ??
+      r.createdon ??
+      r.date ??
+      "", // keep string; UI displays as-is
+    transactionAmount: parseAmountToNumber(r.transactionAmount ?? r.amount ?? r.value ?? 0),
+    transactionType:
+      r.transactionType ??
+      r.type ??
+      (parseAmountToNumber(r.transactionAmount ?? r.amount ?? 0) >= 0 ? "Credit" : "Debit"),
+    remark: r.remark ?? r.remarks ?? r.note ?? "",
+  }));
+}
+
 /** ========= Public API consumed by your pages ========= */
 export const AgentAPI = {
   /**
    * Fetch list of agents.
-   * NEW: Prefer the FULL endpoint so your table gets all labels in one go.
+   * Prefer the FULL endpoint so your table gets all labels in one go.
    * Fallbacks:
    *  - legacy {data:[…]} (DataTables-like)
    *  - minimal [{id,name}] → enrich via /agents/:id
@@ -190,8 +223,10 @@ export const AgentAPI = {
     try {
       const full = (await api("/agents/full?limit=1000")) as AgentFullEnvelope | AgentFullItem[];
       const arr: AgentFullItem[] = Array.isArray(full)
-        ? full as AgentFullItem[]
-        : (Array.isArray((full as any)?.data) ? (full as any).data : []);
+        ? (full as AgentFullItem[])
+        : Array.isArray((full as any)?.data)
+        ? ((full as any).data as AgentFullItem[])
+        : [];
 
       if (arr.length && typeof arr[0] === "object" && "agent_ID" in arr[0]) {
         const mapped = arr.map(toListRowFromFullItem);
@@ -202,12 +237,10 @@ export const AgentAPI = {
           return { ...r, subscriptionType: await resolveSubscriptionTitle(r.id) };
         });
 
-        // Dedupe by id (safety)
         const byId = new Map<number, AgentListRow>();
         for (const r of fixed) byId.set(r.id, r);
         return Array.from(byId.values());
       }
-      // If FULL returned unexpected shape, fall through to legacy/minimal paths
     } catch {
       // ignore and try other shapes
     }
@@ -227,13 +260,12 @@ export const AgentAPI = {
         const enriched = await withConcurrency(minimal, 6, async (m) => {
           try {
             const view = (await api(`/agents/${m.id}`)) as AgentViewDTO;
-            const row = toListRowFromFullItem(view); // reuse same mapper
+            const row = toListRowFromFullItem(view);
             if (!row.subscriptionType || !row.subscriptionType.trim() || row.subscriptionType === "—") {
               row.subscriptionType = await resolveSubscriptionTitle(m.id);
             }
             return row;
           } catch {
-            // fallback minimal row
             return {
               id: m.id,
               name: m.name || "",
@@ -248,7 +280,6 @@ export const AgentAPI = {
           }
         });
 
-        // Dedupe
         const byId = new Map<number, AgentListRow>();
         for (const r of enriched) byId.set(r.id, r);
         return Array.from(byId.values());
@@ -257,7 +288,6 @@ export const AgentAPI = {
       // swallow and fall through
     }
 
-    // Unknown / empty
     return [];
   },
 
@@ -265,6 +295,132 @@ export const AgentAPI = {
   async get(id: number): Promise<Agent> {
     const res = (await api(`/agents/${id}`)) as AgentViewDTO;
     return toAgentFromView(res);
+  },
+
+  /** --------- NEW: Staff list for an agent ---------- */
+  async getStaff(opts: { agentId: number }): Promise<AgentStaff[]> {
+    const { agentId } = opts;
+
+    // Prefer RESTful nested route if present
+    try {
+      const resp = (await api(`/agents/${agentId}/staff`)) as any;
+      const rows: any[] = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
+      if (rows.length) {
+        return rows.map((r: any, i: number) => ({
+          id: Number(r.id ?? r.staff_ID ?? i + 1),
+          name:
+            r.name ??
+            [r.staff_name ?? r.first_name ?? "", r.staff_lastname ?? r.last_name ?? ""]
+              .join(" ")
+              .replace(/\s+/g, " ")
+              .trim(),
+          mobileNumber: r.mobile ?? r.staff_mobile ?? r.phone ?? "",
+          email: r.email ?? r.staff_email ?? "",
+          status: Number(r.status ?? r.deleted === 0 ? 1 : 0),
+        }));
+      }
+    } catch {
+      // fall through
+    }
+
+    // Fallback to query form if your server exposes it that way
+    try {
+      const resp = (await api(`/staff?agentId=${agentId}`)) as any;
+      const rows: any[] = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
+      return rows.map((r: any, i: number) => ({
+        id: Number(r.id ?? r.staff_ID ?? i + 1),
+        name:
+          r.name ??
+          [r.staff_name ?? r.first_name ?? "", r.staff_lastname ?? r.last_name ?? ""]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim(),
+        mobileNumber: r.mobile ?? r.staff_mobile ?? r.phone ?? "",
+        email: r.email ?? r.staff_email ?? "",
+        status: Number(r.status ?? r.deleted === 0 ? 1 : 0),
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** --------- NEW: Wallet (cash) history ---------- */
+  async getCashWalletHistory(agentId: number): Promise<WalletTransaction[]> {
+    try {
+      const resp = (await api(`/agents/${agentId}/wallet/cash`)) as any;
+      const rows = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
+      return mapWalletRows(rows);
+    } catch {
+      return [];
+    }
+  },
+
+  /** --------- NEW: Wallet (coupon) history ---------- */
+  async getCouponWalletHistory(agentId: number): Promise<WalletTransaction[]> {
+    try {
+      const resp = (await api(`/agents/${agentId}/wallet/coupon`)) as any;
+      const rows = Array.isArray(resp?.data) ? resp.data : Array.isArray(resp) ? resp : [];
+      return mapWalletRows(rows);
+    } catch {
+      return [];
+    }
+  },
+
+  /** --------- NEW: Add cash wallet entry ---------- */
+  async addCashWallet(agentId: number, amount: number, remark: string): Promise<{ ok: true }> {
+    await api(`/agents/${agentId}/wallet/cash`, {
+      method: "POST",
+      body: { amount, remark },
+    });
+    return { ok: true };
+  },
+
+  /** --------- NEW: Add coupon wallet entry ---------- */
+  async addCouponWallet(agentId: number, amount: number, remark: string): Promise<{ ok: true }> {
+    await api(`/agents/${agentId}/wallet/coupon`, {
+      method: "POST",
+      body: { amount, remark },
+    });
+    return { ok: true };
+  },
+
+  /** --------- NEW: Subscriptions (maps to your DTO) ---------- */
+  async getSubscriptions(agentId: number): Promise<AgentSubscription[]> {
+    try {
+      const resp = (await api(`/agents/${agentId}/subscriptions`)) as AgentSubscriptionsDTO;
+      const rows = Array.isArray(resp?.data) ? resp.data : [];
+      return rows.map((r, i) => ({
+        id: Number(r.id ?? i + 1),
+        subscriptionTitle: r.subscription_title?.toString() ?? "Free",
+        amount: parseAmountToNumber(r.amount),
+        validityStart: r.validity_start ?? "",
+        validityEnd: r.validity_end ?? "",
+        transactionId: r.transaction_id ?? "--",
+        paymentStatus: r.payment_status ?? "Free",
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  /** --------- NEW: Agent configuration ---------- */
+  async getConfig(agentId: number): Promise<AgentConfig | null> {
+    try {
+      const resp = (await api(`/agents/${agentId}/config`)) as any;
+      const r = (resp && (resp.data ?? resp)) || {};
+      const cfg: AgentConfig = {
+        itineraryDiscountMargin: Number(r.itineraryDiscountMargin ?? r.itinerary_discount_margin ?? 0),
+        serviceCharge: Number(r.serviceCharge ?? r.service_charge ?? 0),
+        agentMarginGstType:
+          (r.agentMarginGstType ?? r.agent_margin_gst_type ?? "INCLUSIVE").toString(),
+        agentMarginGstPercentage: (r.agentMarginGstPercentage ?? r.agent_margin_gst_percentage ?? "0").toString(),
+        companyName: (r.companyName ?? r.company_name ?? "") as string,
+        address: (r.address ?? "") as string,
+      };
+      return cfg;
+    } catch {
+      return null;
+    }
   },
 
   // --- Placeholders: wire later when you expose create/update endpoints ---

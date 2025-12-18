@@ -1,4 +1,3 @@
-// REPLACE-WHOLE-FILE
 // FILE: src/services/guideService.ts
 
 import { api } from "@/lib/api";
