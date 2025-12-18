@@ -121,7 +121,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
 
           {/* All routes below require auth */}
-          <Route element={<RequireAuth />}> </Route>
+          <Route element={<RequireAuth />}>
             <Route
               path="/"
               element={
