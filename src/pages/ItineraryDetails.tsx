@@ -1449,7 +1449,7 @@ export const ItineraryDetails: React.FC = () => {
                             </p>
                           )}
                           <p className="text-xs text-[#d546ab] mt-2">
-                            Click to change hotel
+                            Click to change hotelsss
                           </p>
                         </div>
                       </div>
