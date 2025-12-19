@@ -22,6 +22,22 @@ function fmtINR(n: number) {
   }
 }
 
+// 🔧 decode &lt;ul&gt;...&lt;/ul&gt; into real HTML markup
+function decodeNotesHtml(html: string | undefined | null): string {
+  if (!html) return "";
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    // body.innerHTML converts entities (&lt;li&gt;) → <li>
+    return doc.body.innerHTML || "";
+  } catch {
+    // fallback using <textarea> trick
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = html;
+    return textarea.value || "";
+  }
+}
+
 export default function AgentSubscriptionPlanPreviewPage() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -54,7 +70,10 @@ export default function AgentSubscriptionPlanPreviewPage() {
           Dashboard
         </span>
         <span className="text-slate-400">›</span>
-        <span className="hover:underline cursor-pointer" onClick={() => navigate("/agent-subscription-plan")}>
+        <span
+          className="hover:underline cursor-pointer"
+          onClick={() => navigate("/agent-subscription-plan")}
+        >
           List of Subscription Plan
         </span>
         <span className="text-slate-400">›</span>
@@ -62,6 +81,11 @@ export default function AgentSubscriptionPlanPreviewPage() {
       </div>
     );
   }, [navigate, data?.planTitle]);
+
+  const decodedNotes = useMemo(
+    () => decodeNotesHtml(data?.notes),
+    [data?.notes]
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -96,7 +120,9 @@ export default function AgentSubscriptionPlanPreviewPage() {
                 </div>
 
                 <div>
-                  <div className="text-sm text-slate-500">Additional Charge For Per Staff</div>
+                  <div className="text-sm text-slate-500">
+                    Additional Charge For Per Staff
+                  </div>
                   <div className="mt-1">{fmtINR(data.additionalChargePerStaff)}</div>
                 </div>
               </div>
@@ -112,13 +138,20 @@ export default function AgentSubscriptionPlanPreviewPage() {
                   <div className="mt-1">{data.staffCount}</div>
                 </div>
 
+                {/* ✅ Subscription Notes with real bullets */}
                 <div>
                   <div className="text-sm text-slate-500">Subscription Notes</div>
-                  <div className="mt-2 border rounded-md p-4 min-h-[140px]">
-                    <div
-                      className="prose prose-sm max-w-none"
-                      dangerouslySetInnerHTML={{ __html: data.notes || "" }}
-                    />
+                  <div className="mt-2 border rounded-md px-5 py-4 min-h-[140px] text-sm text-slate-700 leading-relaxed">
+                    {decodedNotes ? (
+                      <div
+                        className="[&_ul]:list-[square] [&_ul]:pl-5 [&_li]:mb-1"
+                        dangerouslySetInnerHTML={{ __html: decodedNotes }}
+                      />
+                    ) : (
+                      <span className="text-slate-400 italic">
+                        No notes available for this plan.
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -163,4 +196,5 @@ export default function AgentSubscriptionPlanPreviewPage() {
     </div>
   );
 }
- export { AgentSubscriptionPlanPreviewPage };
+
+export { AgentSubscriptionPlanPreviewPage };

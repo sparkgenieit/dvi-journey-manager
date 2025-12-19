@@ -1,23 +1,38 @@
-// FILE: src/pages/Settings/Cities.tsx
+// FILE: src/pages/Settings/cities/Citiespage.tsx
 
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2, Copy as CopyIcon, FileSpreadsheet, FileText } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  Copy as CopyIcon,
+  FileSpreadsheet,
+  FileText,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 
 import { DeleteModal } from "@/components/hotspot/DeleteModal";
 import { CitiesAPI as citiesService, City, State } from "@/services/citiesService";
 import { CitiesModal, CityFormValues } from "./CitiesModal";
 
-// ----- export helpers (same style as GstSettings) -----
+// ----- export helpers -----
 function to2D(rows: City[]) {
   const headers = ["S.NO", "STATE", "CITY"];
   const data = rows.map((r, i) => [
@@ -30,15 +45,23 @@ function to2D(rows: City[]) {
 
 function toCSV({ headers, data }: { headers: string[]; data: string[][] }) {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  return [headers.map(esc).join(","), ...data.map(row => row.map(esc).join(","))].join("\n");
+  return [headers.map(esc).join(","), ...data.map((row) => row.map(esc).join(","))].join("\n");
 }
 
 function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] }) {
   const th = headers
-    .map(h => `<th style="background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">${h}</th>`)
+    .map(
+      (h) =>
+        `<th style="background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">${h}</th>`
+    )
     .join("");
   const trs = data
-    .map(row => `<tr>${row.map(v => `<td style="border:1px solid #e5e7eb;padding:6px 8px;">${v}</td>`).join("")}</tr>`)
+    .map(
+      (row) =>
+        `<tr>${row
+          .map((v) => `<td style="border:1px solid #e5e7eb;padding:6px 8px;">${v}</td>`)
+          .join("")}</tr>`
+    )
     .join("");
 
   return `<!DOCTYPE html>
@@ -68,7 +91,10 @@ export function CitiesPage() {
   const [filtered, setFiltered] = useState<City[]>([]);
   const [search, setSearch] = useState("");
 
-  const [pageSize, setPageSize] = useState(10); // screenshot shows 10 default
+  // ✅ "all" means fetch all states cities
+  const [selectedStateId, setSelectedStateId] = useState<string>("all");
+
+  const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -77,13 +103,29 @@ export function CitiesPage() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editing, setEditing] = useState<City | null>(null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadStates();
+  }, []);
 
+  // ✅ fetch whenever state filter changes (after states loaded)
+  useEffect(() => {
+    if (!selectedStateId) return;
+    if (states.length === 0) return;
+
+    if (selectedStateId === "all") {
+      loadAllCitiesForCountry();
+    } else {
+      loadCitiesByState(Number(selectedStateId));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStateId, states.length]);
+
+  // search filter
   useEffect(() => {
     const q = search.toLowerCase().trim();
     const next = !q
       ? rows
-      : rows.filter(r => {
+      : rows.filter((r) => {
           const city = (r.city_name || "").toLowerCase();
           const st = (r.state?.state_name || "").toLowerCase();
           return city.includes(q) || st.includes(q);
@@ -93,17 +135,66 @@ export function CitiesPage() {
     setCurrentPage(1);
   }, [search, rows]);
 
-  async function load() {
+  async function loadStates() {
     try {
-      const [citiesData, statesData] = await Promise.all([
-        citiesService.getCities(),
-        citiesService.getStates(101),
-      ]);
-      setRows(citiesData);
-      setFiltered(citiesData);
+      const statesData = await citiesService.getStates(101);
       setStates(statesData);
     } catch (e: any) {
+      toast.error(e?.message || "Failed to load states");
+    }
+  }
+
+  async function loadCitiesByState(stateId: number) {
+    try {
+      const citiesData = await citiesService.getCitiesByState(stateId);
+
+      // ensure state object exists (for UI)
+      const st = states.find((s) => s.state_id === stateId);
+      const enriched = citiesData.map((c) => ({
+        ...c,
+        state: c.state ?? (st ? { state_id: st.state_id, state_name: st.state_name } : undefined),
+      }));
+
+      setRows(enriched);
+      setFiltered(enriched);
+      setCurrentPage(1);
+    } catch (e: any) {
       toast.error(e?.message || "Failed to load cities");
+      setRows([]);
+      setFiltered([]);
+      setCurrentPage(1);
+    }
+  }
+
+  async function loadAllCitiesForCountry() {
+    try {
+      // fetch per-state (because /cities list is not reliable in your current backend)
+      const results = await Promise.all(
+        states.map(async (s) => {
+          const cities = await citiesService.getCitiesByState(s.state_id);
+          return cities.map((c) => ({
+            ...c,
+            state: { state_id: s.state_id, state_name: s.state_name },
+          }));
+        })
+      );
+
+      // flatten + dedupe by city_id
+      const flat = results.flat();
+      const map = new Map<number, City>();
+      for (const c of flat) map.set(c.city_id, c);
+
+      // sort newest first (like your tables)
+      const merged = Array.from(map.values()).sort((a, b) => b.city_id - a.city_id);
+
+      setRows(merged);
+      setFiltered(merged);
+      setCurrentPage(1);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load all cities");
+      setRows([]);
+      setFiltered([]);
+      setCurrentPage(1);
     }
   }
 
@@ -155,7 +246,12 @@ export function CitiesPage() {
       await citiesService.deleteCity(deleteId);
       toast.success("City deleted");
       setDeleteId(null);
-      await load();
+
+      if (selectedStateId === "all") {
+        await loadAllCitiesForCountry();
+      } else if (selectedStateId) {
+        await loadCitiesByState(Number(selectedStateId));
+      }
     } catch (e: any) {
       toast.error(e?.message || "Failed to delete city");
     }
@@ -180,7 +276,13 @@ export function CitiesPage() {
 
       setModalOpen(false);
       setEditing(null);
-      await load();
+
+      // if you are viewing "all" keep it, else reload selected state
+      if (selectedStateId === "all") {
+        await loadAllCitiesForCountry();
+      } else if (selectedStateId) {
+        await loadCitiesByState(Number(selectedStateId));
+      }
     } catch (e: any) {
       toast.error(e?.message || "Save failed");
     }
@@ -208,19 +310,42 @@ export function CitiesPage() {
 
       <div className="bg-white rounded-lg border p-4 space-y-4">
         {/* Top toolbar */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">Show</span>
-            <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="25">25</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
-            <span className="text-sm">entries</span>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">Show</span>
+              <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+                <SelectTrigger className="w-20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-sm">entries</span>
+            </div>
+
+            {/* ✅ State Filter with ALL STATES */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm">State:</span>
+              <Select value={selectedStateId} onValueChange={setSelectedStateId}>
+                <SelectTrigger className="w-64">
+                  <SelectValue placeholder="Select state" />
+                </SelectTrigger>
+
+                <SelectContent>
+                  <SelectItem value="all">All States</SelectItem>
+                  {states.map((s) => (
+                    <SelectItem key={s.state_id} value={String(s.state_id)}>
+                      {s.state_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
@@ -232,8 +357,11 @@ export function CitiesPage() {
             <button
               type="button"
               className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold border
-                ${canExport ? "border-violet-300 text-violet-700 hover:bg-violet-50"
-                            : "border-gray-200 text-gray-300 cursor-not-allowed"}`}
+                ${
+                  canExport
+                    ? "border-violet-300 text-violet-700 hover:bg-violet-50"
+                    : "border-gray-200 text-gray-300 cursor-not-allowed"
+                }`}
               onClick={onCopy}
               disabled={!canExport}
             >
@@ -244,8 +372,11 @@ export function CitiesPage() {
             <button
               type="button"
               className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
-                ${canExport ? "bg-emerald-500 text-white hover:bg-emerald-600"
-                            : "bg-emerald-200 text-white cursor-not-allowed"}`}
+                ${
+                  canExport
+                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                    : "bg-emerald-200 text-white cursor-not-allowed"
+                }`}
               onClick={onExcel}
               disabled={!canExport}
             >
@@ -256,8 +387,11 @@ export function CitiesPage() {
             <button
               type="button"
               className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
-                ${canExport ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                            : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+                ${
+                  canExport
+                    ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                }`}
               onClick={onCSV}
               disabled={!canExport}
             >
@@ -354,11 +488,10 @@ export function CitiesPage() {
         states={states}
         initial={
           editing
-            ? {
-                city_name: editing.city_name,
-                state_id: String(editing.state_id),
-              }
-            : undefined
+            ? { city_name: editing.city_name, state_id: String(editing.state_id) }
+            : selectedStateId && selectedStateId !== "all"
+              ? { city_name: "", state_id: selectedStateId }
+              : undefined
         }
         onClose={() => {
           setModalOpen(false);
@@ -367,11 +500,9 @@ export function CitiesPage() {
         onSubmit={handleModalSubmit}
       />
 
-      <DeleteModal
-        open={!!deleteId}
-        onClose={() => setDeleteId(null)}
-        onConfirm={handleDelete}
-      />
+      <DeleteModal open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} />
     </div>
   );
 }
+
+export default CitiesPage;

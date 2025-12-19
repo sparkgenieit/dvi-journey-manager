@@ -13,7 +13,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getGlobalSettings, updateGlobalSettings, GlobalSettings, getStates, State } from "@/services/settings";
+import {
+  getGlobalSettings,
+  updateGlobalSettings,
+  getStates,
+  type GlobalSettings,
+  type State,
+} from "@/services/GlobalSettingsService";
 
 const RichTextEditor = lazy(() => import("@/components/ui/rich-text-editor").then(module => ({ default: module.RichTextEditor })));
 

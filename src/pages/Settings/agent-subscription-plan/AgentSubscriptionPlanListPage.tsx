@@ -14,11 +14,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import {
   agentSubscriptionPlanService,
   AgentSubscriptionPlanListItem,
 } from "@/services/agentSubscriptionPlanService";
+
+import {
+  Copy as CopyIcon,
+  FileSpreadsheet,
+  FileText,
+  Eye,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 
 function Toggle({
   checked,
@@ -35,17 +51,17 @@ function Toggle({
       disabled={disabled}
       role="switch"
       aria-checked={checked}
-      onClick={() => onChange(!checked)}
+      onClick={() => !disabled && onChange(!checked)}
       className={[
-        "w-12 h-6 rounded-full relative transition",
-        checked ? "bg-violet-600" : "bg-slate-200",
+        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+        checked ? "bg-violet-600" : "bg-slate-300",
         disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer",
       ].join(" ")}
     >
       <span
         className={[
-          "w-5 h-5 bg-white rounded-full absolute top-[2px] transition",
-          checked ? "left-[26px]" : "left-[2px]",
+          "inline-block h-5 w-5 transform rounded-full bg-white transition",
+          checked ? "translate-x-5" : "translate-x-1",
         ].join(" ")}
       />
     </button>
@@ -82,7 +98,7 @@ function toCSV(rows: AgentSubscriptionPlanListItem[]) {
       [
         idx + 1,
         `"${String(r.planTitle ?? "").replace(/"/g, '""')}"`,
-        "", // type not in list payload (safe)
+        "", // type not in list payload
         r.itineraryCount,
         r.cost,
         r.joiningBonus,
@@ -141,6 +157,8 @@ export default function AgentSubscriptionPlanListPage() {
     setPage(1);
   }, [pageSize, search]);
 
+  const canExport = filtered.length > 0;
+
   async function onDelete(id: string) {
     const ok = window.confirm("Delete this subscription plan?");
     if (!ok) return;
@@ -182,23 +200,30 @@ export default function AgentSubscriptionPlanListPage() {
   }
 
   function onCopy() {
-    const text = paged
+    if (!canExport) return;
+
+    const text = filtered
       .map(
         (r, idx) =>
-          `${idx + 1}\t${r.planTitle}\t${r.itineraryCount}\t${r.cost}\t${r.joiningBonus}\t${r.itineraryCost}\t${r.validityDays}\t${r.recommended ? "Yes" : "No"}\t${r.status ? "On" : "Off"}`
+          `${idx + 1}\t${r.planTitle}\t${r.itineraryCount}\t${r.cost}\t${r.joiningBonus}\t${r.itineraryCost}\t${r.validityDays}\t${
+            r.recommended ? "Yes" : "No"
+          }\t${r.status ? "On" : "Off"}`
       )
       .join("\n");
+
     navigator.clipboard
       .writeText(text)
-      .then(() => toast.success("Copied"))
+      .then(() => toast.success("Copied table (filtered) to clipboard"))
       .catch(() => toast.error("Copy failed"));
   }
 
   function onCSV() {
+    if (!canExport) return;
     downloadText("agent-subscription-plans.csv", toCSV(filtered));
   }
 
   function onExcel() {
+    if (!canExport) return;
     // Simple CSV download that opens in Excel
     downloadText("agent-subscription-plans.xls", toCSV(filtered));
   }
@@ -206,10 +231,15 @@ export default function AgentSubscriptionPlanListPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-slate-800">List of Subscription Plan</h1>
+        <h1 className="text-2xl font-semibold text-slate-800">
+          List of Subscription Plan
+        </h1>
 
         <div className="text-sm text-violet-700 flex items-center gap-2">
-          <span className="hover:underline cursor-pointer" onClick={() => navigate("/")}>
+          <span
+            className="hover:underline cursor-pointer"
+            onClick={() => navigate("/")}
+          >
             Dashboard
           </span>
           <span className="text-slate-400">›</span>
@@ -219,31 +249,44 @@ export default function AgentSubscriptionPlanListPage() {
 
       <div className="bg-white rounded-lg border p-6">
         <div className="flex items-center justify-between gap-4 mb-5">
-          <h2 className="text-lg font-semibold text-slate-700">List of Agent Subscription Plan</h2>
+          <h2 className="text-lg font-semibold text-slate-700">
+            List of Agent Subscription Plan
+          </h2>
 
-          <Button
-            className="bg-violet-100 text-violet-700 hover:bg-violet-200"
+          {/* Match Add Language button style */}
+          <button
+            type="button"
+            className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold
+                       bg-violet-50 text-violet-700 hover:bg-violet-100 border border-transparent
+                       transition-colors"
             onClick={() => navigate("/agent-subscription-plan/new")}
           >
             + Add Subscription Plan
-          </Button>
+          </button>
         </div>
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4">
+          {/* Show entries (match Language.tsx using Select) */}
           <div className="flex items-center gap-2 text-sm text-slate-600">
             <span>Show</span>
-            <select
-              className="border rounded-md h-9 px-2"
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => setPageSize(Number(v))}
             >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-            </select>
+              <SelectTrigger className="w-20">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
             <span>entries</span>
           </div>
 
+          {/* Toolbar buttons styled like Language.tsx */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-slate-600">Search:</span>
@@ -254,15 +297,50 @@ export default function AgentSubscriptionPlanListPage() {
               />
             </div>
 
-            <Button variant="outline" className="h-9" onClick={onCopy}>
+            <button
+              type="button"
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold border
+                ${
+                  canExport
+                    ? "border-violet-300 text-violet-700 hover:bg-violet-50"
+                    : "border-gray-200 text-gray-300 cursor-not-allowed"
+                }`}
+              onClick={onCopy}
+              disabled={!canExport}
+            >
+              <CopyIcon className="mr-2 h-4 w-4" />
               Copy
-            </Button>
-            <Button variant="outline" className="h-9 border-green-300 text-green-600 hover:text-green-700" onClick={onExcel}>
+            </button>
+
+            <button
+              type="button"
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
+                ${
+                  canExport
+                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                    : "bg-emerald-200 text-white cursor-not-allowed"
+                }`}
+              onClick={onExcel}
+              disabled={!canExport}
+            >
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
               Excel
-            </Button>
-            <Button variant="outline" className="h-9" onClick={onCSV}>
+            </button>
+
+            <button
+              type="button"
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
+                ${
+                  canExport
+                    ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                }`}
+              onClick={onCSV}
+              disabled={!canExport}
+            >
+              <FileText className="mr-2 h-4 w-4" />
               CSV
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -286,13 +364,19 @@ export default function AgentSubscriptionPlanListPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell
+                    colSpan={10}
+                    className="py-10 text-center text-sm text-slate-500"
+                  >
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : paged.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell
+                    colSpan={10}
+                    className="py-10 text-center text-sm text-slate-500"
+                  >
                     No rows
                   </TableCell>
                 </TableRow>
@@ -302,29 +386,36 @@ export default function AgentSubscriptionPlanListPage() {
                     <TableCell>{(page - 1) * pageSize + idx + 1}</TableCell>
 
                     <TableCell>
-                      <div className="flex items-center gap-3">
-                        <button
-                          className="text-slate-600 hover:text-slate-900"
-                          onClick={() => navigate(`/agent-subscription-plan/${r.id}/preview`)}
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            navigate(`/agent-subscription-plan/${r.id}/preview`)
+                          }
                           title="View"
                         >
-                          👁️
-                        </button>
-                        <button
-                          className="text-violet-600 hover:text-violet-800"
-                          onClick={() => navigate(`/agent-subscription-plan/${r.id}/edit`)}
+                          <Eye className="h-4 w-4 text-slate-600" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            navigate(`/agent-subscription-plan/${r.id}/edit`)
+                          }
                           title="Edit"
                         >
-                          ✏️
-                        </button>
-                        <button
-                          className="text-red-500 hover:text-red-700"
+                          <Pencil className="h-4 w-4 text-violet-600" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           onClick={() => onDelete(r.id)}
                           disabled={busyId === r.id}
                           title="Delete"
                         >
-                          🗑️
-                        </button>
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
                       </div>
                     </TableCell>
 
@@ -336,12 +427,24 @@ export default function AgentSubscriptionPlanListPage() {
                       />
                     </TableCell>
 
-                    <TableCell className="text-slate-700">{r.planTitle}</TableCell>
-                    <TableCell className="text-slate-700">{r.itineraryCount}</TableCell>
-                    <TableCell className="text-slate-700">{r.cost}</TableCell>
-                    <TableCell className="text-slate-700">{r.joiningBonus}</TableCell>
-                    <TableCell className="text-slate-700">{r.itineraryCost}</TableCell>
-                    <TableCell className="text-slate-700">{r.validityDays} days</TableCell>
+                    <TableCell className="text-slate-700">
+                      {r.planTitle}
+                    </TableCell>
+                    <TableCell className="text-slate-700">
+                      {r.itineraryCount}
+                    </TableCell>
+                    <TableCell className="text-slate-700">
+                      {r.cost}
+                    </TableCell>
+                    <TableCell className="text-slate-700">
+                      {r.joiningBonus}
+                    </TableCell>
+                    <TableCell className="text-slate-700">
+                      {r.itineraryCost}
+                    </TableCell>
+                    <TableCell className="text-slate-700">
+                      {r.validityDays} days
+                    </TableCell>
 
                     <TableCell>
                       <Toggle
@@ -360,18 +463,31 @@ export default function AgentSubscriptionPlanListPage() {
         <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
           <div>
             Showing{" "}
-            {filtered.length === 0 ? 0 : (page - 1) * pageSize + 1} to{" "}
-            {Math.min(page * pageSize, filtered.length)} of {filtered.length} entries
+            {filtered.length === 0
+              ? 0
+              : (page - 1) * pageSize + 1}{" "}
+            to {Math.min(page * pageSize, filtered.length)} of{" "}
+            {filtered.length} entries
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <Button
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
               Previous
             </Button>
             <div className="w-9 h-9 rounded-md bg-violet-600 text-white flex items-center justify-center">
               {Math.min(page, pageCount)}
             </div>
-            <Button variant="outline" disabled={page >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>
+            <Button
+              variant="outline"
+              disabled={page >= pageCount}
+              onClick={() =>
+                setPage((p) => Math.min(pageCount, p + 1))
+              }
+            >
               Next
             </Button>
           </div>
@@ -380,4 +496,5 @@ export default function AgentSubscriptionPlanListPage() {
     </div>
   );
 }
- export { AgentSubscriptionPlanListPage };
+
+export { AgentSubscriptionPlanListPage };

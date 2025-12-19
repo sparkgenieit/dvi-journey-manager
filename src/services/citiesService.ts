@@ -1,9 +1,5 @@
-// REPLACE-WHOLE-FILE
-// FILE: src/services/citiesService.ts
-
 import { api } from "../lib/api";
 
-/** ========= UI Types (matches Cities.tsx usage) ========= */
 export type State = {
   state_id: number;
   state_name: string;
@@ -17,14 +13,7 @@ export type City = {
   state?: State;
 };
 
-/** ========= Backend DTO shapes (Nest responses) ========= */
-type StateDTO = Partial<{
-  id: number;
-  state_id: number;
-  name: string;
-  state_name: string;
-}>;
-
+type StateDTO = Partial<{ id: number; state_id: number; name: string; state_name: string }>;
 type CityDTO = Partial<{
   id: number;
   city_id: number;
@@ -36,7 +25,7 @@ type CityDTO = Partial<{
   state: any;
 }>;
 
-type ListResponseDTO<T> = { data: T[] } | T[];
+type ListResponseDTO<T> = { data: T[]; meta?: any } | T[];
 type OneResponseDTO<T> = { data: T } | T;
 
 const to01 = (v: any): 0 | 1 => {
@@ -49,10 +38,10 @@ const to01 = (v: any): 0 | 1 => {
   return 0;
 };
 
-const unwrapList = <T,>(res: ListResponseDTO<T>): T[] => {
-  if (Array.isArray(res)) return res;
-  if (res && Array.isArray((res as any).data)) return (res as any).data;
-  return [];
+const unwrapList = <T,>(res: ListResponseDTO<T>): { rows: T[]; meta?: any } => {
+  if (Array.isArray(res)) return { rows: res };
+  if (res && Array.isArray((res as any).data)) return { rows: (res as any).data, meta: (res as any).meta };
+  return { rows: [] };
 };
 
 const unwrapOne = <T,>(res: OneResponseDTO<T>): T => {
@@ -87,16 +76,48 @@ const toCity = (r: CityDTO): City => {
   };
 };
 
-/** ========= API (matches your Nest endpoints) ========= */
 export const CitiesAPI = {
-  async getCities(): Promise<City[]> {
-    const res = (await api("/cities")) as ListResponseDTO<CityDTO>;
-    return unwrapList(res).map(toCity);
-  },
-
   async getStates(countryId: number = 101): Promise<State[]> {
     const res = (await api(`/cities/states?countryId=${countryId}`)) as ListResponseDTO<StateDTO>;
-    return unwrapList(res).map(toState);
+    return unwrapList(res).rows.map(toState);
+  },
+
+  // ✅ one-state fetch
+  async getCitiesByState(stateId: number): Promise<City[]> {
+    const res = (await api(`/cities/by-state/${stateId}`)) as ListResponseDTO<CityDTO>;
+    return unwrapList(res).rows.map(toCity);
+  },
+
+  // ✅ paginated by-country fetch (new endpoint)
+  async getCitiesByCountry(countryId = 101, page = 1, pageSize = 500, search = ""): Promise<{ rows: City[]; meta?: any }> {
+    const qs =
+      `countryId=${countryId}` +
+      `&page=${page}` +
+      `&pageSize=${pageSize}` +
+      (search ? `&search=${encodeURIComponent(search)}` : "");
+
+    const res = (await api(`/cities/by-country?${qs}`)) as any;
+    const { rows, meta } = unwrapList<CityDTO>(res);
+    return { rows: rows.map(toCity), meta };
+  },
+
+  // ✅ helper: fetch ALL pages (used when UI selects "All States")
+  async getAllCitiesByCountry(countryId = 101, search = ""): Promise<City[]> {
+    const all: City[] = [];
+    let page = 1;
+
+    while (true) {
+      const { rows, meta } = await CitiesAPI.getCitiesByCountry(countryId, page, 1000, search);
+      all.push(...rows);
+
+      const total = Number(meta?.total ?? all.length);
+      if (all.length >= total) break;
+
+      page += 1;
+      if (page > 50) break; // safety
+    }
+
+    return all;
   },
 
   async createCity(payload: { city_name: string; state_id: number; status?: number }): Promise<City> {
@@ -112,10 +133,7 @@ export const CitiesAPI = {
     return toCity(unwrapOne(res));
   },
 
-  async updateCity(
-    cityId: number,
-    payload: { city_name?: string; state_id?: number; status?: number }
-  ): Promise<City> {
+  async updateCity(cityId: number, payload: { city_name?: string; state_id?: number; status?: number }): Promise<City> {
     const res = (await api(`/cities/${cityId}`, {
       method: "PUT",
       body: {
@@ -132,10 +150,3 @@ export const CitiesAPI = {
     await api(`/cities/${cityId}`, { method: "DELETE" });
   },
 };
-
-// Backward-compatible named exports to match your Cities.tsx import style
-export const getCities = CitiesAPI.getCities;
-export const getStates = CitiesAPI.getStates;
-export const createCity = CitiesAPI.createCity;
-export const updateCity = CitiesAPI.updateCity;
-export const deleteCity = CitiesAPI.deleteCity;

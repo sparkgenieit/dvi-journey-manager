@@ -102,15 +102,18 @@ export default function RolePermissionFormPage() {
   };
 
   const onToggleFull = (index: number, checked: boolean) => {
-    setRow(index, (r) => ({
+  setRow(index, (r) => {
+    const next: RolePermissionPageRow = {
       ...r,
       full: checked,
-      read: checked ? true : r.read,
-      write: checked ? true : r.write,
-      modify: checked ? true : r.modify,
-      // If you uncheck FULL, keep current read/write/modify as-is
-    }));
-  };
+      // FULL controls all three directly
+      read: checked,
+      write: checked,
+      modify: checked,
+    };
+    return next;
+  });
+};
 
   const onToggleRWM = (index: number, key: "read" | "write" | "modify", checked: boolean) => {
     setRow(index, (r) => {

@@ -1,6 +1,6 @@
 // FILE: src/services/rolePermissionService.ts
 
-import { getToken } from "@/lib/api";
+import { api } from "../lib/api";
 
 export type RolePermissionListItem = {
   id: string;
@@ -19,158 +19,217 @@ export type RolePermissionPageRow = {
 
 export type RolePermissionPayload = {
   roleName: string;
-  pages: Array<{
-    pageKey: string;
-    pageName: string;
-    read: boolean;
-    write: boolean;
-    modify: boolean;
-    full: boolean;
-  }>;
+  pages: RolePermissionPageRow[];
 };
 
 export type RolePermissionDetails = {
   id: string;
   roleName: string;
   status: boolean;
-  pages: RolePermissionPayload["pages"];
+  pages: RolePermissionPageRow[];
 };
+
+type ListResponseDTO<T> = { data: T[]; meta?: any } | T[];
+type OneResponseDTO<T> = { data: T } | T;
+
+// Backend DTO shapes (flexible / tolerant)
+type RolePermissionListDTO = Partial<{
+  id: string | number;
+  role_ID: number;
+  roleName: string;
+  role_name: string;
+  status: any;
+  deleted: any;
+}>;
+
+type RolePermissionPageDTO = Partial<{
+  pageKey: string;
+  pageName: string;
+  page_key: string;
+  page_name: string;
+  page_title: string;
+  read: any;
+  write: any;
+  modify: any;
+  full: any;
+  read_access: any;
+  write_access: any;
+  modify_access: any;
+  full_access: any;
+}>;
+
+type RolePermissionDetailsDTO = Partial<{
+  id: string | number;
+  roleName: string;
+  role_name: string;
+  status: any;
+  pages: RolePermissionPageDTO[];
+}>;
 
 const BASE = "/role-permissions";
 
-function authHeaders() {
-  const token = getToken();
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-async function http<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const txt = await res.text().catch(() => "");
-    throw new Error(txt || `HTTP ${res.status}`);
+const toBool = (v: any): boolean => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "1" || s === "true" || s === "yes";
   }
-  return (await res.json()) as T;
-}
+  return false;
+};
 
-/**
- * Fallback pages (so UI works even if pages endpoint isn't ready yet).
- * Replace/extend anytime.
- */
-const FALLBACK_PAGES: RolePermissionPageRow[] = [
-  { pageKey: "dashboard", pageName: "Dashboard", read: false, write: false, modify: false, full: false },
-  { pageKey: "vendor_dashboard", pageName: "Vendor Dashboard", read: false, write: false, modify: false, full: false },
-  { pageKey: "hotels", pageName: "Hotels", read: false, write: false, modify: false, full: false },
-  { pageKey: "hotel_pricebook", pageName: "Hotel Pricebook", read: false, write: false, modify: false, full: false },
-  { pageKey: "vehicle_pricebook", pageName: "Vehicle Pricebook", read: false, write: false, modify: false, full: false },
-  { pageKey: "guide_pricebook", pageName: "Guide Pricebook", read: false, write: false, modify: false, full: false },
-  { pageKey: "activity_pricebook", pageName: "Activity Pricebook", read: false, write: false, modify: false, full: false },
-  { pageKey: "vendor", pageName: "Vendor", read: false, write: false, modify: false, full: false },
-  { pageKey: "driver", pageName: "Driver", read: false, write: false, modify: false, full: false },
-  { pageKey: "vehicle", pageName: "Vehicle", read: false, write: false, modify: false, full: false },
-  { pageKey: "activity", pageName: "Activity", read: false, write: false, modify: false, full: false },
-  { pageKey: "new_hotspot", pageName: "New Hotspot", read: false, write: false, modify: false, full: false },
-  { pageKey: "guide", pageName: "Guide", read: false, write: false, modify: false, full: false },
-  { pageKey: "hotel_category", pageName: "Hotel Category", read: false, write: false, modify: false, full: false },
-  { pageKey: "vehicle_type", pageName: "Vehicle Type", read: false, write: false, modify: false, full: false },
-  { pageKey: "inbuild_amenities", pageName: "Inbuild Amenities", read: false, write: false, modify: false, full: false },
-  { pageKey: "language", pageName: "Language", read: false, write: false, modify: false, full: false },
-  { pageKey: "gst_setting", pageName: "GST Setting", read: false, write: false, modify: false, full: false },
-  { pageKey: "role_permission", pageName: "Role Permission", read: false, write: false, modify: false, full: false },
-  { pageKey: "staff", pageName: "Staff", read: false, write: false, modify: false, full: false },
-  { pageKey: "kilometer_limit", pageName: "Kilometer Limit", read: false, write: false, modify: false, full: false },
-  { pageKey: "time_limit", pageName: "Time Limit", read: false, write: false, modify: false, full: false },
-  { pageKey: "global_settings", pageName: "Global Settings", read: false, write: false, modify: false, full: false },
-  { pageKey: "toll_charge", pageName: "Toll Charge", read: false, write: false, modify: false, full: false },
-  { pageKey: "parking_charge", pageName: "Parking Charge", read: false, write: false, modify: false, full: false },
-  { pageKey: "locations", pageName: "Locations", read: false, write: false, modify: false, full: false },
-  { pageKey: "latest_itinerary", pageName: "Latest Itinerary", read: false, write: false, modify: false, full: false },
-  { pageKey: "agent_subscription_plan", pageName: "Agent Subscription Plan", read: false, write: false, modify: false, full: false },
-  { pageKey: "pricebook_export", pageName: "Pricebook Export", read: false, write: false, modify: false, full: false },
-  { pageKey: "agent_configuration", pageName: "Agent Configuration", read: false, write: false, modify: false, full: false },
-  { pageKey: "confirmed_itinerary", pageName: "Confirmed Itinerary", read: false, write: false, modify: false, full: false },
-  { pageKey: "agent", pageName: "Agent", read: false, write: false, modify: false, full: false },
-  { pageKey: "subscription_history", pageName: "Subscription History", read: false, write: false, modify: false, full: false },
-  { pageKey: "wallet", pageName: "Wallet", read: false, write: false, modify: false, full: false },
-  { pageKey: "cities", pageName: "Cities", read: false, write: false, modify: false, full: false },
-  { pageKey: "vehicle_availability_chart", pageName: "Vehicle Availability Chart", read: false, write: false, modify: false, full: false },
-  { pageKey: "dailymoment", pageName: "Dailymoment", read: false, write: false, modify: false, full: false },
-  { pageKey: "accounts_manager", pageName: "Accounts Manager", read: false, write: false, modify: false, full: false },
-  { pageKey: "accounts_manager_history", pageName: "Accounts Manager History", read: false, write: false, modify: false, full: false },
-  { pageKey: "accounts_manager_date_history", pageName: "Accounts Manager Date History", read: false, write: false, modify: false, full: false },
-  { pageKey: "dailymoment_tracker", pageName: "Dailymoment Tracker", read: false, write: false, modify: false, full: false },
-  { pageKey: "admins_dashboard", pageName: "Admins Dashboard", read: false, write: false, modify: false, full: false },
-  { pageKey: "accounts_manager_ledger", pageName: "Accounts Manager Ledger", read: false, write: false, modify: false, full: false },
-];
+const unwrapList = <T,>(res: ListResponseDTO<T>): { rows: T[]; meta?: any } => {
+  if (Array.isArray(res)) return { rows: res };
+  if (res && Array.isArray((res as any).data)) {
+    return { rows: (res as any).data, meta: (res as any).meta };
+  }
+  return { rows: [] };
+};
+
+const unwrapOne = <T,>(res: OneResponseDTO<T>): T => {
+  if (res && typeof res === "object" && "data" in (res as any)) {
+    return (res as any).data;
+  }
+  return res as T;
+};
+
+const toListItem = (r: RolePermissionListDTO): RolePermissionListItem => {
+  const id = String(r.id ?? r.role_ID ?? "");
+  const roleName = String(r.roleName ?? r.role_name ?? "").trim();
+
+  let status = true;
+  if (typeof r.status !== "undefined") status = toBool(r.status);
+  if (typeof r.deleted !== "undefined" && toBool(r.deleted)) status = false;
+
+  return { id, roleName, status };
+};
+
+const toPageRow = (p: RolePermissionPageDTO): RolePermissionPageRow => {
+  // key
+  const rawKey =
+    p.pageKey ??
+    p.page_key ??
+    p.page_name ??
+    "";
+
+  const pageKey = String(rawKey).trim();
+
+  // name (with safe fallback, no ?? + || mixing)
+  const rawName =
+    p.pageName ??
+    p.page_title ??
+    p.page_name ??
+    pageKey;
+
+  const trimmedName = String(rawName ?? "").trim();
+  const pageName = trimmedName.length > 0 ? trimmedName : "Unknown";
+
+  const read = toBool(p.read ?? p.read_access ?? false);
+  const write = toBool(p.write ?? p.write_access ?? false);
+  const modify = toBool(p.modify ?? p.modify_access ?? false);
+  const full = toBool(p.full ?? p.full_access ?? false);
+
+  return { pageKey, pageName, read, write, modify, full };
+};
+
+const toDetails = (r: RolePermissionDetailsDTO): RolePermissionDetails => {
+  const id = String(r.id ?? "");
+  const roleName = String(r.roleName ?? r.role_name ?? "").trim();
+  const status = toBool(r.status);
+
+  const pagesRaw = (r.pages ?? []) as RolePermissionPageDTO[];
+  const pages = pagesRaw.map(toPageRow);
+
+  return { id, roleName, status, pages };
+};
 
 export const rolePermissionService = {
+  /**
+   * GET /role-permissions
+   * Returns: RolePermissionListItem[]
+   */
   async list(): Promise<RolePermissionListItem[]> {
-    // expects: [{ id, roleName, status }]
-    return http<RolePermissionListItem[]>(BASE, {
-      method: "GET",
-      headers: authHeaders(),
-    });
+    const res = (await api(BASE)) as ListResponseDTO<RolePermissionListDTO>;
+    const { rows } = unwrapList(res);
+    return rows.map(toListItem);
   },
 
-  async getOne(id: string): Promise<RolePermissionDetails> {
-    return http<RolePermissionDetails>(`${BASE}/${id}`, {
-      method: "GET",
-      headers: authHeaders(),
-    });
+  /**
+   * GET /role-permissions/:id
+   * Returns: RolePermissionDetails
+   */
+  async getOne(id: string | number): Promise<RolePermissionDetails> {
+    const res = (await api(`${BASE}/${id}`)) as OneResponseDTO<RolePermissionDetailsDTO>;
+    const dto = unwrapOne(res);
+    return toDetails(dto);
   },
 
+  /**
+   * POST /role-permissions
+   * Body: RolePermissionPayload
+   * Returns: { id: string }
+   */
   async create(payload: RolePermissionPayload): Promise<{ id: string }> {
-    return http<{ id: string }>(BASE, {
+    const res = (await api(BASE, {
       method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify(payload),
-    });
+      body: {
+        roleName: payload.roleName,
+        pages: payload.pages,
+      },
+    })) as OneResponseDTO<{ id: string | number }>;
+
+    const dto = unwrapOne(res);
+    return { id: String(dto.id) };
   },
 
-  async update(id: string, payload: RolePermissionPayload): Promise<{ ok: true }> {
-    return http<{ ok: true }>(`${BASE}/${id}`, {
+  /**
+   * PUT /role-permissions/:id
+   * Body: RolePermissionPayload
+   * Returns: { ok: true }
+   */
+  async update(id: string | number, payload: RolePermissionPayload): Promise<{ ok: true }> {
+    const res = (await api(`${BASE}/${id}`, {
       method: "PUT",
-      headers: authHeaders(),
-      body: JSON.stringify(payload),
-    });
+      body: {
+        roleName: payload.roleName,
+        pages: payload.pages,
+      },
+    })) as OneResponseDTO<{ ok: true } | { success?: boolean }>;
+
+    const dto = unwrapOne(res) as any;
+    return { ok: dto.ok ?? dto.success ?? true };
   },
 
-  async remove(id: string): Promise<{ ok: true }> {
-    return http<{ ok: true }>(`${BASE}/${id}`, {
-      method: "DELETE",
-      headers: authHeaders(),
-    });
+  /**
+   * DELETE /role-permissions/:id
+   */
+  async remove(id: string | number): Promise<void> {
+    await api(`${BASE}/${id}`, { method: "DELETE" });
   },
 
-  async updateStatus(id: string, status: boolean): Promise<{ ok: true }> {
-    return http<{ ok: true }>(`${BASE}/${id}/status`, {
+  /**
+   * PATCH /role-permissions/:id/status
+   * Body: { status: boolean }
+   */
+  async updateStatus(id: string | number, status: boolean): Promise<{ ok: true }> {
+    const res = (await api(`${BASE}/${id}/status`, {
       method: "PATCH",
-      headers: authHeaders(),
-      body: JSON.stringify({ status }),
-    });
+      body: {
+        status: !!status,
+      },
+    })) as OneResponseDTO<{ ok: true } | { success?: boolean }>;
+
+    const dto = unwrapOne(res) as any;
+    return { ok: dto.ok ?? dto.success ?? true };
   },
 
+  /**
+   * GET /role-permissions/pages
+   * Returns: RolePermissionPageRow[]
+   */
   async listPages(): Promise<RolePermissionPageRow[]> {
-    // expects: [{ pageKey, pageName, read, write, modify, full }] OR plain list without flags
-    try {
-      const data = await http<any[]>(`${BASE}/pages`, {
-        method: "GET",
-        headers: authHeaders(),
-      });
-
-      // normalize shape
-      return data.map((p, idx) => ({
-        pageKey: String(p.pageKey ?? p.key ?? p.id ?? idx),
-        pageName: String(p.pageName ?? p.name ?? "Unknown"),
-        read: Boolean(p.read ?? false),
-        write: Boolean(p.write ?? false),
-        modify: Boolean(p.modify ?? false),
-        full: Boolean(p.full ?? false),
-      })) as RolePermissionPageRow[];
-    } catch {
-      return FALLBACK_PAGES;
-    }
+    const res = (await api(`${BASE}/pages`)) as ListResponseDTO<RolePermissionPageDTO>;
+    const { rows } = unwrapList(res);
+    return rows.map(toPageRow);
   },
 };
