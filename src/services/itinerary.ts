@@ -212,6 +212,10 @@ export const ItineraryService = {
     primary_guest_email_id?: string;
     adult_name?: string[];
     adult_age?: string[];
+    child_name?: string[];
+    child_age?: string[];
+    infant_name?: string[];
+    infant_age?: string[];
     arrival_date_time: string;
     arrival_place: string;
     arrival_flight_details?: string;
@@ -222,6 +226,21 @@ export const ItineraryService = {
     hotel_group_type?: string;
   }) {
     return api("itineraries/confirm-quotation", {
+      method: "POST",
+      body: data,
+    });
+  },
+
+  async cancelItinerary(data: {
+    itinerary_plan_ID: number;
+    cancellation_percentage: number;
+    cancel_guide?: boolean;
+    cancel_hotspot?: boolean;
+    cancel_activity?: boolean;
+    cancel_hotel?: boolean;
+    cancel_vehicle?: boolean;
+  }) {
+    return api("itineraries/cancel", {
       method: "POST",
       body: data,
     });
@@ -251,6 +270,44 @@ export const ItineraryService = {
     });
   },
 
+  async getCancelledItineraries(params: {
+    draw?: number;
+    start?: number;
+    length?: number;
+    agent_id?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return api(`itineraries/cancelled?${queryParams.toString()}`, {
+      method: "GET",
+    });
+  },
+
+  async getAccountsItineraries(params: {
+    draw?: number;
+    start?: number;
+    length?: number;
+    agent_id?: number;
+  }) {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return api(`itineraries/accounts?${queryParams.toString()}`, {
+      method: "GET",
+    });
+  },
+
   async getConfirmedAgents() {
     return api("itineraries/confirmed/agents", {
       method: "GET",
@@ -275,4 +332,68 @@ export const ItineraryService = {
     });
   },
 
+  async getVoucherDetails(id: number) {
+    return api(`itineraries/${id}/voucher-details`, {
+      method: "GET",
+    });
+  },
+
+  async getPluckCardData(id: number) {
+    return api(`itineraries/${id}/pluck-card-data`, {
+      method: "GET",
+    });
+  },
+
+  async getPluckCardDataByConfirmedId(confirmedId: number) {
+    return api(`itineraries/confirmed/${confirmedId}/pluck-card-data`, {
+      method: "GET",
+    });
+  },
+
+  async getInvoiceData(id: number) {
+    return api(`itineraries/${id}/invoice-data`, {
+      method: "GET",
+    });
+  },
+
+  // Incidental Expenses
+  async getIncidentalAvailableComponents(itineraryPlanId: number) {
+    return api(`incidental-expenses/available-components?itineraryPlanId=${itineraryPlanId}`, {
+      method: "GET",
+    });
+  },
+
+  async getIncidentalAvailableMargin(itineraryPlanId: number, componentType: number, componentId?: number) {
+    let url = `incidental-expenses/available-margin?itineraryPlanId=${itineraryPlanId}&componentType=${componentType}`;
+    if (componentId) url += `&componentId=${componentId}`;
+    return api(url, {
+      method: "GET",
+    });
+  },
+
+  async addIncidentalExpense(data: {
+    itineraryPlanId: number;
+    componentType: number;
+    componentId: number;
+    amount: number;
+    reason: string;
+    createdBy: number;
+  }) {
+    return api(`incidental-expenses`, {
+      method: "POST",
+      body: data,
+    });
+  },
+
+  async getIncidentalHistory(itineraryPlanId: number) {
+    return api(`incidental-expenses/history?itineraryPlanId=${itineraryPlanId}`, {
+      method: "GET",
+    });
+  },
+
+  async deleteIncidentalHistory(id: number) {
+    return api(`incidental-expenses/history/${id}`, {
+      method: "DELETE",
+    });
+  },
 };

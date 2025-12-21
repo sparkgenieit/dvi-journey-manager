@@ -8,9 +8,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { Eye, ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
+import { Eye, ChevronLeft, ChevronRight, Calendar as CalendarIcon, XCircle } from 'lucide-react';
 import { ItineraryService } from '@/services/itinerary';
 import { toast } from 'sonner';
+
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Utility function to format dates
 function formatToDDMMYYYY(date: Date | undefined) {
@@ -76,6 +85,12 @@ export const ConfirmedItineraries: React.FC = () => {
     staffId: '',
   });
 
+  // Cancellation state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [selectedItinerary, setSelectedItinerary] = useState<ConfirmedItinerary | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
+
   const fetchItineraries = async () => {
     setLoading(true);
     try {
@@ -101,6 +116,31 @@ export const ConfirmedItineraries: React.FC = () => {
       toast.error(error?.message || 'Failed to load confirmed itineraries');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCancelItinerary = async () => {
+    if (!selectedItinerary || !cancelReason.trim()) {
+      toast.error('Please provide a reason for cancellation');
+      return;
+    }
+
+    setIsCancelling(true);
+    try {
+      await ItineraryService.cancelItinerary({
+        itinerary_id: selectedItinerary.itinerary_plan_ID,
+        reason: cancelReason,
+      });
+      toast.success('Itinerary cancelled successfully');
+      setCancelModalOpen(false);
+      setCancelReason('');
+      setSelectedItinerary(null);
+      fetchItineraries();
+    } catch (error: any) {
+      console.error('Failed to cancel itinerary', error);
+      toast.error(error.response?.data?.message || 'Failed to cancel itinerary');
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -416,16 +456,30 @@ export const ConfirmedItineraries: React.FC = () => {
                             {itinerary.booking_quote_id}
                           </TableCell>
                           <TableCell>
-                            <Link to={`/itinerary-details/${itinerary.booking_quote_id}`}>
+                            <div className="flex items-center gap-1">
+                              <Link to={`/itinerary-details/${itinerary.booking_quote_id}`}>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0"
+                                  title="View Details"
+                                >
+                                  <Eye className="h-4 w-4 text-[#d546ab]" />
+                                </Button>
+                              </Link>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 className="h-8 w-8 p-0"
-                                title="View Details"
+                                title="Cancel Itinerary"
+                                onClick={() => {
+                                  setSelectedItinerary(itinerary);
+                                  setCancelModalOpen(true);
+                                }}
                               >
-                                <Eye className="h-4 w-4 text-[#d546ab]" />
+                                <XCircle className="h-4 w-4 text-red-500" />
                               </Button>
-                            </Link>
+                            </div>
                           </TableCell>
                           <TableCell>{itinerary.agent_name}</TableCell>
                           <TableCell>{formatDate(itinerary.created_on)}</TableCell>
@@ -512,6 +566,49 @@ export const ConfirmedItineraries: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+      {/* Cancellation Dialog */}
+      <Dialog open={cancelModalOpen} onOpenChange={setCancelModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="text-[#4a4260]">Cancel Itinerary</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to cancel the itinerary for <strong>{selectedItinerary?.booking_quote_id}</strong>? 
+              This action will process a refund to the agent's wallet.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="reason" className="text-[#4a4260]">Reason for Cancellation</Label>
+              <textarea
+                id="reason"
+                className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                rows={3}
+                placeholder="Enter the reason for cancellation..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setCancelModalOpen(false);
+                setCancelReason('');
+                setSelectedItinerary(null);
+              }}
+            >
+              No, Keep it
+            </Button>
+            <Button
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={handleCancelItinerary}
+              disabled={isCancelling || !cancelReason.trim()}
+            >
+              {isCancelling ? 'Cancelling...' : 'Yes, Cancel Itinerary'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>    </div>
   );
 };

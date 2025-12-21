@@ -20,6 +20,7 @@ import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
 import { ConfirmedItineraries } from "./pages/ConfirmedItineraries";
+import { CancelledItineraries } from "./pages/CancelledItineraries";
 import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";
 import NotFound from "./pages/NotFound";
@@ -52,6 +53,8 @@ import StaffPreviewPage from "./pages/staff/StaffPreviewPage";
 import AgentListPage from "./pages/agent/AgentListPage";
 import AgentFormPage from "./pages/agent/AgentFormPage";
 import AgentPreviewPage from "./pages/agent/AgentPreviewPage";
+import Profile from "./pages/agent/Profile";
+import WalletHistory from "./pages/agent/WalletHistory";
 
 import PricebookExportPage from "./pages/pricebook-export/PricebookExportPage";
 import { GlobalSettingsPage } from "./pages/Settings/GlobalSettings";
@@ -160,6 +163,14 @@ const App = () => (
               element={
                 <MainLayout>
                   <ConfirmedItineraries />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/cancelled-itinerary"
+              element={
+                <MainLayout>
+                  <CancelledItineraries />
                 </MainLayout>
               }
             />
@@ -464,6 +475,22 @@ const App = () => (
               element={
                 <MainLayout>
                   <AgentFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <MainLayout>
+                  <Profile />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/wallet-history"
+              element={
+                <MainLayout>
+                  <WalletHistory />
                 </MainLayout>
               }
             />

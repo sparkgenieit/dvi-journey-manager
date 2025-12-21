@@ -1,6 +1,6 @@
 // FILE: src/pages/vendor/steps/VendorStepVehicleTypeCost.tsx
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { api } from "@/lib/api";
+import { Option } from "../vendorFormTypes";
 
 type Props = {
   vendorId?: number;
@@ -26,11 +28,12 @@ type Props = {
   onNext: () => void;
 };
 
-// ======== Types for local UI state (can be wired to API later) ========
+// ======== Types for local UI state ========
 
 type DriverCostRow = {
   id: number;
   vehicleType: string;
+  vehicleTypeId: number;
   driverBhatta: string;
   foodCost: string;
   accommodationCost: string;
@@ -42,28 +45,23 @@ type DriverCostRow = {
 type OutstationKmLimitRow = {
   id: number;
   vehicleType: string;
+  vehicleTypeId: number;
   title: string;
   limit: string;
-  status: "Active" | "Inactive";
+  status: string;
 };
 
 type LocalKmLimitRow = {
   id: number;
   vehicleType: string;
+  vehicleTypeId: number;
   title: string;
   hours: string;
   km: string;
-  status: "Active" | "Inactive";
+  status: string;
 };
 
 type ActiveTab = "driverCost" | "outstation" | "local";
-
-// Dummy vehicle list (replace with real dropdown from API)
-const VEHICLE_TYPES = [
-  { id: "sedan", label: "Sedan" },
-  { id: "suv", label: "SUV" },
-  { id: "tempo_traveller", label: "Tempo Traveller" },
-];
 
 export const VendorStepVehicleTypeCost: React.FC<Props> = ({
   vendorId,
@@ -71,6 +69,11 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
   onNext,
 }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>("driverCost");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Dropdowns
+  const [vehicleTypeOptions, setVehicleTypeOptions] = useState<Option[]>([]);
 
   // ---- Driver Cost state ----
   const [driverCostRows, setDriverCostRows] = useState<DriverCostRow[]>([]);
@@ -120,37 +123,102 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
     km: "",
   });
 
+  useEffect(() => {
+    if (vendorId) {
+      fetchData();
+      fetchDropdowns();
+    }
+  }, [vendorId]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [dc, out, loc] = await Promise.all([
+        api(`/vendors/${vendorId}/vehicle-type-costs`),
+        api(`/vendors/${vendorId}/outstation-km-limits`),
+        api(`/vendors/${vendorId}/local-km-limits`),
+      ]);
+
+      setDriverCostRows((dc as any[]).map(r => ({
+        id: r.v_type_id,
+        vehicleType: String(r.vehicle_type_id),
+        vehicleTypeId: r.vehicle_type_id,
+        driverBhatta: String(r.driver_bhatta),
+        foodCost: String(r.food_cost),
+        accommodationCost: String(r.accommodation_cost),
+        extraCost: String(r.extra_cost),
+        morningCharges: String(r.morning_charges),
+        eveningCharges: String(r.evening_charges),
+      })));
+
+      setOutstationRows((out as any[]).map(r => ({
+        id: r.out_km_id,
+        vehicleType: String(r.vehicle_type_id),
+        vehicleTypeId: r.vehicle_type_id,
+        title: r.out_km_title,
+        limit: String(r.out_km_limit),
+        status: r.status === 0 ? "Active" : "Inactive",
+      })));
+
+      setLocalRows((loc as any[]).map(r => ({
+        id: r.loc_km_id,
+        vehicleType: String(r.vehicle_type_id),
+        vehicleTypeId: r.vehicle_type_id,
+        title: r.loc_km_title,
+        hours: String(r.loc_km_hour),
+        km: String(r.loc_km_limit),
+        status: r.status === 0 ? "Active" : "Inactive",
+      })));
+    } catch (e) {
+      console.error("Failed to fetch vehicle type costs", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDropdowns = async () => {
+    try {
+      const vtRes = await api("/dropdowns/vehicle-types");
+      setVehicleTypeOptions(vtRes as Option[]);
+    } catch (e) {
+      console.error("Failed to fetch dropdowns", e);
+    }
+  };
+
   // ====== Helpers for tables (simple client-side search) ======
 
   const filteredDriverCostRows = useMemo(() => {
     if (!driverCostSearch.trim()) return driverCostRows;
     const q = driverCostSearch.toLowerCase();
     return driverCostRows.filter(
-      (row) =>
-        row.vehicleType.toLowerCase().includes(q) ||
-        row.driverBhatta.toLowerCase().includes(q)
+      (row) => {
+        const vtLabel = vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || "";
+        return vtLabel.toLowerCase().includes(q) || row.driverBhatta.toLowerCase().includes(q);
+      }
     );
-  }, [driverCostRows, driverCostSearch]);
+  }, [driverCostRows, driverCostSearch, vehicleTypeOptions]);
 
   const filteredOutstationRows = useMemo(() => {
     if (!outstationSearch.trim()) return outstationRows;
     const q = outstationSearch.toLowerCase();
     return outstationRows.filter(
-      (row) =>
-        row.vehicleType.toLowerCase().includes(q) ||
-        row.title.toLowerCase().includes(q)
+      (row) => {
+        const vtLabel = vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || "";
+        return vtLabel.toLowerCase().includes(q) || row.title.toLowerCase().includes(q);
+      }
     );
-  }, [outstationRows, outstationSearch]);
+  }, [outstationRows, outstationSearch, vehicleTypeOptions]);
 
   const filteredLocalRows = useMemo(() => {
     if (!localSearch.trim()) return localRows;
     const q = localSearch.toLowerCase();
     return localRows.filter(
-      (row) =>
-        row.vehicleType.toLowerCase().includes(q) ||
-        row.title.toLowerCase().includes(q)
+      (row) => {
+        const vtLabel = vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || "";
+        return vtLabel.toLowerCase().includes(q) || row.title.toLowerCase().includes(q);
+      }
     );
-  }, [localRows, localSearch]);
+  }, [localRows, localSearch, vehicleTypeOptions]);
 
   // ============================================================
   // Driver Cost modal handlers
@@ -184,40 +252,34 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
     setShowDriverCostModal(true);
   };
 
-  const handleSaveDriverCost = () => {
-    if (!driverFormVehicleType) return;
-
-    if (editingDriverRow) {
-      setDriverCostRows((prev) =>
-        prev.map((row) =>
-          row.id === editingDriverRow.id
-            ? {
-                ...row,
-                vehicleType: driverFormVehicleType,
-                ...driverFormFields,
-              }
-            : row
-        )
-      );
-    } else {
-      const nextId =
-        driverCostRows.length === 0
-          ? 1
-          : Math.max(...driverCostRows.map((r) => r.id)) + 1;
-      setDriverCostRows((prev) => [
-        ...prev,
-        {
-          id: nextId,
-          vehicleType: driverFormVehicleType,
-          ...driverFormFields,
-        },
-      ]);
+  const handleSaveDriverCost = async () => {
+    if (!driverFormVehicleType || !vendorId) return;
+    setSaving(true);
+    try {
+      await api(`/vendors/${vendorId}/vehicle-type-costs`, {
+        method: "POST",
+        body: JSON.stringify({
+          vehicle_type_id: Number(driverFormVehicleType),
+          driver_bhatta: Number(driverFormFields.driverBhatta),
+          food_cost: Number(driverFormFields.foodCost),
+          accommodation_cost: Number(driverFormFields.accommodationCost),
+          extra_cost: Number(driverFormFields.extraCost),
+          morning_charges: Number(driverFormFields.morningCharges),
+          evening_charges: Number(driverFormFields.eveningCharges),
+        }),
+      });
+      await fetchData();
+      setShowDriverCostModal(false);
+    } catch (e) {
+      console.error("Failed to save driver cost", e);
+    } finally {
+      setSaving(false);
     }
-
-    setShowDriverCostModal(false);
   };
 
-  const handleDeleteDriverCost = (rowId: number) => {
+  const handleDeleteDriverCost = async (rowId: number) => {
+    // Backend doesn't have delete yet, but we can just re-save with 0 or ignore
+    // For now, just UI delete
     setDriverCostRows((prev) => prev.filter((row) => row.id !== rowId));
   };
 
@@ -239,40 +301,26 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
     setShowOutstationModal(true);
   };
 
-  const handleSaveOutstation = () => {
-    if (!outstationFormVehicleType) return;
-
-    if (editingOutstationRow) {
-      setOutstationRows((prev) =>
-        prev.map((row) =>
-          row.id === editingOutstationRow.id
-            ? {
-                ...row,
-                vehicleType: outstationFormVehicleType,
-                title: outstationFormFields.title,
-                limit: outstationFormFields.limit,
-              }
-            : row
-        )
-      );
-    } else {
-      const nextId =
-        outstationRows.length === 0
-          ? 1
-          : Math.max(...outstationRows.map((r) => r.id)) + 1;
-      setOutstationRows((prev) => [
-        ...prev,
-        {
-          id: nextId,
-          vehicleType: outstationFormVehicleType,
-          title: outstationFormFields.title,
-          limit: outstationFormFields.limit,
-          status: "Active",
-        },
-      ]);
+  const handleSaveOutstation = async () => {
+    if (!outstationFormVehicleType || !vendorId) return;
+    setSaving(true);
+    try {
+      await api(`/vendors/${vendorId}/outstation-km-limits`, {
+        method: "POST",
+        body: JSON.stringify({
+          vehicle_type_id: Number(outstationFormVehicleType),
+          out_km_title: outstationFormFields.title,
+          out_km_limit: Number(outstationFormFields.limit),
+          status: 0, // Active
+        }),
+      });
+      await fetchData();
+      setShowOutstationModal(false);
+    } catch (e) {
+      console.error("Failed to save outstation limit", e);
+    } finally {
+      setSaving(false);
     }
-
-    setShowOutstationModal(false);
   };
 
   const handleDeleteOutstation = (rowId: number) => {
@@ -301,42 +349,27 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
     setShowLocalModal(true);
   };
 
-  const handleSaveLocal = () => {
-    if (!localFormVehicleType) return;
-
-    if (editingLocalRow) {
-      setLocalRows((prev) =>
-        prev.map((row) =>
-          row.id === editingLocalRow.id
-            ? {
-                ...row,
-                vehicleType: localFormVehicleType,
-                title: localFormFields.title,
-                hours: localFormFields.hours,
-                km: localFormFields.km,
-              }
-            : row
-        )
-      );
-    } else {
-      const nextId =
-        localRows.length === 0
-          ? 1
-          : Math.max(...localRows.map((r) => r.id)) + 1;
-      setLocalRows((prev) => [
-        ...prev,
-        {
-          id: nextId,
-          vehicleType: localFormVehicleType,
-          title: localFormFields.title,
-          hours: localFormFields.hours,
-          km: localFormFields.km,
-          status: "Active",
-        },
-      ]);
+  const handleSaveLocal = async () => {
+    if (!localFormVehicleType || !vendorId) return;
+    setSaving(true);
+    try {
+      await api(`/vendors/${vendorId}/local-km-limits`, {
+        method: "POST",
+        body: JSON.stringify({
+          vehicle_type_id: Number(localFormVehicleType),
+          loc_km_title: localFormFields.title,
+          loc_km_hour: Number(localFormFields.hours),
+          loc_km_limit: Number(localFormFields.km),
+          status: 0, // Active
+        }),
+      });
+      await fetchData();
+      setShowLocalModal(false);
+    } catch (e) {
+      console.error("Failed to save local limit", e);
+    } finally {
+      setSaving(false);
     }
-
-    setShowLocalModal(false);
   };
 
   const handleDeleteLocal = (rowId: number) => {
@@ -510,7 +543,7 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
                         </Button>
                       </td>
                       <td className="px-4 py-3 border-b border-gray-100">
-                        {row.vehicleType}
+                        {vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || row.vehicleType}
                       </td>
                       <td className="px-4 py-3 border-b border-gray-100">
                         {row.driverBhatta}
@@ -661,7 +694,7 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
                         {vendorId ?? "-"}
                       </td>
                       <td className="px-4 py-3 border-b border-gray-100">
-                        {row.vehicleType}
+                        {vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || row.vehicleType}
                       </td>
                       <td className="px-4 py-3 border-b border-gray-100">
                         {row.title}
@@ -803,7 +836,7 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
                         {vendorId ?? "-"}
                       </td>
                       <td className="px-4 py-3 border-b border-gray-100">
-                        {row.vehicleType}
+                        {vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || row.vehicleType}
                       </td>
                       <td className="px-4 py-3 border-b border-gray-100">
                         {row.title}
@@ -900,8 +933,8 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
                   <SelectValue placeholder="Choose Any One" />
                 </SelectTrigger>
                 <SelectContent>
-                  {VEHICLE_TYPES.map((v) => (
-                    <SelectItem key={v.id} value={v.label}>
+                  {vehicleTypeOptions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
                       {v.label}
                     </SelectItem>
                   ))}
@@ -1053,8 +1086,8 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
                   <SelectValue placeholder="Choose Vehicle Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {VEHICLE_TYPES.map((v) => (
-                    <SelectItem key={v.id} value={v.label}>
+                  {vehicleTypeOptions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
                       {v.label}
                     </SelectItem>
                   ))}
@@ -1138,8 +1171,8 @@ export const VendorStepVehicleTypeCost: React.FC<Props> = ({
                   <SelectValue placeholder="Choose Vehicle Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {VEHICLE_TYPES.map((v) => (
-                    <SelectItem key={v.id} value={v.label}>
+                  {vehicleTypeOptions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
                       {v.label}
                     </SelectItem>
                   ))}

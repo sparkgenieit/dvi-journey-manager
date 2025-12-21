@@ -35,6 +35,7 @@ import {
   fetchAgents,
   fetchPaymentModes,
   searchQuotes,
+  exportAccountsManagerExcel,
 } from "@/services/accountsManagerApi";
 import type {
   AccountsRow,
@@ -782,6 +783,24 @@ export const AccountsManager: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportExcel = async () => {
+    try {
+      const filters: AccountsFilters = {
+        status: activeTab,
+        quoteId: quoteIdFilter || undefined,
+        componentType: componentType === "all" ? undefined : componentType,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        agent: agent || undefined,
+        search: search || undefined,
+      };
+      await exportAccountsManagerExcel(filters);
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      alert("Failed to export Excel");
+    }
+  };
+
   return (
     <div className="w-full max-w-full bg-[#fbeef8] min-h-screen p-4 md:p-6">
       <h1 className="text-lg md:text-xl font-semibold text-[#4a4260] mb-4">
@@ -975,6 +994,14 @@ export const AccountsManager: React.FC = () => {
                   className="bg-[#f057b8] hover:bg-[#e348aa] text-white h-9 px-4"
                 >
                   Clear
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="bg-[#0f9c34] hover:bg-[#0d8a2e] text-white h-9 px-4 flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Excel
                 </Button>
               </div>
             </div>

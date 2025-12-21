@@ -1,6 +1,6 @@
 // FILE: src/pages/vendor/steps/VendorStepPermitCost.tsx
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,30 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { api } from "@/lib/api";
+import { Option } from "../vendorFormTypes";
 
 type Props = {
   vendorId?: number;
   onBack: () => void;
-  onFinish: () => void;
+  onNext: () => void;
 };
 
 type PermitRow = {
   id: number;
   vehicleType: string;
   sourceState: string;
+  vehicleTypeId: number;
+  sourceStateId: number;
 };
-
-const VEHICLE_TYPES = [
-  { id: "sedan", label: "Sedan" },
-  { id: "suv", label: "SUV" },
-  { id: "tempo_traveller", label: "Tempo Traveller" },
-];
-
-const STATES = [
-  { id: "tn", label: "Tamil Nadu" },
-  { id: "ka", label: "Karnataka" },
-  { id: "ap", label: "Andhra Pradesh" },
-];
 
 const gradientButton =
   "bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:from-pink-600 hover:to-purple-600";
@@ -43,13 +35,19 @@ const gradientButton =
 export const VendorStepPermitCost: React.FC<Props> = ({
   vendorId,
   onBack,
-  onFinish,
+  onNext,
 }) => {
-  /** ---------- TABLE + FILTER STATE (UI only for now) ---------- */
-  const [rows] = useState<PermitRow[]>([]);
+  /** ---------- TABLE + FILTER STATE ---------- */
+  const [rows, setRows] = useState<PermitRow[]>([]);
   const [entriesPerPage] = useState(10);
   const [searchText, setSearchText] = useState("");
   const [isAddMode, setIsAddMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Dropdowns
+  const [vehicleTypeOptions, setVehicleTypeOptions] = useState<Option[]>([]);
+  const [stateOptions, setStateOptions] = useState<Option[]>([]);
 
   /** ---------- ADD FORM STATE ---------- */
   const [permitForm, setPermitForm] = useState({
@@ -57,26 +55,130 @@ export const VendorStepPermitCost: React.FC<Props> = ({
     state: "",
   });
 
+  const [destinationCosts, setDestinationCosts] = useState<{ [key: string]: string }>({});
+
+  useEffect(() => {
+    if (vendorId) {
+      fetchPermitCosts();
+      fetchDropdowns();
+    }
+  }, [vendorId]);
+
+  const fetchPermitCosts = async () => {
+    setLoading(true);
+    try {
+      const data = (await api(`/vendors/${vendorId}/permit-costs`)) as any[];
+      // Group by vehicle type and source state for the list view
+      const grouped: { [key: string]: PermitRow } = {};
+      data.forEach((pc: any) => {
+        const key = `${pc.vehicle_type_id}-${pc.source_state_id}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            id: pc.permit_cost_id,
+            vehicleType: String(pc.vehicle_type_id),
+            sourceState: String(pc.source_state_id),
+            vehicleTypeId: pc.vehicle_type_id,
+            sourceStateId: pc.source_state_id,
+          };
+        }
+      });
+      setRows(Object.values(grouped));
+    } catch (e) {
+      console.error("Failed to fetch permit costs", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDropdowns = async () => {
+    try {
+      const [vtRes, sRes] = await Promise.all([
+        api("/dropdowns/vehicle-types"),
+        api("/dropdowns/states?countryId=1"), // Assuming India
+      ]);
+      setVehicleTypeOptions(vtRes as Option[]);
+      setStateOptions(sRes as Option[]);
+    } catch (e) {
+      console.error("Failed to fetch dropdowns", e);
+    }
+  };
+
   const handleFormChange = (
     field: keyof typeof permitForm,
     value: string
   ): void => {
     setPermitForm((prev) => ({ ...prev, [field]: value }));
+    if (field === "state" || field === "vehicleType") {
+      // Fetch existing costs for this combination if editing
+      // For now, just clear
+      setDestinationCosts({});
+    }
   };
 
   const filteredRows = useMemo(() => {
     if (!searchText.trim()) return rows;
     const q = searchText.toLowerCase();
     return rows.filter(
-      (r) =>
-        r.vehicleType.toLowerCase().includes(q) ||
-        r.sourceState.toLowerCase().includes(q)
+      (r) => {
+        const vtLabel = vehicleTypeOptions.find(o => o.id === r.vehicleType)?.label || "";
+        const sLabel = stateOptions.find(o => o.id === r.sourceState)?.label || "";
+        return vtLabel.toLowerCase().includes(q) || sLabel.toLowerCase().includes(q);
+      }
     );
-  }, [rows, searchText]);
+  }, [rows, searchText, vehicleTypeOptions, stateOptions]);
 
-  const handleSavePermit = () => {
-    // TODO: wire to backend later
-    setIsAddMode(false);
+  const handleSavePermit = async () => {
+    if (!vendorId || !permitForm.vehicleType || !permitForm.state) return;
+    setSaving(true);
+    try {
+      // In legacy PHP, it saves multiple destination states.
+      // My backend updateVendorPermitCost currently handles one at a time.
+      // I should probably update the backend to handle multiple or loop here.
+      // I'll loop here for now to match the UI.
+      for (const destStateId in destinationCosts) {
+        const cost = destinationCosts[destStateId];
+        if (cost) {
+          await api(`/vendors/${vendorId}/permit-costs`, {
+            method: "POST",
+            body: JSON.stringify({
+              vehicle_type_id: Number(permitForm.vehicleType),
+              source_state_id: Number(permitForm.state),
+              destination_state_id: Number(destStateId),
+              permit_cost: Number(cost),
+            }),
+          });
+        }
+      }
+      await fetchPermitCosts();
+      setIsAddMode(false);
+    } catch (e) {
+      console.error("Failed to save permit costs", e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = async (row: PermitRow) => {
+    setPermitForm({
+      vehicleType: String(row.vehicleTypeId),
+      state: String(row.sourceStateId),
+    });
+    setIsAddMode(true);
+    setLoading(true);
+    try {
+      const data = (await api(`/vendors/${vendorId}/permit-costs`)) as any[];
+      const costs: { [key: string]: string } = {};
+      data.forEach((pc: any) => {
+        if (pc.vehicle_type_id === row.vehicleTypeId && pc.source_state_id === row.sourceStateId) {
+          costs[pc.destination_state_id] = String(pc.permit_cost);
+        }
+      });
+      setDestinationCosts(costs);
+    } catch (e) {
+      console.error("Failed to fetch permit costs for edit", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   /** ---------- LIST VIEW (matches PHP “Permit Details” screen) ---------- */
@@ -92,9 +194,7 @@ export const VendorStepPermitCost: React.FC<Props> = ({
           <select
             className="rounded-md border border-gray-300 px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-pink-500"
             value={entriesPerPage}
-            onChange={() => {
-              /* static UI only */
-            }}
+            onChange={() => {}}
           >
             <option value={10}>10</option>
             <option value={25}>25</option>
@@ -107,7 +207,11 @@ export const VendorStepPermitCost: React.FC<Props> = ({
           <Button
             type="button"
             className="bg-purple-100 px-5 text-sm font-semibold text-purple-700 hover:bg-purple-200"
-            onClick={() => setIsAddMode(true)}
+            onClick={() => {
+              setPermitForm({ vehicleType: "", state: "" });
+              setDestinationCosts({});
+              setIsAddMode(true);
+            }}
             disabled={!vendorId}
           >
             + Add Permit Cost
@@ -141,7 +245,13 @@ export const VendorStepPermitCost: React.FC<Props> = ({
             </tr>
           </thead>
           <tbody className="bg-white">
-            {filteredRows.length === 0 ? (
+            {loading ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
+                  Loading...
+                </td>
+              </tr>
+            ) : filteredRows.length === 0 ? (
               <tr>
                 <td
                   colSpan={4}
@@ -157,21 +267,21 @@ export const VendorStepPermitCost: React.FC<Props> = ({
                     {idx + 1}
                   </td>
                   <td className="border-b border-gray-100 px-4 py-3">
-                    {/* view/edit button can be wired later */}
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="h-8 px-3 text-xs"
+                      onClick={() => handleEdit(row)}
                     >
                       View &amp; Edit
                     </Button>
                   </td>
                   <td className="border-b border-gray-100 px-4 py-3">
-                    {row.vehicleType}
+                    {vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || row.vehicleType}
                   </td>
                   <td className="border-b border-gray-100 px-4 py-3">
-                    {row.sourceState}
+                    {stateOptions.find(o => o.id === row.sourceState)?.label || row.sourceState}
                   </td>
                 </tr>
               ))
@@ -216,11 +326,11 @@ export const VendorStepPermitCost: React.FC<Props> = ({
         </Button>
         <Button
           type="button"
-          onClick={onFinish}
+          onClick={onNext}
           disabled={!vendorId}
           className={`${gradientButton} px-10`}
         >
-          Submit
+          Save & Next
         </Button>
       </div>
     </>
@@ -256,7 +366,7 @@ export const VendorStepPermitCost: React.FC<Props> = ({
               <SelectValue placeholder="Choose Vehicle Type" />
             </SelectTrigger>
             <SelectContent>
-              {VEHICLE_TYPES.map((v) => (
+              {vehicleTypeOptions.map((v) => (
                 <SelectItem key={v.id} value={v.id}>
                   {v.label}
                 </SelectItem>
@@ -277,7 +387,7 @@ export const VendorStepPermitCost: React.FC<Props> = ({
               <SelectValue placeholder="Select Any One" />
             </SelectTrigger>
             <SelectContent>
-              {STATES.map((s) => (
+              {stateOptions.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.label}
                 </SelectItem>
@@ -286,6 +396,27 @@ export const VendorStepPermitCost: React.FC<Props> = ({
           </Select>
         </div>
       </div>
+
+      {/* Destination States Grid */}
+      {permitForm.state && (
+        <div className="mt-6">
+          <h3 className="mb-4 text-md font-semibold text-gray-700">Destination State Permit Costs</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-h-96 overflow-y-auto p-2 border rounded-md">
+            {stateOptions.map((state) => (
+              <div key={state.id} className="flex items-center gap-2">
+                <Label className="w-32 text-xs truncate">{state.label}</Label>
+                <Input 
+                  type="number" 
+                  placeholder="Cost" 
+                  className="h-8 text-xs"
+                  value={destinationCosts[state.id] || ""}
+                  onChange={(e) => setDestinationCosts(prev => ({...prev, [state.id]: e.target.value}))}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-10 flex justify-between">
         <Button

@@ -12,11 +12,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt } from "lucide-react";
 import { ItineraryService } from "@/services/itinerary";
 import { api } from "@/lib/api";
 import { VehicleList } from "./VehicleList";
 import { HotelList } from "./HotelList";
+import { VoucherDetailsModal } from "./VoucherDetailsModal";
+import { PluckCardModal } from "./PluckCardModal";
+import { InvoiceModal } from "./InvoiceModal";
+import { IncidentalExpensesModal } from "./IncidentalExpensesModal";
 import { toast } from "sonner";
 
 // --------- Types aligned with CURRENT API RESPONSE ---------
@@ -222,6 +226,7 @@ type CostBreakdown = {
 type ItineraryDetailsResponse = {
   // planId for routing back to create-itinerary
   planId?: number;
+  isConfirmed?: boolean;
   quoteId: string;
   dateRange: string;
   roomCount: number;
@@ -442,6 +447,11 @@ export const ItineraryDetails: React.FC = () => {
 
   // Confirm Quotation modal state
   const [confirmQuotationModal, setConfirmQuotationModal] = useState(false);
+  const [voucherModal, setVoucherModal] = useState(false);
+  const [pluckCardModal, setPluckCardModal] = useState(false);
+  const [invoiceModal, setInvoiceModal] = useState(false);
+  const [invoiceType, setInvoiceType] = useState<'tax' | 'proforma'>('tax');
+  const [incidentalModal, setIncidentalModal] = useState(false);
   const [isConfirmingQuotation, setIsConfirmingQuotation] = useState(false);
   const [walletBalance, setWalletBalance] = useState<string>('');
   const [agentInfo, setAgentInfo] = useState<{
@@ -464,6 +474,8 @@ export const ItineraryDetails: React.FC = () => {
     departureFlightDetails: '',
   });
   const [additionalAdults, setAdditionalAdults] = useState<Array<{ name: string; age: string }>>([]);
+  const [additionalChildren, setAdditionalChildren] = useState<Array<{ name: string; age: string }>>([]);
+  const [additionalInfants, setAdditionalInfants] = useState<Array<{ name: string; age: string }>>([]);
 
   // Refresh hotel data after hotel update
   const refreshHotelData = async () => {
@@ -963,6 +975,10 @@ export const ItineraryDetails: React.FC = () => {
         primary_guest_email_id: guestDetails.emailId,
         adult_name: additionalAdults.map(a => a.name),
         adult_age: additionalAdults.map(a => a.age),
+        child_name: additionalChildren.map(c => c.name),
+        child_age: additionalChildren.map(c => c.age),
+        infant_name: additionalInfants.map(i => i.name),
+        infant_age: additionalInfants.map(i => i.age),
         arrival_date_time: guestDetails.arrivalDateTime,
         arrival_place: guestDetails.arrivalPlace,
         arrival_flight_details: guestDetails.arrivalFlightDetails,
@@ -975,6 +991,12 @@ export const ItineraryDetails: React.FC = () => {
 
       toast.success('Quotation confirmed successfully!');
       setConfirmQuotationModal(false);
+
+      // Refresh data to show confirmed status and links
+      if (quoteId) {
+        const detailsRes = await ItineraryService.getDetails(quoteId);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+      }
 
       // Reset form
       setGuestDetails({
@@ -992,6 +1014,8 @@ export const ItineraryDetails: React.FC = () => {
         departureFlightDetails: '',
       });
       setAdditionalAdults([]);
+      setAdditionalChildren([]);
+      setAdditionalInfants([]);
     } catch (e: any) {
       console.error('Failed to confirm quotation', e);
       toast.error(e?.message || 'Failed to confirm quotation');
@@ -1027,9 +1051,10 @@ export const ItineraryDetails: React.FC = () => {
     );
   }
 
-  const backToRouteHref = itinerary.planId
+  const backToListHref = "/latest-itinerary";
+  const modifyItineraryHref = itinerary.planId
     ? `/create-itinerary?id=${itinerary.planId}`
-    : "/latest-itinerary";
+    : "#";
 
   return (
     <div className="w-full max-w-full space-y-6 pb-8">
@@ -1040,15 +1065,71 @@ export const ItineraryDetails: React.FC = () => {
             <h1 className="text-xl font-semibold text-[#4a4260]">
               Tour Itinerary Plan
             </h1>
-            <Link to={backToRouteHref}>
-              <Button
-                variant="outline"
-                className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to Route List
-              </Button>
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link to={backToListHref}>
+                <Button
+                  variant="outline"
+                  className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to List
+                </Button>
+              </Link>
+
+              {itinerary.isConfirmed && (
+                <>
+                  <Button 
+                    variant="outline"
+                    className="border-[#6f42c1] text-[#6f42c1] hover:bg-[#6f42c1] hover:text-white"
+                    onClick={() => setPluckCardModal(true)}
+                  >
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Download Pluck Card
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="border-[#28a745] text-[#28a745] hover:bg-[#28a745] hover:text-white"
+                    onClick={() => setVoucherModal(true)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Voucher Details
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="border-[#fd7e14] text-[#fd7e14] hover:bg-[#fd7e14] hover:text-white"
+                    onClick={() => setIncidentalModal(true)}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Incidental Expenses
+                  </Button>
+                  <Link to={modifyItineraryHref}>
+                    <Button 
+                      variant="outline"
+                      className="border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545] hover:text-white"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Modify Itinerary
+                    </Button>
+                  </Link>
+                  <Button 
+                    variant="outline"
+                    className="border-[#17a2b8] text-[#17a2b8] hover:bg-[#17a2b8] hover:text-white"
+                    onClick={() => { setInvoiceType('tax'); setInvoiceModal(true); }}
+                  >
+                    <Receipt className="mr-2 h-4 w-4" />
+                    Invoice Tax
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="border-[#fd7e14] text-[#fd7e14] hover:bg-[#fd7e14] hover:text-white"
+                    onClick={() => { setInvoiceType('proforma'); setInvoiceModal(true); }}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Invoice Performa
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Quote Info */}
@@ -1078,7 +1159,7 @@ export const ItineraryDetails: React.FC = () => {
             <span>Room Count: {itinerary.roomCount}</span>
             <span>Extra Bed: {itinerary.extraBed}</span>
             <span>Child with bed: {itinerary.childWithBed}</span>
-            <span>Child without bed: {itinerary.childWithoutBed}</span>
+            <span>Child without bed: {itinerary.childWithoutbed}</span>
             <div className="ml-auto flex gap-4">
               <span>Adults: {itinerary.adults}</span>
               <span>Child: {itinerary.children}</span>
@@ -1087,14 +1168,16 @@ export const ItineraryDetails: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-2">
-            <Button 
-              className="bg-[#28a745] hover:bg-[#218838]"
-              onClick={openConfirmQuotationModal}
-            >
-              <Bell className="mr-2 h-4 w-4" />
-              Confirm Quotation
-            </Button>
+          <div className="flex justify-end gap-2">
+            {!itinerary.isConfirmed && (
+              <Button 
+                className="bg-[#28a745] hover:bg-[#218838]"
+                onClick={openConfirmQuotationModal}
+              >
+                <Bell className="mr-2 h-4 w-4" />
+                Confirm Quotation
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -2627,6 +2710,195 @@ export const ItineraryDetails: React.FC = () => {
                   onChange={(e) => setGuestDetails({...guestDetails, emailId: e.target.value})}
                 />
               </div>
+
+              {/* Additional Adults */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-[#4a4260]">Additional Adults</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdditionalAdults([...additionalAdults, { name: '', age: '' }])}
+                    className="h-8 px-2 text-xs border-[#e5d9f2] text-[#8b43d1] hover:bg-[#f8f4ff]"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Adult
+                  </Button>
+                </div>
+                {additionalAdults.map((adult, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-7">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Adult {index + 2} Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Name"
+                        value={adult.name}
+                        onChange={(e) => {
+                          const newAdults = [...additionalAdults];
+                          newAdults[index].name = e.target.value;
+                          setAdditionalAdults(newAdults);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Age
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Age"
+                        value={adult.age}
+                        onChange={(e) => {
+                          const newAdults = [...additionalAdults];
+                          newAdults[index].age = e.target.value;
+                          setAdditionalAdults(newAdults);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAdditionalAdults(additionalAdults.filter((_, i) => i !== index))}
+                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Additional Children */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-[#4a4260]">Children (5-12 years)</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdditionalChildren([...additionalChildren, { name: '', age: '' }])}
+                    className="h-8 px-2 text-xs border-[#e5d9f2] text-[#8b43d1] hover:bg-[#f8f4ff]"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Child
+                  </Button>
+                </div>
+                {additionalChildren.map((child, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-7">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Child {index + 1} Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Name"
+                        value={child.name}
+                        onChange={(e) => {
+                          const newChildren = [...additionalChildren];
+                          newChildren[index].name = e.target.value;
+                          setAdditionalChildren(newChildren);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Age
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Age"
+                        value={child.age}
+                        onChange={(e) => {
+                          const newChildren = [...additionalChildren];
+                          newChildren[index].age = e.target.value;
+                          setAdditionalChildren(newChildren);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAdditionalChildren(additionalChildren.filter((_, i) => i !== index))}
+                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Additional Infants */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-[#4a4260]">Infants (Below 5 years)</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdditionalInfants([...additionalInfants, { name: '', age: '' }])}
+                    className="h-8 px-2 text-xs border-[#e5d9f2] text-[#8b43d1] hover:bg-[#f8f4ff]"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Infant
+                  </Button>
+                </div>
+                {additionalInfants.map((infant, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-7">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Infant {index + 1} Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Name"
+                        value={infant.name}
+                        onChange={(e) => {
+                          const newInfants = [...additionalInfants];
+                          newInfants[index].name = e.target.value;
+                          setAdditionalInfants(newInfants);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Age
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Age"
+                        value={infant.age}
+                        onChange={(e) => {
+                          const newInfants = [...additionalInfants];
+                          newInfants[index].age = e.target.value;
+                          setAdditionalInfants(newInfants);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAdditionalInfants(additionalInfants.filter((_, i) => i !== index))}
+                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Arrival Details */}
@@ -2741,6 +3013,9 @@ export const ItineraryDetails: React.FC = () => {
                   departurePlace: '',
                   departureFlightDetails: '',
                 });
+                setAdditionalAdults([]);
+                setAdditionalChildren([]);
+                setAdditionalInfants([]);
               }}
             >
               Cancel
@@ -2755,6 +3030,32 @@ export const ItineraryDetails: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {itinerary?.planId && (
+        <>
+          <VoucherDetailsModal 
+            isOpen={voucherModal} 
+            onClose={() => setVoucherModal(false)} 
+            itineraryPlanId={itinerary.planId} 
+          />
+          <PluckCardModal 
+            isOpen={pluckCardModal} 
+            onClose={() => setPluckCardModal(false)} 
+            itineraryPlanId={itinerary.planId} 
+          />
+          <InvoiceModal 
+            isOpen={invoiceModal} 
+            onClose={() => setInvoiceModal(false)} 
+            itineraryPlanId={itinerary.planId} 
+            type={invoiceType}
+          />
+          <IncidentalExpensesModal
+            isOpen={incidentalModal}
+            onClose={() => setIncidentalModal(false)}
+            itineraryPlanId={itinerary.planId}
+          />
+        </>
+      )}
     </div>
   );
 };
