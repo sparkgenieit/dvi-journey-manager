@@ -1,6 +1,6 @@
 // FILE: src/pages/vendor/steps/VendorStepVehicle.tsx
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CarFront, Star } from "lucide-react";
+import { api } from "@/lib/api";
+import { Option } from "../vendorFormTypes";
 
 type Props = {
   vendorId?: number;
@@ -31,7 +33,7 @@ type VehicleRow = {
   regNo: string;
   vehicleType: string;
   fcExpiryDate: string;
-  status: string;
+  status: number;
   statusLabel: string;
 };
 
@@ -40,39 +42,107 @@ export const VendorStepVehicle: React.FC<Props> = ({
   onBack,
   onNext,
 }) => {
-  /** ---------------- BRANCH + TABLE STATE (UI only) ---------------- */
-  const [branches] = useState<Branch[]>([
-    // TODO: replace with real API data
-    { id: 1, name: "unjhb", vehicleCount: 0 },
-  ]);
+  /** ---------------- BRANCH + TABLE STATE ---------------- */
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
+  const [vehicleRows, setVehicleRows] = useState<VehicleRow[]>([]);
+  const [search, setSearch] = useState("");
+  const [isVehicleListOpen, setIsVehicleListOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(
-    branches.length ? branches[0].id : null
-  );
+  // Dropdowns
+  const [vehicleTypeOptions, setVehicleTypeOptions] = useState<Option[]>([]);
+  const [countryOptions, setCountryOptions] = useState<Option[]>([]);
+  const [stateOptions, setStateOptions] = useState<Option[]>([]);
+  const [cityOptions, setCityOptions] = useState<Option[]>([]);
+
   const selectedBranch = useMemo(
-    () => branches.find((b) => b.id === selectedBranchId) ?? branches[0],
+    () => branches.find((b) => b.id === selectedBranchId),
     [branches, selectedBranchId]
   );
 
-  const [vehicleRows] = useState<VehicleRow[]>([]);
-  const [search, setSearch] = useState("");
-  const [isVehicleListOpen, setIsVehicleListOpen] = useState(false);
+  useEffect(() => {
+    if (vendorId) {
+      fetchBranches();
+      fetchVehicles();
+      fetchDropdowns();
+    }
+  }, [vendorId]);
+
+  const fetchBranches = async () => {
+    try {
+      const data = await api(`/vendors/${vendorId}`);
+      const mapped = (data as any).branches.map((b: any) => ({
+        id: b.vendor_branch_id,
+        name: b.branch_name,
+        vehicleCount: 0, // We'll update this if needed
+      }));
+      setBranches(mapped);
+      if (mapped.length > 0 && !selectedBranchId) {
+        setSelectedBranchId(mapped[0].id);
+      }
+    } catch (e) {
+      console.error("Failed to fetch branches", e);
+    }
+  };
+
+  const fetchVehicles = async () => {
+    if (!vendorId) return;
+    setLoading(true);
+    try {
+      const data = (await api(`/vendors/${vendorId}/vehicles`)) as any[];
+      const mapped = data.map((v: any) => ({
+        id: v.vehicle_id,
+        regNo: v.registration_number || "",
+        vehicleType: String(v.vehicle_type_id || ""),
+        fcExpiryDate: v.vehicle_fc_expiry_date ? v.vehicle_fc_expiry_date.split('T')[0] : "",
+        status: v.status,
+        statusLabel: v.status === 1 ? "Active" : "Inactive",
+        branchId: v.vendor_branch_id,
+        _full: v, // Store full object for editing
+      }));
+      setVehicleRows(mapped);
+    } catch (e) {
+      console.error("Failed to fetch vehicles", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDropdowns = async () => {
+    try {
+      const [vtRes, cRes] = await Promise.all([
+        api("/dropdowns/vehicle-types"),
+        api("/dropdowns/countries"),
+      ]);
+      setVehicleTypeOptions(vtRes as Option[]);
+      setCountryOptions(cRes as Option[]);
+    } catch (e) {
+      console.error("Failed to fetch dropdowns", e);
+    }
+  };
 
   const filteredRows = useMemo(() => {
-    if (!search.trim()) return vehicleRows;
+    let rows = vehicleRows;
+    if (selectedBranchId) {
+      rows = rows.filter((r: any) => r.branchId === selectedBranchId);
+    }
+    if (!search.trim()) return rows;
     const q = search.toLowerCase();
-    return vehicleRows.filter(
+    return rows.filter(
       (r) =>
         r.regNo.toLowerCase().includes(q) ||
         r.vehicleType.toLowerCase().includes(q)
     );
-  }, [vehicleRows, search]);
+  }, [vehicleRows, search, selectedBranchId]);
 
   /** ---------------- ADD VEHICLE FORM TOGGLE ---------------- */
   const [isAddMode, setIsAddMode] = useState(false);
+  const [editingVehicleId, setEditingVehicleId] = useState<number | null>(null);
 
-  /** ---------------- VEHICLE FORM STATE (UI only) ---------------- */
-  const [vehicleForm, setVehicleForm] = useState({
+  /** ---------------- VEHICLE FORM STATE ---------------- */
+  const emptyVehicleForm = {
     vehicleType: "",
     registrationNumber: "",
     registrationDate: "",
@@ -98,7 +168,25 @@ export const VendorStepVehicle: React.FC<Props> = ({
     insuranceEndDate: "",
     insuranceContactNumber: "",
     rtoCode: "",
-  });
+  };
+
+  const [vehicleForm, setVehicleForm] = useState(emptyVehicleForm);
+
+  useEffect(() => {
+    if (vehicleForm.country) {
+      api(`/dropdowns/states?countryId=${vehicleForm.country}`).then((res) =>
+        setStateOptions(res as Option[])
+      );
+    }
+  }, [vehicleForm.country]);
+
+  useEffect(() => {
+    if (vehicleForm.state) {
+      api(`/dropdowns/cities?stateId=${vehicleForm.state}`).then((res) =>
+        setCityOptions(res as Option[])
+      );
+    }
+  }, [vehicleForm.state]);
 
   const handleFieldChange = (
     field: keyof typeof vehicleForm,
@@ -107,10 +195,105 @@ export const VendorStepVehicle: React.FC<Props> = ({
     setVehicleForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSaveVehicle = () => {
-    // TODO: wire to backend later
-    setIsAddMode(false);
-    setIsVehicleListOpen(true); // go back to list after save
+  const handleSaveVehicle = async () => {
+    if (!vendorId || !selectedBranchId) return;
+    setSaving(true);
+    try {
+      const payload = {
+        vendor_branch_id: selectedBranchId,
+        vehicle_type_id: Number(vehicleForm.vehicleType),
+        registration_number: vehicleForm.registrationNumber,
+        registration_date: vehicleForm.registrationDate ? new Date(vehicleForm.registrationDate) : null,
+        engine_number: vehicleForm.engineNumber,
+        owner_name: vehicleForm.ownerName,
+        owner_contact_no: vehicleForm.ownerContactNumber,
+        owner_email_id: vehicleForm.ownerEmailId,
+        owner_address: vehicleForm.ownerAddress,
+        owner_pincode: vehicleForm.ownerPincode,
+        owner_country: Number(vehicleForm.country),
+        owner_state: vehicleForm.state,
+        owner_city: vehicleForm.city,
+        chassis_number: vehicleForm.chassisNumber,
+        vehicle_fc_expiry_date: vehicleForm.vehicleExpiryDate ? new Date(vehicleForm.vehicleExpiryDate) : null,
+        fuel_type: Number(vehicleForm.fuelType),
+        extra_km_charge: Number(vehicleForm.extraKmCharge),
+        early_morning_charges: Number(vehicleForm.earlyMorningCharges),
+        evening_charges: Number(vehicleForm.eveningCharges),
+        vehicle_video_url: vehicleForm.vehicleVideoUrl,
+        insurance_policy_number: vehicleForm.insurancePolicyNumber,
+        insurance_start_date: vehicleForm.insuranceStartDate ? new Date(vehicleForm.insuranceStartDate) : null,
+        insurance_end_date: vehicleForm.insuranceEndDate ? new Date(vehicleForm.insuranceEndDate) : null,
+        insurance_contact_no: vehicleForm.insuranceContactNumber,
+        RTO_code: vehicleForm.rtoCode,
+      };
+
+      if (editingVehicleId) {
+        await api(`/vendors/vehicles/${editingVehicleId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await api(`/vendors/${vendorId}/vehicles`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+      
+      await fetchVehicles();
+      setIsAddMode(false);
+      setIsVehicleListOpen(true);
+      setEditingVehicleId(null);
+      setVehicleForm(emptyVehicleForm);
+    } catch (e) {
+      console.error("Failed to save vehicle", e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditVehicle = (row: VehicleRow) => {
+    const v = (row as any)._full;
+    if (!v) return;
+
+    setEditingVehicleId(v.vehicle_id);
+    setVehicleForm({
+      vehicleType: String(v.vehicle_type_id || ""),
+      registrationNumber: v.registration_number || "",
+      registrationDate: v.registration_date ? v.registration_date.split('T')[0] : "",
+      engineNumber: v.engine_number || "",
+      ownerName: v.owner_name || "",
+      ownerContactNumber: v.owner_contact_no || "",
+      ownerEmailId: v.owner_email_id || "",
+      ownerAddress: v.owner_address || "",
+      ownerPincode: v.owner_pincode || "",
+      country: String(v.owner_country || ""),
+      vehicleOrigin: "", // Not in schema?
+      state: v.owner_state || "",
+      city: v.owner_city || "",
+      chassisNumber: v.chassis_number || "",
+      vehicleExpiryDate: v.vehicle_fc_expiry_date ? v.vehicle_fc_expiry_date.split('T')[0] : "",
+      fuelType: String(v.fuel_type || ""),
+      extraKmCharge: String(v.extra_km_charge || ""),
+      earlyMorningCharges: String(v.early_morning_charges || ""),
+      eveningCharges: String(v.evening_charges || ""),
+      vehicleVideoUrl: v.vehicle_video_url || "",
+      insurancePolicyNumber: v.insurance_policy_number || "",
+      insuranceStartDate: v.insurance_start_date ? v.insurance_start_date.split('T')[0] : "",
+      insuranceEndDate: v.insurance_end_date ? v.insurance_end_date.split('T')[0] : "",
+      insuranceContactNumber: v.insurance_contact_no || "",
+      rtoCode: v.RTO_code || "",
+    });
+    setIsAddMode(true);
+  };
+
+  const handleDeleteVehicle = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this vehicle?")) return;
+    try {
+      await api(`/vendors/vehicles/${id}`, { method: "DELETE" });
+      await fetchVehicles();
+    } catch (e) {
+      console.error("Failed to delete vehicle", e);
+    }
   };
 
   /** ---------------- RENDER HELPERS ---------------- */
@@ -300,13 +483,30 @@ export const VendorStepVehicle: React.FC<Props> = ({
                   {index + 1}
                 </td>
                 <td className="border-b border-gray-100 px-4 py-3">
-                  {/* Edit/Delete buttons can be added later */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-blue-600"
+                      onClick={() => handleEditVehicle(row)}
+                    >
+                      <Star className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 text-red-600"
+                      onClick={() => handleDeleteVehicle(row.id)}
+                    >
+                      <Star className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </td>
                 <td className="border-b border-gray-100 px-4 py-3">
                   {row.regNo}
                 </td>
                 <td className="border-b border-gray-100 px-4 py-3">
-                  {row.vehicleType}
+                  {vehicleTypeOptions.find(o => o.id === row.vehicleType)?.label || row.vehicleType}
                 </td>
                 <td className="border-b border-gray-100 px-4 py-3">
                   {row.fcExpiryDate}
@@ -401,9 +601,11 @@ export const VendorStepVehicle: React.FC<Props> = ({
               <SelectValue placeholder="Choose Vehicle Type" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="sedan">Sedan</SelectItem>
-              <SelectItem value="suv">SUV</SelectItem>
-              <SelectItem value="tempo_traveller">Tempo Traveller</SelectItem>
+              {vehicleTypeOptions.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -517,8 +719,11 @@ export const VendorStepVehicle: React.FC<Props> = ({
               <SelectValue placeholder="Choose Country" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="india">India</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
+              {countryOptions.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -534,8 +739,8 @@ export const VendorStepVehicle: React.FC<Props> = ({
               <SelectValue placeholder="Choose Vehicle Origin" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="own">Own</SelectItem>
-              <SelectItem value="attached">Attached</SelectItem>
+              <SelectItem value="1">Own</SelectItem>
+              <SelectItem value="2">Attached</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -543,11 +748,21 @@ export const VendorStepVehicle: React.FC<Props> = ({
           <Label>
             State <span className="text-red-500">*</span>
           </Label>
-          <Input
-            placeholder="State"
+          <Select
             value={vehicleForm.state}
-            onChange={(e) => handleFieldChange("state", e.target.value)}
-          />
+            onValueChange={(v) => handleFieldChange("state", v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Choose State" />
+            </SelectTrigger>
+            <SelectContent>
+              {stateOptions.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* row 5 */}
@@ -555,11 +770,21 @@ export const VendorStepVehicle: React.FC<Props> = ({
           <Label>
             City <span className="text-red-500">*</span>
           </Label>
-          <Input
-            placeholder="City"
+          <Select
             value={vehicleForm.city}
-            onChange={(e) => handleFieldChange("city", e.target.value)}
-          />
+            onValueChange={(v) => handleFieldChange("city", v)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Choose City" />
+            </SelectTrigger>
+            <SelectContent>
+              {cityOptions.map((opt) => (
+                <SelectItem key={opt.id} value={opt.id}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1">
           <Label>
@@ -599,9 +824,9 @@ export const VendorStepVehicle: React.FC<Props> = ({
               <SelectValue placeholder="Choose Any One" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="diesel">Diesel</SelectItem>
-              <SelectItem value="petrol">Petrol</SelectItem>
-              <SelectItem value="cng">CNG</SelectItem>
+              <SelectItem value="1">Diesel</SelectItem>
+              <SelectItem value="2">Petrol</SelectItem>
+              <SelectItem value="3">CNG</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -756,9 +981,9 @@ export const VendorStepVehicle: React.FC<Props> = ({
           type="button"
           className="bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:from-pink-600 hover:to-purple-600 px-10"
           onClick={handleSaveVehicle}
-          disabled={!vendorId}
+          disabled={saving || !vendorId}
         >
-          Save
+          {saving ? "Saving..." : editingVehicleId ? "Update Vehicle" : "Save Vehicle"}
         </Button>
       </div>
     </div>
@@ -797,7 +1022,7 @@ export const VendorStepVehicle: React.FC<Props> = ({
                 disabled={!vendorId}
                 className="bg-gradient-to-r from-pink-500 to-purple-500 text-white hover:from-pink-600 hover:to-purple-600"
               >
-                Skip &amp; Continue
+                Save &amp; Next
               </Button>
             </div>
           </>

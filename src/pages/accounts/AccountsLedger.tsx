@@ -21,6 +21,7 @@ import { Calendar } from "@/components/ui/calendar";
 import {
   fetchLedgerFromApi,
   fetchLedgerFilterOptions,
+  exportLedgerExcel,
   ComponentType,
   LedgerRow,
 } from "@/services/accountsLedgerApi";
@@ -233,6 +234,15 @@ export const AccountsLedger: React.FC = () => {
     setVehicle("All");
     setVehicleVendor("All");
     setAgentName("All");
+  };
+
+  const handleExportExcel = async () => {
+    try {
+      await exportLedgerExcel(componentType, quoteId, fromDate, toDate);
+    } catch (err) {
+      console.error("Excel export failed:", err);
+      alert("Failed to export Excel");
+    }
   };
 
   const renderRightFieldRow1 = () => {
@@ -571,7 +581,10 @@ export const AccountsLedger: React.FC = () => {
             {componentType === "activity" && "List of Activity"}
             {componentType === "all" && "List of All Components"}
           </p>
-          <Button className="h-9 px-4 gap-2 rounded-md bg-[#e5fff1] border border-[#b7f7d9] text-[#0f9c34] text-sm flex items-center">
+          <Button
+            onClick={handleExportExcel}
+            className="h-9 px-4 gap-2 rounded-md bg-[#e5fff1] border border-[#b7f7d9] text-[#0f9c34] text-sm flex items-center"
+          >
             <Download className="h-4 w-4" />
             Export
           </Button>

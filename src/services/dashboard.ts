@@ -1,5 +1,28 @@
 import { api } from "@/lib/api";
 
+export interface AgentDashboardStats {
+  totalCustomers: number;
+  paidInvoices: number;
+  validityEnds: string | null;
+  planId: number | null;
+  staffCount: number;
+  lastMonthProfit: number;
+  totalCashWallet: number;
+}
+
+export interface AccountsDashboardStats {
+  totalPayable: number;
+  totalPaid: number;
+  totalBalance: number;
+  pendingPayouts: number;
+}
+
+export interface VendorDashboardStats {
+  totalAssignments: number;
+  completedAssignments: number;
+  pendingAssignments: number;
+}
+
 export interface DashboardStats {
   stats: {
     totalAgents: number;
@@ -51,7 +74,7 @@ export interface DashboardStats {
 }
 
 export const DashboardService = {
-  async getStats(): Promise<DashboardStats> {
+  async getStats(): Promise<DashboardStats | AgentDashboardStats> {
     return api('dashboard/stats', {
       method: 'GET',
     });

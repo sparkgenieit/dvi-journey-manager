@@ -1,6 +1,6 @@
 // FILE: src/pages/vendor/steps/VendorStepVehiclePricebook.tsx
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,11 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { api } from "@/lib/api";
+import { Option } from "../vendorFormTypes";
 
 type Props = {
   vendorId?: number;
   onBack: () => void;
-  onNext: () => void;
+  onFinish: () => void;
 };
 
 const gstTypes = [
@@ -31,24 +33,34 @@ const gstTypes = [
   { id: "excluded", label: "Excluded" },
 ];
 
-const gstPercentageOptions = [
-  { id: "0", label: "0 % GST - %0" },
-  { id: "5", label: "5 % GST - %5" },
-  { id: "12", label: "12 % GST - %12" },
-  { id: "18", label: "18 % GST - %18" },
-];
-
 export const VendorStepVehiclePricebook: React.FC<Props> = ({
   vendorId,
   onBack,
-  onNext,
+  onFinish,
 }) => {
-  // ----- Vendor margin state (UI only) -----
-  const [vendorMarginPercent, setVendorMarginPercent] = useState<string>("5");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Dropdowns
+  const [vehicleTypeOptions, setVehicleTypeOptions] = useState<Option[]>([]);
+  const [gstPercentOptions, setGstPercentOptions] = useState<Option[]>([]);
+
+  // ----- Vendor margin state -----
+  const [vendorMarginPercent, setVendorMarginPercent] = useState<string>("0");
   const [vendorMarginGstType, setVendorMarginGstType] =
     useState<string>("included");
   const [vendorMarginGstPercent, setVendorMarginGstPercent] =
-    useState<string>("5");
+    useState<string>("0");
+
+  // ----- Driver Cost state -----
+  const [driverCosts, setDriverCosts] = useState<any[]>([]);
+
+  // ----- Vehicles state -----
+  const [vehicles, setVehicles] = useState<any[]>([]);
+
+  // ----- Pricebook state -----
+  const [localPricebook, setLocalPricebook] = useState<any[]>([]);
+  const [outstationPricebook, setOutstationPricebook] = useState<any[]>([]);
 
   // ----- Local KM Limit modal -----
   const [localKmOpen, setLocalKmOpen] = useState(false);
@@ -66,6 +78,74 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
     title: "",
     kmLimit: "",
   });
+
+  useEffect(() => {
+    if (vendorId) {
+      fetchData();
+      fetchDropdowns();
+    }
+  }, [vendorId]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const [vRes, dcRes, vehRes, lpRes, opRes] = await Promise.all([
+        api(`/vendors/${vendorId}`),
+        api(`/vendors/${vendorId}/vehicle-type-costs`),
+        api(`/vendors/${vendorId}/vehicles`),
+        api(`/vendors/${vendorId}/local-pricebook`),
+        api(`/vendors/${vendorId}/outstation-pricebook`),
+      ]);
+
+      const v = vRes.vendor;
+      setVendorMarginPercent(String(v.vendor_margin_percent || 0));
+      setVendorMarginGstType(v.vendor_margin_gst_type || "included");
+      setVendorMarginGstPercent(String(v.vendor_margin_gst_percentage || 0));
+
+      setDriverCosts(dcRes as any[]);
+      setVehicles(vehRes as any[]);
+      setLocalPricebook(lpRes as any[]);
+      setOutstationPricebook(opRes as any[]);
+    } catch (e) {
+      console.error("Failed to fetch pricebook data", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchDropdowns = async () => {
+    try {
+      const [vtRes, gpRes] = await Promise.all([
+        api("/dropdowns/vehicle-types"),
+        api("/dropdowns/gst-percentages"),
+      ]);
+      setVehicleTypeOptions(vtRes as Option[]);
+      setGstPercentOptions(gpRes as Option[]);
+    } catch (e) {
+      console.error("Failed to fetch dropdowns", e);
+    }
+  };
+
+  const handleUpdateMargin = async () => {
+    if (!vendorId) return;
+    setSaving(true);
+    try {
+      await api(`/vendors/${vendorId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          vendor_margin_percent: Number(vendorMarginPercent),
+          vendor_margin_gst_type: vendorMarginGstType,
+          vendor_margin_gst_percentage: Number(vendorMarginGstPercent),
+        }),
+      });
+      // Refresh
+      await fetchData();
+    } catch (e) {
+      console.error("Failed to update margin", e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const branchLabel = "Branch #1 - Unjhb"; // matches screenshot, can be wired later
 
@@ -93,6 +173,73 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
     setOutKmOpen(false);
   };
 
+  const renderPricebookGrid = (type: "local" | "outstation") => {
+    if (vehicles.length === 0) {
+      return (
+        <>
+          <p className="mb-2 text-sm font-semibold text-pink-600">
+            {branchLabel}
+          </p>
+          <p className="text-sm text-gray-500">
+            No vehicles found for this branch.
+          </p>
+        </>
+      );
+    }
+
+    const pbData = type === "local" ? localPricebook : outstationPricebook;
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b bg-gray-50">
+              <th className="whitespace-nowrap px-4 py-3 font-semibold text-gray-700">
+                Vehicle Name
+              </th>
+              {Array.from({ length: 31 }, (_, i) => (
+                <th
+                  key={i + 1}
+                  className="min-w-[60px] px-2 py-3 text-center font-semibold text-gray-700"
+                >
+                  Day {i + 1}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {vehicles.map((vehicle) => {
+              const entry = pbData.find((p: any) => p.vehicle_id === vehicle.id);
+              return (
+                <tr key={vehicle.id} className="border-b hover:bg-gray-50">
+                  <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-900">
+                    {vehicle.vehicle_name}
+                  </td>
+                  {Array.from({ length: 31 }, (_, i) => {
+                    const dayKey = `day_${i + 1}`;
+                    const val = entry ? entry[dayKey] : "";
+                    return (
+                      <td key={i + 1} className="px-1 py-2">
+                        <Input
+                          className="h-8 w-full text-center text-xs"
+                          value={val || ""}
+                          onChange={(e) => {
+                            // In a real app, we'd update the state here
+                            // For now, we'll just show the value
+                          }}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   return (
     <>
       <Card>
@@ -115,9 +262,10 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
               <Button
                 type="button"
                 className={`${gradientButton} px-6`}
-                disabled={!vendorId}
+                disabled={!vendorId || saving}
+                onClick={handleUpdateMargin}
               >
-                Update
+                {saving ? "Updating..." : "Update"}
               </Button>
             </div>
 
@@ -159,7 +307,7 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
                     <SelectValue placeholder="Choose GST %" />
                   </SelectTrigger>
                   <SelectContent>
-                    {gstPercentageOptions.map((opt) => (
+                    {gstPercentOptions.map((opt) => (
                       <SelectItem key={opt.id} value={opt.id}>
                         {opt.label}
                       </SelectItem>
@@ -180,6 +328,7 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
                 type="button"
                 className={`${gradientButton} px-6`}
                 disabled={!vendorId}
+                onClick={() => {}} // This usually redirects to Step 5 or updates here
               >
                 Update
               </Button>
@@ -213,14 +362,30 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
                   </tr>
                 </thead>
                 <tbody className="bg-white">
-                  <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-6 text-center text-sm text-gray-500"
-                    >
-                      No more records found.
-                    </td>
-                  </tr>
+                  {driverCosts.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-6 text-center text-sm text-gray-500"
+                      >
+                        No more records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    driverCosts.map((dc) => (
+                      <tr key={dc.v_type_id}>
+                        <td className="px-4 py-3 border-b border-gray-100">
+                          {vehicleTypeOptions.find(o => o.id === String(dc.vehicle_type_id))?.label || dc.vehicle_type_id}
+                        </td>
+                        <td className="px-4 py-3 border-b border-gray-100">{dc.driver_bhatta}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{dc.food_cost}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{dc.accommodation_cost}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{dc.extra_cost}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{dc.morning_charges}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{dc.evening_charges}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -241,12 +406,34 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
               </Button>
             </div>
 
-            <p className="mb-2 text-sm font-semibold text-pink-600">
-              {branchLabel}
-            </p>
-            <p className="text-sm text-gray-500">
-              No vehicles found for this branch.
-            </p>
+            {vehicles.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No vehicles found for this vendor.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-gray-200">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">VEHICLE NAME</th>
+                      <th className="px-4 py-3 text-left font-semibold">VEHICLE NO</th>
+                      <th className="px-4 py-3 text-left font-semibold">EXTRA KM COST(₹)</th>
+                      <th className="px-4 py-3 text-left font-semibold">EXTRA HR COST(₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {vehicles.map((v) => (
+                      <tr key={v.vehicle_id}>
+                        <td className="px-4 py-3 border-b border-gray-100">{v.vehicle_name}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{v.vehicle_no}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{v.extra_km_cost}</td>
+                        <td className="px-4 py-3 border-b border-gray-100">{v.extra_hr_cost}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           {/* ========== Local Pricebook ========== */}
@@ -286,12 +473,7 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
               </div>
             </div>
 
-            <p className="mb-2 text-sm font-semibold text-pink-600">
-              {branchLabel}
-            </p>
-            <p className="text-sm text-gray-500">
-              No vehicles found for this branch.
-            </p>
+            {renderPricebookGrid("local")}
           </section>
 
           {/* ========== Outstation Pricebook ========== */}
@@ -331,12 +513,7 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
               </div>
             </div>
 
-            <p className="mb-2 text-sm font-semibold text-pink-600">
-              {branchLabel}
-            </p>
-            <p className="text-sm text-gray-500">
-              No vehicles found for this branch.
-            </p>
+            {renderPricebookGrid("outstation")}
           </section>
 
           {/* Wizard navigation */}
@@ -346,11 +523,11 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
             </Button>
             <Button
               type="button"
-              onClick={onNext}
+              onClick={onFinish}
               disabled={!vendorId}
               className={gradientButton}
             >
-              Skip &amp; Continue
+              Save & Finish
             </Button>
           </div>
         </CardContent>
@@ -376,9 +553,11 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
                   <SelectValue placeholder="Choose Vehicle Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sedan">Sedan</SelectItem>
-                  <SelectItem value="suv">SUV</SelectItem>
-                  <SelectItem value="tempo_traveller">Tempo Traveller</SelectItem>
+                  {vehicleTypeOptions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -463,9 +642,11 @@ export const VendorStepVehiclePricebook: React.FC<Props> = ({
                   <SelectValue placeholder="Choose Vehicle Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sedan">Sedan</SelectItem>
-                  <SelectItem value="suv">SUV</SelectItem>
-                  <SelectItem value="tempo_traveller">Tempo Traveller</SelectItem>
+                  {vehicleTypeOptions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
