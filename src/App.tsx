@@ -1,4 +1,4 @@
-//src/App.tsx
+// FILE: src/App.tsx
 
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -58,8 +58,18 @@ import WalletHistory from "./pages/agent/WalletHistory";
 
 import PricebookExportPage from "./pages/pricebook-export/PricebookExportPage";
 import { GlobalSettingsPage } from "./pages/Settings/GlobalSettings";
-import { CitiesPage } from "./pages/Settings/Cities";
+import { CitiesPage } from "./pages/Settings/cities/Citiespage";
 import { HotelCategoryPage } from "./pages/Settings/HotelCategory";
+import { GstSettingsPage } from "./pages/Settings/GstSettings/GstSettings";
+import { InbuiltAmenitiesPage } from "./pages/Settings/InbuiltAmenities/InbuiltAmenities";
+import { VehicleTypePage } from "./pages/Settings/VehicleType/VehicleType";
+import { LanguagePage } from "./pages/Settings/Language/Language";
+import { RolePermissionFormPage } from "./pages/Settings/RolePermission/RolePermissionFormPage";
+import { RolePermissionListPage } from "./pages/Settings/RolePermission/RolePermissionListPage";
+import { AgentSubscriptionPlanFormPage } from "./pages/Settings/agent-subscription-plan/AgentSubscriptionPlanFormPage";
+import { AgentSubscriptionPlanListPage } from "./pages/Settings/agent-subscription-plan/AgentSubscriptionPlanListPage";
+import { AgentSubscriptionPlanPreviewPage } from "./pages/Settings/agent-subscription-plan/AgentSubscriptionPlanPreviewPage";
+
 // ── Deep-link helpers: /hotels/:id/<tab> → /hotels/:id/edit?tab=<tab> ──
 const RoomsRedirect = () => {
   const { id } = useParams();
@@ -84,19 +94,15 @@ const PreviewRedirect = () => {
 
 /**
  * Auth guard: blocks all protected routes when no token is present.
- * Uses the same accessToken that auth.ts stores via setToken().
  */
 const RequireAuth = () => {
   const token = getToken();
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!token) return <Navigate to="/login" replace />;
   return <Outlet />;
 };
 
 /**
  * TEMP placeholder only for /drivers/:id view route
- * (Keep until you create a proper DriverViewPage.tsx)
  */
 const DriverViewPage = () => {
   const { id } = useParams();
@@ -117,10 +123,12 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+
       <BrowserRouter>
         <DynamicMeta />
+
         <Routes>
-          {/* Public route */}
+          {/* Public */}
           <Route path="/login" element={<Login />} />
 
           {/* All routes below require auth */}
@@ -174,6 +182,7 @@ const App = () => (
                 </MainLayout>
               }
             />
+
             <Route
               path="/accounts-manager"
               element={
@@ -191,7 +200,7 @@ const App = () => (
               }
             />
 
-            {/* Daily Moment Tracker – main list */}
+            {/* Daily Moment */}
             <Route
               path="/daily-moment-tracker"
               element={
@@ -200,7 +209,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Daily Moment Tracker – alias to match sidebar link /daily-moment */}
             <Route
               path="/daily-moment"
               element={
@@ -209,7 +217,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Daily Moment Day View – opened from car icon */}
             <Route
               path="/daily-moment/day-view/:planId/:routeId"
               element={
@@ -228,7 +235,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Create */}
             <Route
               path="/hotels/new"
               element={
@@ -237,7 +243,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Edit (primary) */}
             <Route
               path="/hotels/:id/edit"
               element={
@@ -246,7 +251,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Edit (alias): allow /hotels/:id to open the same form */}
             <Route
               path="/hotels/:id"
               element={
@@ -255,14 +259,13 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Deep-links for each step */}
             <Route path="/hotels/:id/rooms" element={<RoomsRedirect />} />
             <Route path="/hotels/:id/amenities" element={<AmenitiesRedirect />} />
             <Route path="/hotels/:id/pricebook" element={<PriceBookRedirect />} />
             <Route path="/hotels/:id/reviews" element={<ReviewsRedirect />} />
             <Route path="/hotels/:id/preview" element={<PreviewRedirect />} />
 
-            {/* Vendor List */}
+            {/* Vendor */}
             <Route
               path="/vendor"
               element={
@@ -271,7 +274,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Add Vendor */}
             <Route
               path="/vendor/new"
               element={
@@ -280,7 +282,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Edit Vendor */}
             <Route
               path="/vendor/:id"
               element={
@@ -298,7 +299,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Drivers List */}
+            {/* Drivers */}
             <Route
               path="/drivers"
               element={
@@ -307,8 +308,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
-            {/* ✅ Drivers Add (same pattern as vendor form) */}
             <Route
               path="/drivers/new"
               element={
@@ -325,8 +324,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
-            {/* ✅ Drivers Edit */}
             <Route
               path="/drivers/:id/edit"
               element={
@@ -335,8 +332,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-
-            {/* Drivers View (placeholder) */}
             <Route
               path="/drivers/:id"
               element={
@@ -346,7 +341,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Vehicle Availability Chart */}
+            {/* Vehicle Availability */}
             <Route
               path="/vehicle-availability"
               element={
@@ -356,7 +351,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Hotspot Routes */}
+            {/* Hotspots */}
             <Route
               path="/hotspots"
               element={
@@ -390,7 +385,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Activity Routes */}
+            {/* Activities */}
             <Route
               path="/activities"
               element={
@@ -424,7 +419,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Staff Routes */}
+            {/* Staff */}
             <Route
               path="/staff"
               element={
@@ -458,7 +453,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Agent Routes */}
+            {/* Agent */}
             <Route
               path="/agent"
               element={
@@ -500,7 +495,7 @@ const App = () => (
               }
             />
 
-            {/* ✅ Guide Routes */}
+            {/* Guide */}
             <Route
               path="/guide"
               element={
@@ -525,7 +520,6 @@ const App = () => (
                 </MainLayout>
               }
             />
-            {/* Optional alias: /guide/:id opens edit wizard */}
             <Route
               path="/guide/:id/preview"
               element={
@@ -534,16 +528,18 @@ const App = () => (
                 </MainLayout>
               }
             />
+
             {/* Parking Charge Bulk Import */}
             <Route
-              path="/parking-charge-bulk-import" 
+              path="/parking-charge-bulk-import"
               element={
                 <MainLayout>
                   <ParkingChargeBulkImport />
                 </MainLayout>
               }
             />
-            {/* Locations Management */}
+
+            {/* Locations */}
             <Route
               path="/locations"
               element={
@@ -552,6 +548,7 @@ const App = () => (
                 </MainLayout>
               }
             />
+
             {/* Pricebook Export */}
             <Route
               path="/pricebook-export"
@@ -561,6 +558,7 @@ const App = () => (
                 </MainLayout>
               }
             />
+
             {/* Settings */}
             <Route
               path="/settings/global"
@@ -586,7 +584,99 @@ const App = () => (
                 </MainLayout>
               }
             />
+            <Route
+              path="/settings/gst"
+              element={
+                <MainLayout>
+                  <GstSettingsPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/amenities"
+              element={
+                <MainLayout>
+                  <InbuiltAmenitiesPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/vehicle-type"
+              element={
+                <MainLayout>
+                  <VehicleTypePage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/settings/language"
+              element={
+                <MainLayout>
+                  <LanguagePage />
+                </MainLayout>
+              }
+            />
+
+            {/* Role Permission */}
+            <Route
+              path="/settings/role-permission"
+              element={
+                <MainLayout>
+                  <RolePermissionListPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/role-permission/new"
+              element={
+                <MainLayout>
+                  <RolePermissionFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/role-permission/:id/edit"
+              element={
+                <MainLayout>
+                  <RolePermissionFormPage />
+                </MainLayout>
+              }
+            />
           </Route>
+          { /* Agent Subscription Plan */}
+          <Route
+              path="/settings/subscription-plan"
+              element={
+                <MainLayout>
+                  <AgentSubscriptionPlanListPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/agent-subscription-plan/new"
+              element={
+                <MainLayout>  
+                  <AgentSubscriptionPlanFormPage />
+                </MainLayout>
+              } 
+            />
+            <Route
+              path="/agent-subscription-plan/:id/edit"
+              element={
+                <MainLayout>
+                  <AgentSubscriptionPlanFormPage />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/agent-subscription-plan/:id/preview"
+              element={
+                <MainLayout>
+                  <AgentSubscriptionPlanPreviewPage />
+                </MainLayout>
+              }
+            />
+
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
         </Routes>

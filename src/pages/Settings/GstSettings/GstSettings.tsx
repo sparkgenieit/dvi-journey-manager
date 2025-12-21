@@ -1,0 +1,405 @@
+// FILE: src/pages/Settings/GstSettings/GstSettings.tsx
+
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Trash2, Copy as CopyIcon, FileSpreadsheet, FileText } from "lucide-react";
+import { toast } from "sonner";
+
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+
+import { DeleteModal } from "@/components/hotspot/DeleteModal";
+import { GstSettingsAPI as gstSettingsService } from "@/services/gstSettingsService";
+
+import { GstSettingsModal, GstFormValues } from "./GstSettingsModal";
+
+// ----- export helpers (same style as HotspotList) -----
+function to2D(rows: GstSetting[]) {
+  const headers = ["S.NO", "GST TITLE", "GST", "CGST", "SGST", "IGST", "STATUS"];
+  const data = rows.map((r, i) => [
+    String(i + 1),
+    r.gstTitle,
+    String(r.gst),
+    String(r.cgst),
+    String(r.sgst),
+    String(r.igst),
+    r.status ? "Active" : "Inactive",
+  ]);
+  return { headers, data };
+}
+function toCSV({ headers, data }: { headers: string[]; data: string[][] }) {
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  return [headers.map(esc).join(","), ...data.map(row => row.map(esc).join(","))].join("\n");
+}
+function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] }) {
+  const th = headers
+    .map(h => `<th style="background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">${h}</th>`)
+    .join("");
+  const trs = data
+    .map(row => `<tr>${row.map(v => `<td style="border:1px solid #e5e7eb;padding:6px 8px;">${v}</td>`).join("")}</tr>`)
+    .join("");
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>GST Settings</title></head>
+<body>
+<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:12px;">
+<thead><tr>${th}</tr></thead><tbody>${trs}</tbody>
+</table>
+</body></html>`;
+}
+function downloadBlob(name: string, mime: string, content: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function StatusToggle(props: { value: boolean; onChange: (v: boolean) => void }) {
+  const { value, onChange } = props;
+  return (
+    <button
+      type="button"
+      aria-pressed={value}
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+        ${value ? "bg-violet-600" : "bg-slate-300"}`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white transition
+          ${value ? "translate-x-5" : "translate-x-1"}`}
+      />
+    </button>
+  );
+}
+
+export function GstSettingsPage() {
+  const [rows, setRows] = useState<GstSetting[]>([]);
+  const [filtered, setFiltered] = useState<GstSetting[]>([]);
+  const [search, setSearch] = useState("");
+  const [pageSize, setPageSize] = useState(10); // screenshot shows 10 default
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [deleteId, setDeleteId] = useState<string | number | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editing, setEditing] = useState<GstSetting | null>(null);
+
+  useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    const q = search.toLowerCase().trim();
+    const next = !q
+      ? rows
+      : rows.filter(r =>
+          r.gstTitle.toLowerCase().includes(q) ||
+          String(r.gst).includes(q) ||
+          String(r.cgst).includes(q) ||
+          String(r.sgst).includes(q) ||
+          String(r.igst).includes(q)
+        );
+    setFiltered(next);
+    setCurrentPage(1);
+  }, [search, rows]);
+
+  async function load() {
+    try {
+      const data = await gstSettingsService.list();
+      setRows(data);
+      setFiltered(data);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load GST settings");
+    }
+  }
+
+  const paginated = useMemo(
+    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filtered, currentPage, pageSize]
+  );
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  const canExport = filtered.length > 0;
+  const dataset = useMemo(() => to2D(filtered), [filtered]);
+
+  const onCopy = async () => {
+    if (!canExport) return;
+    const csv = toCSV(dataset);
+    try {
+      await navigator.clipboard.writeText(csv);
+      toast.success("Copied table (filtered) to clipboard as CSV");
+    } catch {
+      toast.error("Copy failed");
+    }
+  };
+  const onCSV = () => {
+    if (!canExport) return;
+    downloadBlob("gst-settings.csv", "text/csv;charset=utf-8;", toCSV(dataset));
+  };
+  const onExcel = () => {
+    if (!canExport) return;
+    downloadBlob("gst-settings.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
+  };
+
+  const openCreate = () => {
+    setModalMode("create");
+    setEditing(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (row: GstSetting) => {
+    setModalMode("edit");
+    setEditing(row);
+    setModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await gstSettingsService.remove(deleteId);
+      toast.success("GST setting deleted");
+      setDeleteId(null);
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to delete GST setting");
+    }
+  };
+
+  const handleToggleStatus = async (row: GstSetting, nextStatus: boolean) => {
+    // optimistic UI
+    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: nextStatus } : r)));
+
+    try {
+      await gstSettingsService.update(row.id, { status: nextStatus });
+      toast.success("Status updated");
+      await load();
+    } catch (e: any) {
+      // rollback
+      setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: row.status } : r)));
+      toast.error(e?.message || "Failed to update status");
+    }
+  };
+
+  const handleModalSubmit = async (v: GstFormValues) => {
+    const payload: GstSettingUpsertInput = {
+      gstTitle: v.gstTitle.trim(),
+      gst: Number(v.gst),
+      cgst: Number(v.cgst),
+      sgst: Number(v.sgst),
+      igst: Number(v.igst),
+    };
+
+    try {
+      if (modalMode === "create") {
+        await gstSettingsService.create(payload);
+        toast.success("GST setting created");
+      } else {
+        if (!editing) throw new Error("Missing record to update");
+        await gstSettingsService.update(editing.id, payload);
+        toast.success("GST setting updated");
+      }
+
+      setModalOpen(false);
+      setEditing(null);
+      await load();
+    } catch (e: any) {
+      toast.error(e?.message || "Save failed");
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-primary">List of GST Settings</h1>
+
+        <button
+          type="button"
+          className="inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold
+                     bg-violet-50 text-violet-700 hover:bg-violet-100 border border-transparent
+                     transition-colors"
+          onClick={openCreate}
+        >
+          + Add GST Settings
+        </button>
+      </div>
+
+      <div className="bg-white rounded-lg border p-4 space-y-4">
+        {/* Top toolbar */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">Show</span>
+            <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+              <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm">entries</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm">Search:</span>
+              <Input className="w-64" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+
+            <button
+              type="button"
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold border
+                ${canExport ? "border-violet-300 text-violet-700 hover:bg-violet-50"
+                            : "border-gray-200 text-gray-300 cursor-not-allowed"}`}
+              onClick={onCopy}
+              disabled={!canExport}
+            >
+              <CopyIcon className="mr-2 h-4 w-4" />
+              Copy
+            </button>
+
+            <button
+              type="button"
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
+                ${canExport ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                            : "bg-emerald-200 text-white cursor-not-allowed"}`}
+              onClick={onExcel}
+              disabled={!canExport}
+            >
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Excel
+            </button>
+
+            <button
+              type="button"
+              className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold
+                ${canExport ? "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            : "bg-gray-200 text-gray-400 cursor-not-allowed"}`}
+              onClick={onCSV}
+              disabled={!canExport}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              CSV
+            </button>
+          </div>
+        </div>
+
+        {/* Table */}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>S.NO</TableHead>
+              <TableHead>ACTION</TableHead>
+              <TableHead>GST TITLE</TableHead>
+              <TableHead>STATUS</TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {paginated.map((r, idx) => (
+              <TableRow key={String(r.id)}>
+                <TableCell>{(currentPage - 1) * pageSize + idx + 1}</TableCell>
+
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
+                      <Pencil className="h-4 w-4 text-violet-600" />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(r.id)}>
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </Button>
+                  </div>
+                </TableCell>
+
+                <TableCell className="text-slate-600 font-medium">
+                  {r.gstTitle}
+                </TableCell>
+
+                <TableCell>
+                  <StatusToggle value={r.status} onChange={(v) => handleToggleStatus(r, v)} />
+                </TableCell>
+              </TableRow>
+            ))}
+
+            {paginated.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center py-8 text-slate-500">
+                  No GST settings found
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+
+        {/* Pagination */}
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
+            {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} entries
+          </div>
+
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(currentPage - 1)}
+            >
+              Previous
+            </Button>
+
+            <Button size="sm" variant="default">
+              {currentPage}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(currentPage + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
+      <GstSettingsModal
+        open={modalOpen}
+        mode={modalMode}
+        initial={
+          editing
+            ? {
+                gstTitle: editing.gstTitle,
+                gst: String(editing.gst),
+                cgst: String(editing.cgst),
+                sgst: String(editing.sgst),
+                igst: String(editing.igst),
+              }
+            : undefined
+        }
+        onClose={() => {
+          setModalOpen(false);
+          setEditing(null);
+        }}
+        onSubmit={handleModalSubmit}
+      />
+
+      <DeleteModal
+        open={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+      />
+    </div>
+  );
+}
