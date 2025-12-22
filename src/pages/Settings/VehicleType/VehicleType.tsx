@@ -1,3 +1,4 @@
+// REPLACE-WHOLE-FILE
 // FILE: src/pages/Settings/VehicleType.tsx
 
 import { useEffect, useMemo, useState } from "react";
@@ -28,7 +29,7 @@ function to2D(rows: VehicleType[]) {
     String(i + 1),
     r.title,
     String(r.occupancy),
-    r.status ? "Active" : "Inactive",
+    r.status === 1 ? "Active" : "Inactive",
   ]);
   return { headers, data };
 }
@@ -88,7 +89,8 @@ export function VehicleTypePage() {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [deleteId, setDeleteId] = useState<string | number | null>(null);
+  // ✅ fix TS: deleteId should be number
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
@@ -169,14 +171,25 @@ export function VehicleTypePage() {
     }
   };
 
+  /**
+   * ✅ IMPORTANT:
+   * Backend toggles by FLIPPING the CURRENT status passed (PHP parity).
+   * So UI must send `row.status` (current), not `nextStatus`.
+   */
   const handleToggleStatus = async (row: VehicleType, nextStatus: boolean) => {
-    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: nextStatus } : r)));
+    const next01: 0 | 1 = nextStatus ? 1 : 0;
+
+    // optimistic UI
+    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: next01 } : r)));
 
     try {
-      await vehicleTypeService.update(row.id, { status: nextStatus });
+      // ✅ send CURRENT status to backend so it flips correctly
+      await vehicleTypeService.update(row.id, { status: row.status });
+
       toast.success("Status updated");
       await load();
     } catch (e: any) {
+      // rollback
       setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: row.status } : r)));
       toast.error(e?.message || "Failed to update status");
     }
@@ -316,7 +329,10 @@ export function VehicleTypePage() {
                 <TableCell className="text-slate-600">{r.occupancy}</TableCell>
 
                 <TableCell>
-                  <StatusToggle value={r.status} onChange={(v) => handleToggleStatus(r, v)} />
+                  <StatusToggle
+                    value={r.status === 1}
+                    onChange={(v) => handleToggleStatus(r, v)}
+                  />
                 </TableCell>
               </TableRow>
             ))}

@@ -11,7 +11,8 @@ export interface InbuiltAmenityListRow {
   status: 0 | 1;
 }
 
-export interface InbuiltAmenity extends InbuiltAmenityListRow {}
+// ✅ FIX: avoid "empty object type" eslint warning
+export type InbuiltAmenity = InbuiltAmenityListRow;
 
 export type InbuiltAmenityUpsertInput = {
   title: string;
@@ -80,9 +81,7 @@ const unwrapOne = (res: OneResponseDTO): InbuiltAmenityDTO => {
   return res as InbuiltAmenityDTO;
 };
 
-/** ========= Public API =========
- * Backend base path must match your NestJS controller: @Controller('inbuilt-amenities')
- */
+/** ========= Public API ========= */
 export const InbuiltAmenitiesAPI = {
   async list(): Promise<InbuiltAmenityListRow[]> {
     const res = (await api("/inbuilt-amenities")) as ListResponseDTO;
@@ -122,17 +121,14 @@ export const InbuiltAmenitiesAPI = {
     return toRow(unwrapOne(res));
   },
 
-  /** Soft delete / delete */
   async delete(id: number): Promise<void> {
     await api(`/inbuilt-amenities/${id}`, { method: "DELETE" });
   },
 
-  /** Backward-compatible name (some pages call .remove()) */
   async remove(id: number): Promise<void> {
     await InbuiltAmenitiesAPI.delete(id);
   },
 
-  /** Toggle active/inactive (same style as Staff) */
   async toggleStatus(id: number, status: 0 | 1): Promise<void> {
     await api(`/inbuilt-amenities/${id}`, {
       method: "PUT",
@@ -141,5 +137,4 @@ export const InbuiltAmenitiesAPI = {
   },
 };
 
-/** Backward-compatible export name (your pages likely import inbuiltAmenitiesService) */
 export const inbuiltAmenitiesService = InbuiltAmenitiesAPI;

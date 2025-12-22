@@ -1,5 +1,4 @@
 // FILE: src/services/gstSettingsService.ts
-// REPLACE-WHOLE-FILE
 
 import { api } from "../lib/api";
 
@@ -11,9 +10,15 @@ export interface GstSettingListRow {
   cgst: number;
   sgst: number;
   igst: number;
+
+  /**
+   * UI uses 0|1 everywhere.
+   * Backend may return boolean/number/string — we normalize via to01().
+   */
   status: 0 | 1;
 }
-export interface GstSetting extends GstSettingListRow {}
+
+export type GstSetting = GstSettingListRow;
 
 /** ========= Backend DTO shapes (Nest responses) ========= */
 type GstSettingDTO = {
@@ -55,6 +60,16 @@ const to01 = (v: any): 0 | 1 => {
     return (s === "1" || s === "true" ? 1 : 0) as 0 | 1;
   }
   return 0;
+};
+
+const toBool = (v: any): boolean => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s === "1" || s === "true";
+  }
+  return false;
 };
 
 const toRow = (r: GstSettingDTO): GstSettingListRow => ({
@@ -106,7 +121,8 @@ export const GstSettingsAPI = {
         cgst: input.cgst,
         sgst: input.sgst,
         igst: input.igst,
-        status: input.status,
+        // ✅ SEND BOOLEAN because your backend returns boolean and is likely persisting boolean
+        status: typeof input.status === "number" ? input.status === 1 : undefined,
       },
     })) as OneResponseDTO;
 
@@ -130,7 +146,8 @@ export const GstSettingsAPI = {
       cgst: typeof input.cgst === "number" ? input.cgst : undefined,
       sgst: typeof input.sgst === "number" ? input.sgst : undefined,
       igst: typeof input.igst === "number" ? input.igst : undefined,
-      status: typeof input.status === "number" ? input.status : undefined,
+      // ✅ SEND BOOLEAN instead of 0|1
+      status: typeof input.status === "number" ? input.status === 1 : undefined,
     };
 
     const res = (await api(`/gst-settings/${id}`, {
@@ -153,7 +170,8 @@ export const GstSettingsAPI = {
 
   /** Optional */
   async toggleStatus(id: number, status: 0 | 1): Promise<void> {
-    await api(`/gst-settings/${id}`, { method: "PUT", body: { status } });
+    // ✅ SEND BOOLEAN here too
+    await api(`/gst-settings/${id}`, { method: "PUT", body: { status: toBool(status) } });
   },
 };
 

@@ -1,11 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Pencil,
-  Trash2,
-  Copy as CopyIcon,
-  Download,
-  FileText,
-} from "lucide-react";
+import { Pencil, Trash2, Copy as CopyIcon, Download, FileText } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { listVendors } from "@/services/vendors";
@@ -133,6 +127,28 @@ function todaySuffix() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** ================= VehicleType-like Status Toggle ================= */
+function StatusToggle(props: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  const { value, onChange, disabled } = props;
+
+  return (
+    <button
+      type="button"
+      aria-pressed={value}
+      disabled={disabled}
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+        ${value ? "bg-violet-600" : "bg-slate-300"}
+        ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white transition
+          ${value ? "translate-x-5" : "translate-x-1"}`}
+      />
+    </button>
+  );
+}
+
 /** ================= Page ================= */
 
 const VendorsPage: React.FC = () => {
@@ -152,50 +168,48 @@ const VendorsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // status toggle loading per row
+  const [togglingIds, setTogglingIds] = useState<Record<string, boolean>>({});
+
   // ===== Fetch vendor list once =====
-    useEffect(() => {
+  useEffect(() => {
     let aborted = false;
 
     (async () => {
-        try {
+      try {
         setLoading(true);
         setError(null);
 
-        // use normalized service
         const { items } = await listVendors();
-
         if (aborted) return;
 
         const mapped: VendorRow[] = items.map((v, ix) => ({
-            id: ix + 1,            // UI S.NO
-            backendId: v.id,       // already string in service
-            name: v.name || "—",
-            code: v.code || "—",
-            mobile: v.mobile || "—",
-            totalBranch: v.totalBranch ?? 0,
-            isActive: v.isActive,
+          id: ix + 1,
+          backendId: v.id,
+          name: v.name || "—",
+          code: v.code || "—",
+          mobile: v.mobile || "—",
+          totalBranch: v.totalBranch ?? 0,
+          isActive: v.isActive,
         }));
 
         setRows(mapped);
-        } catch (e: any) {
+      } catch (e: any) {
         console.error("Failed to load vendors", e);
         if (!aborted) {
-            setError(
-            e?.message || "Unable to load vendors. Please try again later."
-            );
+          setError(e?.message || "Unable to load vendors. Please try again later.");
         }
-        } finally {
+      } finally {
         if (!aborted) setLoading(false);
-        }
+      }
     })();
 
     return () => {
-        aborted = true;
+      aborted = true;
     };
-    }, []);
+  }, []);
 
-  /** ===== Filtering, sorting, paging (client-side like DataTables) ===== */
-
+  /** ===== Filtering, sorting, paging ===== */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
@@ -208,9 +222,7 @@ const VendorsPage: React.FC = () => {
         String(r.totalBranch),
         r.isActive ? "active" : "inactive",
       ];
-      return fields.some((v) =>
-        (v ?? "").toString().toLowerCase().includes(q)
-      );
+      return fields.some((v) => (v ?? "").toString().toLowerCase().includes(q));
     });
   }, [rows, search]);
 
@@ -282,7 +294,6 @@ const VendorsPage: React.FC = () => {
     },
   ];
 
-  // EXPORT handlers — always use the filtered+sorted data (like DataTables)
   const handleCopy = async () => {
     try {
       await copyToClipboard(exportCols, sorted);
@@ -290,62 +301,77 @@ const VendorsPage: React.FC = () => {
       // ignore
     }
   };
-
-  const handleCSV = () => {
-    downloadCSV(exportCols, sorted, `vendors_${todaySuffix()}.csv`);
-  };
-
-  const handleExcel = () => {
-    downloadExcel(exportCols, sorted, `vendors_${todaySuffix()}.xlsx`, "Vendors");
-  };
-
-  const handlePDF = () => {
-    downloadPDF(exportCols, sorted, `vendors_${todaySuffix()}.pdf`);
-  };
+  const handleCSV = () => downloadCSV(exportCols, sorted, `vendors_${todaySuffix()}.csv`);
+  const handleExcel = () => downloadExcel(exportCols, sorted, `vendors_${todaySuffix()}.xlsx`, "Vendors");
+  const handlePDF = () => downloadPDF(exportCols, sorted, `vendors_${todaySuffix()}.pdf`);
 
   // Delete a vendor with confirmation, then update UI
   const handleDeleteVendor = async (row: VendorRow) => {
-    const ok = window.confirm(
-      `Are you sure you want to delete vendor "${row.name}"?`
-    );
+    const ok = window.confirm(`Are you sure you want to delete vendor "${row.name}"?`);
     if (!ok) return;
 
     try {
-      // Assumes your NestJS controller exposes DELETE /vendors/:id
       await api(`/vendors/${row.backendId}`, { method: "DELETE" });
-
-      // Remove from current list
       setRows((prev) => prev.filter((r) => r.backendId !== row.backendId));
     } catch (err: any) {
       console.error("Failed to delete vendor", err);
-      alert(
-        err?.message || "Failed to delete vendor. Please try again later."
-      );
+      alert(err?.message || "Failed to delete vendor. Please try again later.");
     }
   };
 
-  /** ================= RENDER (1:1 with Hotel layout) ================= */
+  /** ✅ Status Toggle handler (VehicleType parity style) */
+  const handleToggleStatus = async (row: VendorRow, nextValue: boolean) => {
+    // optimistic UI
+    setRows((prev) => prev.map((r) => (r.backendId === row.backendId ? { ...r, isActive: nextValue } : r)));
+    setTogglingIds((p) => ({ ...p, [row.backendId]: true }));
+
+    try {
+      // IMPORTANT:
+      // If your backend toggles based on CURRENT status (like your VehicleTypesService / InbuiltAmenitiesService),
+      // send the CURRENT status, NOT the next status.
+      const current01 = row.isActive ? 1 : 0;
+
+      await api(`/vendors/${row.backendId}`, {
+        method: "PUT",
+        body: {
+          // PHP parity style (send CURRENT)
+          status: current01,
+
+          // If your vendor backend expects NEXT instead, replace with:
+          // status: nextValue ? 1 : 0,
+        },
+      });
+
+      // optional: you can re-fetch listVendors() here if your backend returns updated list
+    } catch (e: any) {
+      // rollback UI
+      setRows((prev) => prev.map((r) => (r.backendId === row.backendId ? { ...r, isActive: row.isActive } : r)));
+      alert(e?.message || "Failed to update vendor status");
+    } finally {
+      setTogglingIds((p) => ({ ...p, [row.backendId]: false }));
+    }
+  };
+
+  /** ================= RENDER ================= */
 
   return (
     <div className="hotel-page-wrapper" style={{ padding: 0 }}>
       <div className="hotel-card">
-        {/* Header: title + Add Vendor button, like PHP page */}
         <div className="hotel-card-head">
           <h2 className="hotel-card-title">List of Vendor</h2>
           <div className="hotel-head-actions">
             <button
-                className="hotel-add-btn"
-                type="button"
-                onClick={() => {
-                  navigate("/vendor/new");
-                }}
-                >
-                + Add vendor
-              </button>
+              className="hotel-add-btn"
+              type="button"
+              onClick={() => {
+                navigate("/vendor/new");
+              }}
+            >
+              + Add vendor
+            </button>
           </div>
         </div>
 
-        {/* Toolbar: Show entries + Copy / Excel / CSV / PDF + Search */}
         <div className="hotel-toolbar">
           <div className="hotel-show-entries">
             <span>Show</span>
@@ -366,39 +392,19 @@ const VendorsPage: React.FC = () => {
 
           <div className="hotel-right-tools">
             <div className="hotel-export-group">
-              <button
-                onClick={handleCopy}
-                className="hotel-copy-btn"
-                title="Copy"
-                type="button"
-              >
+              <button onClick={handleCopy} className="hotel-copy-btn" title="Copy" type="button">
                 <CopyIcon className="w-4 h-4" />
                 <span>Copy</span>
               </button>
-              <button
-                onClick={handleExcel}
-                className="hotel-excel-btn"
-                title="Excel"
-                type="button"
-              >
+              <button onClick={handleExcel} className="hotel-excel-btn" title="Excel" type="button">
                 <Download className="w-4 h-4" />
                 <span>Excel</span>
               </button>
-              <button
-                onClick={handleCSV}
-                className="hotel-csv-btn"
-                title="CSV"
-                type="button"
-              >
+              <button onClick={handleCSV} className="hotel-csv-btn" title="CSV" type="button">
                 <Download className="w-4 h-4" />
                 <span>CSV</span>
               </button>
-              <button
-                onClick={handlePDF}
-                className="hotel-pdf-btn"
-                title="PDF"
-                type="button"
-              >
+              <button onClick={handlePDF} className="hotel-pdf-btn" title="PDF" type="button">
                 <FileText className="w-4 h-4" />
                 <span>PDF</span>
               </button>
@@ -417,7 +423,6 @@ const VendorsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Table */}
         <div className="hotel-table-wrap">
           <table className="hotel-table">
             <thead>
@@ -496,7 +501,7 @@ const VendorsPage: React.FC = () => {
                           onClick={() => {
                             navigate(`/vendor/${row.backendId}`);
                           }}
-                          >
+                        >
                           <Pencil className="w-4 h-4" />
                         </button>
                         <button
@@ -504,7 +509,7 @@ const VendorsPage: React.FC = () => {
                           title="Delete"
                           type="button"
                           onClick={() => handleDeleteVendor(row)}
-                          >
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -513,17 +518,14 @@ const VendorsPage: React.FC = () => {
                     <td>{row.code}</td>
                     <td>{row.mobile}</td>
                     <td>{row.totalBranch}</td>
+
+                    {/* ✅ VehicleTypePage-style toggle */}
                     <td>
-                      <button
-                        aria-pressed={row.isActive}
-                        className={`hotel-toggle ${
-                          row.isActive ? "active" : "off"
-                        }`}
-                        title={row.isActive ? "Active" : "Inactive"}
-                        type="button"
-                      >
-                        <span className="hotel-toggle-knob" />
-                      </button>
+                      <StatusToggle
+                        value={row.isActive}
+                        disabled={!!togglingIds[row.backendId]}
+                        onChange={(v) => handleToggleStatus(row, v)}
+                      />
                     </td>
                   </tr>
                 ))
@@ -532,7 +534,6 @@ const VendorsPage: React.FC = () => {
           </table>
         </div>
 
-        {/* Footer: "Showing 1 to 10 of 18 entries" + pagination */}
         <div className="hotel-footer">
           <p>
             Showing <strong>{total === 0 ? 0 : startItem}</strong> to{" "}
@@ -547,19 +548,20 @@ const VendorsPage: React.FC = () => {
             >
               Previous
             </button>
-            {Array.from(
-              { length: endPage - startPage + 1 },
-              (_, i) => startPage + i
-            ).map((pageNum) => (
-              <button
-                key={pageNum}
-                onClick={() => setPage(pageNum)}
-                className={safePage === pageNum ? "active" : ""}
-                type="button"
-              >
-                {pageNum}
-              </button>
-            ))}
+
+            {Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i).map(
+              (pageNum) => (
+                <button
+                  key={pageNum}
+                  onClick={() => setPage(pageNum)}
+                  className={safePage === pageNum ? "active" : ""}
+                  type="button"
+                >
+                  {pageNum}
+                </button>
+              )
+            )}
+
             <button
               onClick={() => setPage((p) => p + 1)}
               disabled={safePage >= totalPages}
@@ -570,11 +572,9 @@ const VendorsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Small footer note (optional, like Hotels) */}
         <div className="hotel-footer-note">DVI Holidays @ 2025</div>
       </div>
 
-      {/* Reuse the same Hotel styles so Vendor page looks 1:1 */}
       <style>{`
         .hotel-page-wrapper { position: relative; z-index: 10; }
 
@@ -814,46 +814,6 @@ const VendorsPage: React.FC = () => {
         .hotel-action-circle.del:hover {
           background:#fee2e2;
           border-color:#fca5a5;
-        }
-
-        .hotel-toggle {
-          position:relative;
-          width:40px;
-          height:22px;
-          border-radius:9999px;
-          display:inline-flex;
-          align-items:center;
-          padding:0;
-          border:2px solid #8b5cf6;
-          background:#ffffff;
-          cursor:pointer;
-          transition:background .18s ease, border-color .18s ease, opacity .2s ease;
-        }
-        .hotel-toggle[disabled] {
-          opacity:.6;
-          cursor:not-allowed;
-        }
-        .hotel-toggle.active {
-          background:#8b5cf6;
-          border-color:#8b5cf6;
-        }
-        .hotel-toggle-knob {
-          position:absolute;
-          width:18px;
-          height:18px;
-          border-radius:9999px;
-          box-shadow:0 1px 2px rgba(0,0,0,.15);
-          transition:transform .18s ease-in-out, background-color .18s ease-in-out;
-          left:2px;
-          transform:translateX(0);
-        }
-        .hotel-toggle.off .hotel-toggle-knob {
-          background:#cbd5e1;
-          border:1px solid #94a3b8;
-        }
-        .hotel-toggle.active .hotel-toggle-knob {
-          background:#ffffff;
-          transform:translateX(18px);
         }
 
         .hotel-footer {
