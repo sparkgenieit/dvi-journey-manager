@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { LucideIcon } from "lucide-react";
 import {
   Home,
   FileText,
@@ -20,9 +19,18 @@ import {
   ChevronRight,
   Lock,
   Unlock,
+  LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+
+function parseJwt(token: string) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch (e) {
+    return null;
+  }
+}
 
 type MenuChild = {
   id: string;
@@ -44,6 +52,7 @@ const menuItems: MenuItem[] = [
   { id: "create-itinerary", title: "Create Itinerary", icon: FileText, path: "/create-itinerary" },
   { id: "latest-itinerary", title: "Latest Itinerary", icon: FileText, path: "/latest-itinerary" },
   { id: "confirmed-itinerary", title: "Confirmed Itinerary", icon: CheckCircle, path: "/confirmed-itinerary" },
+  { id: "cancelled-itinerary", title: "Cancelled Itinerary", icon: Clock, path: "/cancelled-itinerary" },
 
   {
     id: "accounts",
@@ -54,6 +63,7 @@ const menuItems: MenuItem[] = [
     children: [
       { id: "accounts-manager", title: "Accounts Manager", path: "/accounts-manager" },
       { id: "accounts-ledger", title: "Accounts Ledger", path: "/accounts-ledger" },
+      { id: "wallet-history", title: "Wallet History", path: "/wallet-history" },
     ],
   },
 
@@ -98,6 +108,7 @@ const menuItems: MenuItem[] = [
   { id: "guide", title: "Guide", icon: UserSquare2, path: "/guide" },
   { id: "staff", title: "Staff", icon: Users, path: "/staff" },
   { id: "agent", title: "Agent", icon: UserCircle, path: "/agent" },
+  { id: "profile", title: "My Profile", icon: UserCircle, path: "/profile" },
   { id: "pricebook-export", title: "Pricebook Export", icon: FileDown, path: "/pricebook-export" },
   {
     id: "settings",
@@ -140,6 +151,47 @@ export const Sidebar = ({
 
   const isExpanded = !collapsed || isHovered || isPinned;
 
+  const token = localStorage.getItem("accessToken");
+  const user = token ? parseJwt(token) : null;
+  const role = user?.role;
+
+  const filteredMenuItems = menuItems.map(item => {
+    // Filter children if they exist
+    const filteredChildren = item.children?.filter(child => {
+      if (role === 4) { // Agent
+        return ["wallet-history"].includes(child.id);
+      }
+      if (role === 6) { // Accounts
+        return ["accounts-manager", "accounts-ledger"].includes(child.id);
+      }
+      return true; // Admin/Others see all
+    });
+
+    return { ...item, children: filteredChildren };
+  }).filter(item => {
+    // Role 4 is Agent
+    if (role === 4) {
+      return ["dashboard", "create-itinerary", "latest-itinerary", "confirmed-itinerary", "cancelled-itinerary", "accounts", "staff", "profile"].includes(item.id);
+    }
+    // Role 6 is Accounts
+    if (role === 6) {
+      return ["dashboard", "accounts", "profile"].includes(item.id);
+    }
+    // Role 2 is Vendor
+    if (role === 2) {
+      return ["dashboard", "vendor-mgmt", "profile"].includes(item.id);
+    }
+    // Role 3 or 8 is Travel Expert / Staff
+    if (role === 3 || role === 8 || (user?.staffId && user.staffId > 0)) {
+      return ["dashboard", "create-itinerary", "latest-itinerary", "confirmed-itinerary", "cancelled-itinerary", "accounts", "agent", "profile"].includes(item.id);
+    }
+    // Role 5 is Guide
+    if (role === 5 || (user?.guideId && user.guideId > 0)) {
+      return ["dashboard", "profile"].includes(item.id);
+    }
+    return true;
+  });
+
   const handleTogglePin = () => {
     setIsPinned((p) => !p);
     onToggle();
@@ -179,7 +231,7 @@ export const Sidebar = ({
       {/* menu */}
       <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1 px-2">
-          {menuItems.map((item, idx) => {
+          {filteredMenuItems.map((item, idx) => {
             const Icon = item.icon;
 
             const isParentActive =

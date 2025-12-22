@@ -14,10 +14,10 @@ import { VendorStepPermitCost } from "./steps/VendorStepPermitCost";
 const steps = [
   "Basic Info",
   "Branch",
-  "Vehicle Type (Driver Cost)",
   "Vehicle",
-  "Vehicle Pricebook",
   "Permit Cost",
+  "Vehicle Type (Driver Cost)",
+  "Vehicle Pricebook",
 ];
 
 const emptyBasicInfo: BasicInfoForm = {
@@ -451,7 +451,7 @@ export default function VendorFormPage() {
     }
     if (activeStep === 3) {
       return (
-        <VendorStepVehicleTypeCost
+        <VendorStepVehicle
           vendorId={vendorId}
           onBack={() => setActiveStep(2)}
           onNext={() => setActiveStep(4)}
@@ -460,7 +460,7 @@ export default function VendorFormPage() {
     }
     if (activeStep === 4) {
       return (
-        <VendorStepVehicle
+        <VendorStepPermitCost
           vendorId={vendorId}
           onBack={() => setActiveStep(3)}
           onNext={() => setActiveStep(5)}
@@ -469,7 +469,7 @@ export default function VendorFormPage() {
     }
     if (activeStep === 5) {
       return (
-        <VendorStepVehiclePricebook
+        <VendorStepVehicleTypeCost
           vendorId={vendorId}
           onBack={() => setActiveStep(4)}
           onNext={() => setActiveStep(6)}
@@ -477,7 +477,7 @@ export default function VendorFormPage() {
       );
     }
     return (
-      <VendorStepPermitCost
+      <VendorStepVehiclePricebook
         vendorId={vendorId}
         onBack={() => setActiveStep(5)}
         onFinish={() => navigate("/vendor")}

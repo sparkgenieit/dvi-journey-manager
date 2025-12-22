@@ -245,6 +245,39 @@ function mapBackendToLedgerRows(
   return rows;
 }
 
+// 1.1) Export Excel
+export async function exportLedgerExcel(
+  componentType: ComponentType,
+  quoteId?: string,
+  fromDate?: string,
+  toDate?: string,
+): Promise<void> {
+  const params = new URLSearchParams();
+  params.append("componentType", componentType);
+  if (quoteId) params.append("quoteId", quoteId);
+  if (fromDate) params.append("fromDate", fromDate);
+  if (toDate) params.append("toDate", toDate);
+
+  const response = await fetch(`${API_BASE_URL}/accounts-export/ledger/excel?${params.toString()}`, {
+    method: "GET",
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to export excel");
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `accounts_ledger_${new Date().getTime()}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
 // Main ledger rows
 export async function fetchLedgerFromApi(params: {
   quoteId: string;
