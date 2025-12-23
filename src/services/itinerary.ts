@@ -146,8 +146,8 @@ export const ItineraryService = {
     });
   },
 
-  async getAvailableHotspots(locationId: number) {
-    return api(`itineraries/hotspots/available/${locationId}`, {
+  async getAvailableHotspots(routeId: number) {
+    return api(`itineraries/hotspots/available/${routeId}`, {
       method: "GET",
     });
   },
@@ -156,6 +156,33 @@ export const ItineraryService = {
     return api("itineraries/hotspots/add", {
       method: "POST",
       body: { planId, routeId, hotspotId },
+    });
+  },
+
+  async previewAddHotspot(planId: number, routeId: number, hotspotId: number) {
+    return api("itineraries/hotspots/preview-add", {
+      method: "POST",
+      body: { planId, routeId, hotspotId },
+    });
+  },
+
+  async addManualHotspot(planId: number, routeId: number, hotspotId: number) {
+    return api("itineraries/hotspots/add", {
+      method: "POST",
+      body: { planId, routeId, hotspotId },
+    });
+  },
+
+  async removeManualHotspot(planId: number, hotspotId: number) {
+    return api(`itineraries/${planId}/manual-hotspot/${hotspotId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async updateRouteTimes(planId: number, routeId: number, startTime: string, endTime: string) {
+    return api(`itineraries/${planId}/route/${routeId}/times`, {
+      method: "PATCH",
+      body: { startTime, endTime },
     });
   },
 

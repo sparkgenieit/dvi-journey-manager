@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
   ItineraryHotelRow,
@@ -91,6 +91,7 @@ export const HotelList: React.FC<HotelListProps> = ({
   const [loadingRowKey, setLoadingRowKey] = useState<string | null>(null);
   const [roomDetails, setRoomDetails] = useState<HotelRoomDetail[]>([]);
   const [selectedHotelId, setSelectedHotelId] = useState<number | null>(null);
+  const [isUpdatingHotel, setIsUpdatingHotel] = useState(false);
 
   // Form state for each room card: key = itineraryPlanHotelRoomDetailsId or unique identifier
   const [roomFormData, setRoomFormData] = useState<Record<string, {
@@ -281,6 +282,7 @@ export const HotelList: React.FC<HotelListProps> = ({
       `temp-${room.itineraryRouteId}-${room.hotelId}`;
     const formData = roomFormData[roomKey];
 
+    setIsUpdatingHotel(true);
     try {
       await ItineraryService.selectHotel(
         room.itineraryPlanId!,
@@ -297,7 +299,7 @@ export const HotelList: React.FC<HotelListProps> = ({
 
       setShowConfirmDialog(false);
       setPendingHotelAction(null);
-
+      
       toast.success("Successfully Hotel Updated !!!", {
         description: isReplacing 
           ? `Hotel changed to ${room.hotelName}` 
@@ -325,17 +327,18 @@ export const HotelList: React.FC<HotelListProps> = ({
       toast.error("Failed to update hotel", {
         description: "Please try again",
       });
+    } finally {
+      setIsUpdatingHotel(false);
     }
   };
 
-  // ---------- HANDLER: UPDATE FORM DATA ----------
   const updateRoomFormData = (roomKey: string, field: string, value: any) => {
-    setRoomFormData(prev => ({
+    setRoomFormData((prev) => ({
       ...prev,
       [roomKey]: {
         ...prev[roomKey],
         [field]: value,
-      }
+      },
     }));
   };
 
@@ -707,11 +710,23 @@ export const HotelList: React.FC<HotelListProps> = ({
                 setShowConfirmDialog(false);
                 setPendingHotelAction(null);
               }}
+              disabled={isUpdatingHotel}
             >
               Close
             </Button>
-            <Button type="button" onClick={handleConfirmHotelSelection}>
-              Confirm
+            <Button
+              type="button"
+              onClick={handleConfirmHotelSelection}
+              disabled={isUpdatingHotel}
+            >
+              {isUpdatingHotel ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Confirm"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

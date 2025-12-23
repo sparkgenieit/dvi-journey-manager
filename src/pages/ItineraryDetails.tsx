@@ -1,6 +1,6 @@
 // FILE: src/pages/itineraries/ItineraryDetails.tsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
 import { ItineraryService } from "@/services/itinerary";
 import { api } from "@/lib/api";
 import { VehicleList } from "./VehicleList";
@@ -39,6 +44,8 @@ type TravelSegment = {
   distance: string;
   duration: string; // "15 Min"
   note?: string | null;
+  isConflict?: boolean;
+  conflictReason?: string | null;
 };
 
 type BreakSegment = {
@@ -67,6 +74,7 @@ type AttractionSegment = {
   visitTime: string; // "06:45 AM - 08:45 AM"
   duration: string; // "2 Hours"
   amount: number | null; // Entry cost
+  timings?: string;
   image: string | null;
   videoUrl?: string | null;
   planOwnWay?: boolean;
@@ -74,6 +82,9 @@ type AttractionSegment = {
   hotspotId?: number;
   routeHotspotId?: number;
   locationId?: number | null;
+  isConflict?: boolean;
+  conflictReason?: string | null;
+  isManual?: boolean;
 };
 
 type HotspotSegment = {
@@ -267,6 +278,130 @@ const formatHeaderDate = (iso: string) => {
   });
 };
 
+const parseDisplayTimeToHms = (displayTime: string): string => {
+  if (!displayTime) return "09:00:00";
+  const parts = displayTime.split(' ');
+  if (parts.length < 2) return "09:00:00";
+  const [time, ampm] = parts;
+  const timeParts = time.split(':');
+  if (timeParts.length < 2) return "09:00:00";
+  let [hours, minutes] = timeParts.map(Number);
+  
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
+  
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+};
+
+const TimePickerPopover: React.FC<{
+  value: string;
+  onSave: (newValue: string) => Promise<void>;
+  label: string;
+}> = ({ value, onSave, label }) => {
+  const parts = value.split(' ');
+  const [localTime, setLocalTime] = useState(parts[0] || "09:00");
+  const [localAmPm, setLocalAmPm] = useState(parts[1] || "AM");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const timeParts = localTime.split(':');
+  const hours = Number(timeParts[0] || 9);
+  const minutes = Number(timeParts[1] || 0);
+  
+  const handleHourChange = (delta: number) => {
+    let newHour = hours + delta;
+    
+    // Toggle AM/PM when crossing 11 <-> 12 boundary
+    if (hours === 11 && delta === 1) {
+      toggleAmPm();
+    } else if (hours === 12 && delta === -1) {
+      toggleAmPm();
+    }
+
+    if (newHour > 12) newHour = 1;
+    if (newHour < 1) newHour = 12;
+    setLocalTime(`${String(newHour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);
+  };
+  
+  const handleMinuteChange = (delta: number) => {
+    let newMinute = minutes + delta;
+    if (newMinute >= 60) newMinute = 0;
+    if (newMinute < 0) newMinute = 55;
+    setLocalTime(`${String(hours).padStart(2, '0')}:${String(newMinute).padStart(2, '0')}`);
+  };
+  
+  const toggleAmPm = () => {
+    setLocalAmPm(prev => prev === 'AM' ? 'PM' : 'AM');
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(`${localTime} ${localAmPm}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center p-4 bg-white rounded-lg shadow-xl border border-[#e5d9f2] min-w-[220px]">
+      <span className="text-[10px] font-bold text-[#6c6c6c] uppercase mb-3 tracking-wider">{label}</span>
+      <div className="flex items-center gap-4">
+        <div className="flex flex-col items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(1)} disabled={isSaving}>
+            <ChevronUp className="h-5 w-5" />
+          </Button>
+          <div className="bg-[#f8f5fc] border border-[#e5d9f2] rounded-md w-12 h-12 flex items-center justify-center text-xl font-bold text-[#4a4260]">
+            {String(hours).padStart(2, '0')}
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(-1)} disabled={isSaving}>
+            <ChevronDown className="h-5 w-5" />
+          </Button>
+        </div>
+        
+        <span className="text-2xl font-bold text-[#4a4260] mt-2">:</span>
+        
+        <div className="flex flex-col items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(5)} disabled={isSaving}>
+            <ChevronUp className="h-5 w-5" />
+          </Button>
+          <div className="bg-[#f8f5fc] border border-[#e5d9f2] rounded-md w-12 h-12 flex items-center justify-center text-xl font-bold text-[#4a4260]">
+            {String(minutes).padStart(2, '0')}
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(-5)} disabled={isSaving}>
+            <ChevronDown className="h-5 w-5" />
+          </Button>
+        </div>
+        
+        <div className="flex flex-col items-center justify-center h-full pt-8">
+          <Button 
+            variant="outline" 
+            className={`h-12 w-12 font-bold border-2 ${localAmPm === 'AM' ? 'border-[#d546ab] text-[#d546ab] bg-[#fdf2f8]' : 'border-[#4a4260] text-[#4a4260]'}`}
+            onClick={toggleAmPm}
+            disabled={isSaving}
+          >
+            {localAmPm}
+          </Button>
+        </div>
+      </div>
+
+      <Button 
+        className="w-full mt-4 bg-[#d546ab] hover:bg-[#c4359a] text-white shadow-md"
+        onClick={handleSave}
+        disabled={isSaving}
+      >
+        {isSaving ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Updating...
+          </>
+        ) : (
+          "Update Time"
+        )}
+      </Button>
+    </div>
+  );
+};
+
 // ----------------- Main Component -----------------
 
 export const ItineraryDetails: React.FC = () => {
@@ -350,6 +485,7 @@ export const ItineraryDetails: React.FC = () => {
     description: string;
     timeSpend: number;
     locationMap: string | null;
+    timings?: string;
   };
 
   const [addHotspotModal, setAddHotspotModal] = useState<{
@@ -365,10 +501,71 @@ export const ItineraryDetails: React.FC = () => {
     locationId: null,
     locationName: "",
   });
-  const [availableHotspots, setAvailableHotspots] = useState<AvailableHotspot[]>([]);
+
+  // Inline Add Hotspot state
+  const [expandedAddHotspotDayId, setExpandedAddHotspotDayId] = useState<number | null>(null);
   const [loadingHotspots, setLoadingHotspots] = useState(false);
   const [isAddingHotspot, setIsAddingHotspot] = useState(false);
   const [hotspotSearchQuery, setHotspotSearchQuery] = useState("");
+  const [availableHotspots, setAvailableHotspots] = useState<AvailableHotspot[]>([]);
+  const [previewTimeline, setPreviewTimeline] = useState<any[] | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [selectedHotspotId, setSelectedHotspotId] = useState<number | null>(null);
+
+  // Refs for scrolling
+  const hotspotListRef = useRef<HTMLDivElement>(null);
+  const timelinePreviewRef = useRef<HTMLDivElement>(null);
+
+  // Scroll management for Add Hotspot Modal
+  useEffect(() => {
+    if (addHotspotModal.open) {
+      const scrollAllToTop = () => {
+        if (hotspotListRef.current) {
+          hotspotListRef.current.scrollTop = 0;
+        }
+        if (timelinePreviewRef.current) {
+          timelinePreviewRef.current.scrollTop = 0;
+        }
+      };
+
+      // Try multiple times to account for rendering/layout shifts
+      scrollAllToTop();
+      const t1 = setTimeout(scrollAllToTop, 100);
+      const t2 = setTimeout(scrollAllToTop, 300);
+      const t3 = setTimeout(scrollAllToTop, 600);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [addHotspotModal.open]);
+
+  // Scroll list to top when search query changes
+  useEffect(() => {
+    if (hotspotListRef.current) {
+      hotspotListRef.current.scrollTop = 0;
+    }
+  }, [hotspotSearchQuery]);
+
+  // Scroll timeline to top when preview data is loaded
+  useEffect(() => {
+    if (previewTimeline && timelinePreviewRef.current) {
+      // Use a small delay to ensure the new timeline items are rendered
+      setTimeout(() => {
+        if (timelinePreviewRef.current) {
+          // Find the selected hotspot element in the preview
+          const selectedEl = timelinePreviewRef.current.querySelector('[data-selected="true"]');
+          if (selectedEl) {
+            selectedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          } else {
+            timelinePreviewRef.current.scrollTop = 0;
+          }
+        }
+      }, 100);
+    }
+  }, [previewTimeline]);
 
   // Filter hotspots based on search query
   const filteredHotspots = availableHotspots.filter(
@@ -593,6 +790,43 @@ export const ItineraryDetails: React.FC = () => {
     }
   };
 
+  const handleUpdateRouteTimesDirect = async (
+    planId: number,
+    routeId: number,
+    dayNumber: number,
+    startTimeDisplay: string,
+    endTimeDisplay: string
+  ) => {
+    const startTimeHms = parseDisplayTimeToHms(startTimeDisplay);
+    const endTimeHms = parseDisplayTimeToHms(endTimeDisplay);
+
+    console.log(`Updating route times: planId=${planId}, routeId=${routeId}, day=${dayNumber}, start=${startTimeHms}, end=${endTimeHms}`);
+
+    try {
+      await ItineraryService.updateRouteTimes(
+        planId,
+        routeId,
+        startTimeHms,
+        endTimeHms
+      );
+
+      toast.success(`Day ${dayNumber} times updated`);
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to update route times", e);
+      toast.error(e?.message || "Failed to update route times");
+    }
+  };
+
   const openDeleteHotspotModal = (
     planId: number,
     routeId: number,
@@ -739,6 +973,37 @@ export const ItineraryDetails: React.FC = () => {
     });
   };
 
+  const toggleInlineAddHotspot = async (
+    dayId: number,
+    locationId: number,
+    locationName: string
+  ) => {
+    if (expandedAddHotspotDayId === dayId) {
+      setExpandedAddHotspotDayId(null);
+      return;
+    }
+
+    setExpandedAddHotspotDayId(dayId);
+    setAddHotspotModal({
+      open: false,
+      planId: itinerary?.planId || null,
+      routeId: dayId,
+      locationId,
+      locationName,
+    });
+    
+    setLoadingHotspots(true);
+    try {
+      const hotspots = await ItineraryService.getAvailableHotspots(dayId);
+      setAvailableHotspots(hotspots as AvailableHotspot[]);
+    } catch (e: any) {
+      console.error("Failed to fetch available hotspots", e);
+      toast.error(e?.message || "Failed to load available hotspots");
+    } finally {
+      setLoadingHotspots(false);
+    }
+  };
+
   const openAddHotspotModal = async (
     planId: number,
     routeId: number,
@@ -752,11 +1017,13 @@ export const ItineraryDetails: React.FC = () => {
       locationId,
       locationName,
     });
+    setPreviewTimeline(null);
+    setSelectedHotspotId(null);
 
     // Fetch available hotspots for this location
     setLoadingHotspots(true);
     try {
-      const hotspots = await ItineraryService.getAvailableHotspots(locationId);
+      const hotspots = await ItineraryService.getAvailableHotspots(routeId);
       setAvailableHotspots(hotspots as AvailableHotspot[]);
     } catch (e: any) {
       console.error("Failed to fetch available hotspots", e);
@@ -766,14 +1033,51 @@ export const ItineraryDetails: React.FC = () => {
     }
   };
 
+  const handlePreviewHotspot = async (hotspotId: number, planId?: number, routeId?: number) => {
+    const pId = planId || addHotspotModal.planId;
+    const rId = routeId || addHotspotModal.routeId;
+    if (!pId || !rId) return;
+
+    setSelectedHotspotId(hotspotId);
+    setIsPreviewing(true);
+    setPreviewTimeline(null);
+    
+    // Don't force scroll list to top here, let the user stay where they clicked
+    if (timelinePreviewRef.current) {
+      timelinePreviewRef.current.scrollTop = 0;
+    }
+
+    try {
+      const preview = await ItineraryService.previewAddHotspot(
+        pId,
+        rId,
+        hotspotId
+      );
+      // The backend returns { newHotspot, otherConflicts, fullTimeline }
+      setPreviewTimeline(preview.fullTimeline || []);
+    } catch (e: any) {
+      console.error("Failed to preview hotspot", e);
+      toast.error(e?.message || "Failed to preview hotspot");
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
   const handleAddHotspot = async (hotspotId: number) => {
     if (!addHotspotModal.planId || !addHotspotModal.routeId) {
       return;
     }
 
+    // Check for conflicts in preview
+    const hasConflicts = previewTimeline?.some(seg => seg.isConflict);
+    if (hasConflicts) {
+      const confirm = window.confirm("This addition will cause timing conflicts (some places may be closed). Do you want to continue?");
+      if (!confirm) return;
+    }
+
     setIsAddingHotspot(true);
     try {
-      await ItineraryService.addHotspot(
+      await ItineraryService.addManualHotspot(
         addHotspotModal.planId,
         addHotspotModal.routeId,
         hotspotId
@@ -781,7 +1085,7 @@ export const ItineraryDetails: React.FC = () => {
 
       toast.success("Hotspot added successfully");
 
-      // Close modal
+      // Close modal and inline
       setAddHotspotModal({
         open: false,
         planId: null,
@@ -789,7 +1093,10 @@ export const ItineraryDetails: React.FC = () => {
         locationId: null,
         locationName: "",
       });
+      setExpandedAddHotspotDayId(null);
       setHotspotSearchQuery("");
+      setPreviewTimeline(null);
+      setSelectedHotspotId(null);
 
       // Reload itinerary data
       if (quoteId) {
@@ -1038,7 +1345,7 @@ export const ItineraryDetails: React.FC = () => {
         <p className="text-sm text-red-600">
           {error || "Itinerary details not found"}
         </p>
-        <Link to="/latest-itinerary">
+        <Link to={`/create-itinerary?id=${itinerary.planId}`}>
           <Button
             variant="outline"
             className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
@@ -1051,16 +1358,15 @@ export const ItineraryDetails: React.FC = () => {
     );
   }
 
-  const backToListHref = "/latest-itinerary";
-  const modifyItineraryHref = itinerary.planId
+  const backToListHref = itinerary.planId
     ? `/create-itinerary?id=${itinerary.planId}`
     : "#";
-
+  const modifyItineraryHref = backToListHref;
   return (
-    <div className="w-full max-w-full space-y-6 pb-8">
+    <div className="w-full max-w-full space-y-2 pb-8">
       {/* Header Card */}
       <Card className="border-none shadow-none bg-white">
-        <CardContent className="pt-6">
+        <CardContent className="pt-4 pb-0">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
             <h1 className="text-xl font-semibold text-[#4a4260]">
               Tour Itinerary Plan
@@ -1133,7 +1439,7 @@ export const ItineraryDetails: React.FC = () => {
           </div>
 
           {/* Quote Info */}
-          <div className="flex flex-col lg:flex-row justify-between gap-4 mb-4">
+          <div className="flex flex-col lg:flex-row justify-between gap-4 mb-2">
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-[#6c6c6c]" />
@@ -1155,29 +1461,16 @@ export const ItineraryDetails: React.FC = () => {
           </div>
 
           {/* Trip Details */}
-          <div className="flex flex-wrap gap-4 text-sm text-[#6c6c6c] mb-4">
+          <div className="flex flex-wrap gap-4 text-sm text-[#6c6c6c]">
             <span>Room Count: {itinerary.roomCount}</span>
             <span>Extra Bed: {itinerary.extraBed}</span>
             <span>Child with bed: {itinerary.childWithBed}</span>
-            <span>Child without bed: {itinerary.childWithoutbed}</span>
+            <span>Child without bed: {itinerary.childWithoutBed}</span>
             <div className="ml-auto flex gap-4">
               <span>Adults: {itinerary.adults}</span>
               <span>Child: {itinerary.children}</span>
               <span>Infants: {itinerary.infants}</span>
             </div>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-2">
-            {!itinerary.isConfirmed && (
-              <Button 
-                className="bg-[#28a745] hover:bg-[#218838]"
-                onClick={openConfirmQuotationModal}
-              >
-                <Bell className="mr-2 h-4 w-4" />
-                Confirm Quotation
-              </Button>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -1187,7 +1480,7 @@ export const ItineraryDetails: React.FC = () => {
         <Card key={day.id} className="border border-[#e5d9f2] bg-white">
           <CardContent className="pt-4">
             {/* Day Header */}
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4 p-3 bg-[#f8f5fc] rounded-lg border border-[#e5d9f2]">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-3 p-3 bg-[#f8f5fc] rounded-lg border border-[#e5d9f2]">
               <div className="flex items-center gap-3">
                 <Calendar className="h-5 w-5 text-[#d546ab]" />
                 <div>
@@ -1217,12 +1510,61 @@ export const ItineraryDetails: React.FC = () => {
             </div>
 
             {/* Time Range */}
-            <div className="flex items-center gap-4 mb-6 ml-2">
-              <span className="text-[#d546ab] font-semibold">
-                {day.startTime}
-              </span>
-              <div className="h-px flex-1 bg-gradient-to-r from-[#d546ab] to-transparent" />
-              <span className="text-[#6c6c6c]">{day.endTime}</span>
+            <div className="flex items-center justify-between mb-4 ml-2">
+              <div className="flex items-center gap-2 bg-white border border-[#e5d9f2] rounded-lg p-1 shadow-sm">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div className="px-3 py-1.5 text-sm font-medium text-[#4a4260] cursor-pointer hover:bg-[#f8f5fc] rounded transition-colors border border-transparent hover:border-[#d546ab]">
+                      {day.startTime}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <TimePickerPopover 
+                      value={day.startTime} 
+                      label="Start Time"
+                      onSave={async (newTime) => {
+                        await handleUpdateRouteTimesDirect(itinerary.planId || 0, day.id, day.dayNumber, newTime, day.endTime);
+                        // Close popover by clicking outside or using state if we had it
+                        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+                
+                <ArrowRight className="h-4 w-4 text-[#d546ab]" />
+                
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div className="px-3 py-1.5 text-sm font-medium text-[#4a4260] cursor-pointer hover:bg-[#f8f5fc] rounded transition-colors border border-transparent hover:border-[#d546ab]">
+                      {day.endTime}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <TimePickerPopover 
+                      value={day.endTime} 
+                      label="End Time"
+                      onSave={async (newTime) => {
+                        await handleUpdateRouteTimesDirect(itinerary.planId || 0, day.id, day.dayNumber, day.startTime, newTime);
+                        // Close popover
+                        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-[#d546ab] text-[#d546ab] hover:bg-[#f3e8ff] rounded-full px-4"
+                onClick={() => {
+                  // TODO: Implement Add Guide
+                  toast.info("Add Guide feature coming soon");
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Guide
+              </Button>
             </div>
 
             {/* Segments */}
@@ -1245,7 +1587,13 @@ export const ItineraryDetails: React.FC = () => {
                   )}
 
                   {segment.type === "travel" && (
-                    <div className="bg-[#e8f9fd] rounded-lg p-3 mb-3">
+                    <div className={`rounded-lg p-3 mb-3 border-2 ${segment.isConflict ? 'bg-red-50 border-red-400 shadow-sm' : 'bg-[#e8f9fd] border-transparent'}`}>
+                      {segment.isConflict && (
+                        <div className="flex items-center gap-2 text-red-700 text-[11px] font-bold mb-2 bg-red-100 px-2 py-1 rounded">
+                          <AlertTriangle className="h-3 w-3" />
+                          TIMING CONFLICT: {segment.conflictReason}
+                        </div>
+                      )}
                       <div className="flex items-start gap-3">
                         <Car className="h-5 w-5 text-[#4ba3c3] mt-1" />
                         <div className="flex-1">
@@ -1281,17 +1629,43 @@ export const ItineraryDetails: React.FC = () => {
 
                   {segment.type === "attraction" && (
                     <>
-                      <div className="bg-gradient-to-r from-[#faf5ff] to-[#f3e8ff] rounded-lg p-4 mb-3 border border-[#e5d9f2]">
+                      <div className={`bg-gradient-to-r from-[#faf5ff] to-[#f3e8ff] rounded-lg p-4 mb-3 border-2 ${segment.isConflict ? 'border-red-500 bg-red-50 shadow-md' : 'border-[#e5d9f2]'}`}>
+                        {segment.isConflict && (
+                          <div className="flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-md text-xs font-bold mb-3 animate-pulse">
+                            <AlertTriangle className="h-4 w-4" />
+                            <span>WARNING: {segment.conflictReason}</span>
+                          </div>
+                        )}
                         <div className="flex flex-col sm:flex-row gap-4">
-                          <img
-                            src={
-                              segment.image ||
-                              "https://placehold.co/120x120/e9d5f7/4a4260?text=Spot"
-                            }
-                            alt={segment.name}
-                            className="w-full sm:w-32 h-32 object-cover rounded-lg"
-                          />
-                          <div className="flex-1">
+                          <div className="flex flex-col gap-2 w-full sm:w-32 shrink-0">
+                            <img
+                              src={
+                                segment.image ||
+                                "https://placehold.co/120x120/e9d5f7/4a4260?text=Spot"
+                              }
+                              alt={segment.name}
+                              className="w-full h-32 object-cover rounded-lg shadow-sm"
+                            />
+                            <div className="flex flex-col gap-1.5 p-2 bg-white/60 rounded-md border border-[#e5d9f2] text-[10px] font-medium text-[#4a4260]">
+                              {segment.amount && segment.amount > 0 && (
+                                <div className="flex items-center gap-1.5">
+                                  <Ticket className="h-3 w-3 text-[#d546ab]" />
+                                  <span>₹{segment.amount.toFixed(0)}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="h-3 w-3 text-[#d546ab]" />
+                                <span>{segment.duration?.split(':').slice(0,2).join(':')} hrs</span>
+                              </div>
+                              {segment.timings && (
+                                <div className="flex items-center gap-1.5">
+                                  <Timer className="h-3 w-3 text-[#d546ab]" />
+                                  <span className="truncate" title={segment.timings}>{segment.timings}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between">
                               <h4 className="font-semibold text-[#4a4260] mb-2">
                                 {segment.name}
@@ -1311,26 +1685,16 @@ export const ItineraryDetails: React.FC = () => {
                                 <Trash2 className="h-5 w-5" />
                               </button>
                             </div>
-                            <p className="text-sm text-[#6c6c6c] mb-3">
+                            <p className="text-sm text-[#6c6c6c] mb-3 line-clamp-3">
                               {segment.description}
                             </p>
                             <div className="flex flex-wrap gap-4 text-xs text-[#6c6c6c]">
-                              <span>
-                                <Clock className="inline h-3 w-3 mr-1" />
+                              <span className="flex items-center font-bold text-[#d546ab] bg-[#fdf6ff] px-2 py-1 rounded border border-[#f3e8ff]">
+                                <Clock className="h-3 w-3 mr-1" />
                                 {segment.visitTime}
                               </span>
-                              {segment.amount && segment.amount > 0 && (
-                                <span>
-                                  <Ticket className="inline h-3 w-3 mr-1" />
-                                  ₹ {segment.amount.toFixed(2)}
-                                </span>
-                              )}
-                              <span>
-                                <Clock className="inline h-3 w-3 mr-1" />
-                                {segment.duration}
-                              </span>
                               <button 
-                                className="text-[#d546ab] hover:underline flex items-center"
+                                className="text-[#d546ab] hover:underline flex items-center font-medium"
                                 onClick={() =>
                                   openAddActivityModal(
                                     itinerary.planId || 0,
@@ -1386,7 +1750,7 @@ export const ItineraryDetails: React.FC = () => {
                           </div>
                           <div className="bg-red-500 text-white px-4 py-2 rounded-lg flex-1">
                             <p className="text-sm font-medium m-0">
-                              You have deviated from our suggestion and implement your approach.
+                              Manual Addition: This place was added manually. Timing may vary from our optimized route.
                             </p>
                           </div>
                         </div>
@@ -1436,22 +1800,22 @@ export const ItineraryDetails: React.FC = () => {
                                         {activity.description}
                                       </p>
                                       <div className="flex flex-wrap gap-4 text-xs text-[#6c6c6c]">
-                                        {activity.startTime && activity.endTime && (
-                                          <span>
-                                            <Clock className="inline h-3 w-3 mr-1" />
-                                            {activity.startTime} - {activity.endTime}
-                                          </span>
-                                        )}
                                         {activity.amount > 0 && (
-                                          <span>
-                                            <Ticket className="inline h-3 w-3 mr-1" />
+                                          <span className="flex items-center">
+                                            <Ticket className="h-3 w-3 mr-1" />
                                             ₹ {activity.amount.toFixed(2)}
                                           </span>
                                         )}
                                         {activity.duration && (
-                                          <span>
-                                            <Timer className="inline h-3 w-3 mr-1" />
+                                          <span className="flex items-center">
+                                            <Clock className="h-3 w-3 mr-1" />
                                             {activity.duration}
+                                          </span>
+                                        )}
+                                        {activity.startTime && activity.endTime && (
+                                          <span className="flex items-center">
+                                            <Clock className="h-3 w-3 mr-1" />
+                                            {activity.startTime} - {activity.endTime}
                                           </span>
                                         )}
                                       </div>
@@ -1532,7 +1896,7 @@ export const ItineraryDetails: React.FC = () => {
                             </p>
                           )}
                           <p className="text-xs text-[#d546ab] mt-2">
-                            Click to change hotelsss
+                            Click to change hotel
                           </p>
                         </div>
                       </div>
@@ -1540,21 +1904,90 @@ export const ItineraryDetails: React.FC = () => {
                   )}
 
                   {segment.type === "hotspot" && (
-                    <div className="flex items-center gap-2 mb-3 text-[#d546ab]">
-                      <Plus className="h-4 w-4" />
-                      <button 
-                        className="text-sm hover:underline"
-                        onClick={() =>
-                          openAddHotspotModal(
-                            itinerary.planId || 0,
-                            day.id,
-                            segment.locationId || 0,
-                            day.arrival || "Location"
-                          )
-                        }
-                      >
-                        {segment.text}
-                      </button>
+                    <div className="flex flex-col gap-2 mb-3">
+                      <div className="flex items-center gap-2 text-[#d546ab]">
+                        <Plus className="h-4 w-4" />
+                        <button 
+                          className="text-sm hover:underline font-medium"
+                          onClick={() =>
+                            toggleInlineAddHotspot(
+                              day.id,
+                              segment.locationId || 0,
+                              day.arrival || "Location"
+                            )
+                          }
+                        >
+                          {segment.text}
+                        </button>
+                      </div>
+
+                      {expandedAddHotspotDayId === day.id && (
+                        <div className="ml-6 mt-2 p-4 bg-white rounded-xl border-2 border-dashed border-[#e5d9f2] animate-in fade-in slide-in-from-top-2 duration-300">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-sm font-bold text-[#4a4260]">Available Places in {day.arrival || "this location"}</h4>
+                            <div className="relative w-48">
+                              <input
+                                type="text"
+                                placeholder="Search places..."
+                                className="w-full text-xs p-2 pl-8 border rounded-md focus:outline-none focus:ring-1 focus:ring-[#d546ab]"
+                                value={hotspotSearchQuery}
+                                onChange={(e) => setHotspotSearchQuery(e.target.value)}
+                              />
+                              <MapPin className="absolute left-2 top-2 h-3 w-3 text-[#6c6c6c]" />
+                            </div>
+                          </div>
+
+                          {loadingHotspots ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="h-6 w-6 animate-spin text-[#d546ab]" />
+                            </div>
+                          ) : filteredHotspots.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
+                              {filteredHotspots.map((h) => (
+                                <div 
+                                  key={h.id} 
+                                  className="group flex items-start gap-3 p-3 rounded-lg border border-[#e5d9f2] hover:border-[#d546ab] hover:bg-[#fdf6ff] transition-all cursor-pointer"
+                                  onClick={() => {
+                                    const pId = itinerary.planId || 0;
+                                    const rId = day.id;
+                                    setAddHotspotModal({
+                                      open: true,
+                                      planId: pId,
+                                      routeId: rId,
+                                      locationId: day.locationId || 0,
+                                      locationName: day.arrival || "this location",
+                                    });
+                                    handlePreviewHotspot(h.id, pId, rId);
+                                  }}
+                                >
+                                  <div className="w-12 h-12 rounded-md bg-[#f3e8ff] flex items-center justify-center flex-shrink-0 group-hover:bg-[#d546ab] transition-colors">
+                                    <MapPin className="h-6 w-6 text-[#d546ab] group-hover:text-white" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-sm font-bold text-[#4a4260] truncate">{h.name}</p>
+                                      <span className="text-[10px] font-bold text-[#d546ab] bg-[#fdf2f8] px-1.5 py-0.5 rounded">
+                                        {h.timeSpend}h
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-[#6c6c6c] line-clamp-2 mt-0.5">{h.description}</p>
+                                    <div className="flex items-center justify-between mt-2">
+                                      <span className="text-[10px] font-bold text-[#4ba3c3]">₹ {h.amount.toFixed(0)}</span>
+                                      <span className="text-[10px] font-bold text-[#d546ab] opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                                        Add to Plan <ArrowRight className="ml-1 h-2 w-2" />
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 text-[#6c6c6c]">
+                              <p className="text-sm">No places found matching your search.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1940,7 +2373,14 @@ export const ItineraryDetails: React.FC = () => {
               onClick={handleDeleteHotspot}
               disabled={isDeleting}
             >
-              {isDeleting ? "Deleting..." : "Delete"}
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2005,7 +2445,14 @@ export const ItineraryDetails: React.FC = () => {
                           onClick={() => handleAddActivity(activity.id, activity.costAdult)}
                           disabled={isAddingActivity}
                         >
-                          {isAddingActivity ? "Adding..." : "Add"}
+                          {isAddingActivity ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Adding...
+                            </>
+                          ) : (
+                            "Add"
+                          )}
                         </Button>
                       </div>
                     </CardContent>
@@ -2071,7 +2518,14 @@ export const ItineraryDetails: React.FC = () => {
               onClick={handleDeleteActivity}
               disabled={isDeletingActivity}
             >
-              {isDeletingActivity ? "Deleting..." : "Delete"}
+              {isDeletingActivity ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2084,7 +2538,7 @@ export const ItineraryDetails: React.FC = () => {
           setAddHotspotModal({ ...addHotspotModal, open })
         }
       >
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -2102,65 +2556,183 @@ export const ItineraryDetails: React.FC = () => {
               />
             </div>
           </DialogHeader>
-          <div className="py-4 flex-1 overflow-hidden">
-            {loadingHotspots ? (
-              <p className="text-sm text-[#6c6c6c] text-center py-8">
-                Loading available hotspots...
-              </p>
-            ) : filteredHotspots.length === 0 ? (
-              <p className="text-sm text-[#6c6c6c] text-center py-8">
-                {hotspotSearchQuery ? "No hotspots match your search" : "No hotspots available for this location"}
-              </p>
-            ) : (
-              <div className="overflow-y-auto h-[500px] pr-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredHotspots.map((hotspot) => (
-                    <div
-                      key={hotspot.id}
-                      className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white"
-                    >
-                      <div className="aspect-video bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center">
-                        <div className="text-center">
-                          <Building2 className="h-12 w-12 text-[#d546ab] mx-auto mb-2" />
-                          <p className="text-xs text-gray-500">No Photos Available</p>
+          <div className="py-4">
+            <div className="flex gap-4">
+              {/* Left Column: Hotspot List */}
+              <div ref={hotspotListRef} className={`${selectedHotspotId ? 'w-1/2' : 'w-full'} pr-2`}>
+                {loadingHotspots ? (
+                  <p className="text-sm text-[#6c6c6c] text-center py-8">
+                    Loading available hotspots...
+                  </p>
+                ) : filteredHotspots.length === 0 ? (
+                  <p className="text-sm text-[#6c6c6c] text-center py-8">
+                    {hotspotSearchQuery ? "No hotspots match your search" : "No hotspots available for this location"}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {filteredHotspots.map((hotspot) => (
+                      <div
+                        key={hotspot.id}
+                        className={`border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white ${selectedHotspotId === hotspot.id ? 'ring-2 ring-[#d546ab]' : ''}`}
+                      >
+                        <div className="p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-semibold text-base text-[#4a4260] flex items-center gap-2">
+                              {hotspot.name}
+                              {selectedHotspotId === hotspot.id && (
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold ${
+                                  previewTimeline?.some(seg => seg.isConflict && Number(seg.locationId) === hotspot.id) 
+                                    ? 'bg-red-100 text-red-700' 
+                                    : 'bg-green-100 text-green-700'
+                                }`}>
+                                  {previewTimeline?.some(seg => seg.isConflict && Number(seg.locationId) === hotspot.id) ? 'Conflict' : 'Selected'}
+                                </span>
+                              )}
+                            </h4>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant={selectedHotspotId === hotspot.id ? "outline" : "default"}
+                                className={selectedHotspotId === hotspot.id ? "border-gray-300" : "bg-[#d546ab] hover:bg-[#b93a8f] text-white"}
+                                onClick={() => handlePreviewHotspot(hotspot.id)}
+                                disabled={isPreviewing && selectedHotspotId === hotspot.id}
+                              >
+                                {isPreviewing && selectedHotspotId === hotspot.id ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Previewing...
+                                  </>
+                                ) : selectedHotspotId === hotspot.id ? (
+                                  "Refresh Preview"
+                                ) : (
+                                  "Preview"
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="text-sm text-[#6c6c6c] mb-3 line-clamp-2">
+                            {hotspot.description}
+                          </p>
+                          <div className="flex flex-wrap gap-3 text-xs text-[#6c6c6c]">
+                            {hotspot.amount > 0 && (
+                              <span className="flex items-center">
+                                <Ticket className="h-3 w-3 mr-1" />
+                                ₹ {hotspot.amount.toFixed(2)}
+                              </span>
+                            )}
+                            {hotspot.timeSpend > 0 && (
+                              <span className="flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {hotspot.timeSpend} hrs
+                              </span>
+                            )}
+                            {hotspot.timings && (
+                              <span className="flex items-center">
+                                <Timer className="h-3 w-3 mr-1" />
+                                {hotspot.timings}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="p-4">
-                        <h4 className="font-semibold text-base text-[#4a4260] mb-2">
-                          {hotspot.name}
-                        </h4>
-                        <p className="text-sm text-[#6c6c6c] mb-3 line-clamp-2">
-                          {hotspot.description}
-                        </p>
-                        <div className="flex flex-wrap gap-3 text-xs text-[#6c6c6c] mb-3">
-                          {hotspot.amount > 0 && (
-                            <span>
-                              <Ticket className="inline h-3 w-3 mr-1" />
-                              ₹ {hotspot.amount.toFixed(2)}
-                            </span>
-                          )}
-                          {hotspot.timeSpend > 0 && (
-                            <span>
-                              <Clock className="inline h-3 w-3 mr-1" />
-                              {hotspot.timeSpend} hrs
-                            </span>
-                          )}
-                        </div>
-                        <Button
-                          size="sm"
-                          className="w-full bg-[#d546ab] hover:bg-[#b93a8f] text-white"
-                          onClick={() => handleAddHotspot(hotspot.id)}
-                          disabled={isAddingHotspot}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* Right Column: Preview */}
+              {selectedHotspotId && (
+                <div className="w-1/2 border-l pl-4">
+                  <h3 className="font-semibold text-[#4a4260] mb-4 flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Proposed Timeline
+                  </h3>
+                  <div ref={timelinePreviewRef} className="flex-1 pr-2 space-y-3">
+                    {isPreviewing ? (
+                      <div className="flex flex-col items-center justify-center h-32 text-[#6c6c6c]">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#d546ab] mb-2"></div>
+                        <p className="text-sm">Calculating best slot...</p>
+                      </div>
+                    ) : previewTimeline ? (
+                      <>
+                        {previewTimeline.map((seg, idx) => {
+                          const isSelected = seg.type === 'hotspot' && Number(seg.locationId) === Number(selectedHotspotId);
+                          return (
+                            <div 
+                              key={idx} 
+                              data-selected={isSelected ? "true" : "false"}
+                              className={`p-3 rounded-lg border-2 transition-all ${
+                                seg.isConflict 
+                                  ? 'bg-red-50 border-red-300 shadow-sm' 
+                                  : isSelected
+                                    ? 'bg-green-50 border-green-500 ring-2 ring-green-200 shadow-md scale-[1.02]'
+                                    : 'bg-gray-50 border-gray-200 opacity-80'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                    seg.type === 'travel' ? 'bg-blue-100 text-blue-700' : 
+                                    seg.type === 'hotspot' ? 'bg-purple-100 text-purple-700' : 
+                                    'bg-gray-200 text-gray-700'
+                                  }`}>
+                                    {seg.type}
+                                  </span>
+                                  <span className="text-xs font-bold text-[#4a4260]">
+                                    {seg.timeRange}
+                                  </span>
+                                </div>
+                                {seg.isConflict ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 uppercase bg-red-100 px-2 py-0.5 rounded">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Conflict
+                                  </span>
+                                ) : isSelected ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold text-green-600 uppercase bg-green-100 px-2 py-0.5 rounded animate-pulse">
+                                    <Plus className="h-3 w-3" />
+                                    New
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className={`text-sm font-bold ${isSelected ? 'text-green-800' : 'text-[#4a4260]'}`}>
+                                {seg.text}
+                              </p>
+                              {seg.isConflict && (
+                                <div className="mt-2 p-2 bg-white/50 rounded border border-red-100">
+                                  <p className="text-xs text-red-600 font-medium leading-tight">
+                                    {seg.conflictReason}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="pt-4 sticky bottom-0 bg-white">
+                          <Button 
+                            className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg"
+                            onClick={() => handleAddHotspot(selectedHotspotId)}
+                            disabled={isAddingHotspot}
+                          >
+                            {isAddingHotspot ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Adding...
+                              </>
+                            ) : (
+                              "Confirm Add to Itinerary"
+                            )}
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-32 text-[#6c6c6c] border-2 border-dashed rounded-lg">
+                        <p className="text-sm">Select a hotspot to see the preview</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -2189,7 +2761,7 @@ export const ItineraryDetails: React.FC = () => {
           setHotelSelectionModal({ ...hotelSelectionModal, open })
         }
       >
-        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -2207,7 +2779,7 @@ export const ItineraryDetails: React.FC = () => {
               />
             </div>
           </DialogHeader>
-          <div className="py-4 flex-1 overflow-hidden">
+          <div className="py-4">
             {loadingHotels ? (
               <p className="text-sm text-[#6c6c6c] text-center py-8">
                 Loading available hotels...
@@ -2217,7 +2789,7 @@ export const ItineraryDetails: React.FC = () => {
                 {hotelSearchQuery ? "No hotels match your search" : "No hotels available within 20km"}
               </p>
             ) : (
-              <div className="overflow-y-auto h-[500px] pr-2">
+              <div className="pr-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredHotels.map((hotel) => (
                     <div
@@ -2439,12 +3011,12 @@ export const ItineraryDetails: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-3">
-            {!hotelDetails || !hotelDetails.tabs ? (
+            {!hotelDetails || !hotelDetails.hotelTabs ? (
               <p className="text-sm text-[#6c6c6c] text-center py-8">
                 No hotel information available
               </p>
             ) : (
-              hotelDetails.tabs.map((tab) => (
+              hotelDetails.hotelTabs.map((tab) => (
                 <div key={tab.groupType} className="border border-[#e5d9f2] rounded-lg p-3">
                   <h4 className="font-semibold text-[#4a4260] mb-2">{tab.label}</h4>
                   {hotelDetails.hotels
@@ -2499,7 +3071,7 @@ export const ItineraryDetails: React.FC = () => {
 
                 if (!hotelDetails) return;
 
-                hotelDetails.tabs.forEach((tab) => {
+                hotelDetails.hotelTabs.forEach((tab) => {
                   const tabHotels = hotelDetails.hotels.filter((h) => h.groupType === tab.groupType);
                   tabHotels.forEach((hotel, idx) => {
                     const hotelKey = `${tab.groupType}-${idx}`;

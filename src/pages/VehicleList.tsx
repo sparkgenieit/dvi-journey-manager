@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 export interface ItineraryVehicleRow {
   vendorName?: string | null;
@@ -81,6 +81,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
     vehicleTypeId: number;
     vendorName: string;
   } | null>(null);
+  const [isUpdatingVehicle, setIsUpdatingVehicle] = useState(false);
 
   const handleRowClick = (index: number) => {
     setExpandedVendorIndex((prev) => (prev === index ? null : index));
@@ -115,6 +116,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   const handleConfirmSelection = async () => {
     if (!pendingVendorSelection || !itineraryPlanId) return;
 
+    setIsUpdatingVehicle(true);
     try {
       await ItineraryService.selectVehicleVendor(
         itineraryPlanId,
@@ -134,6 +136,8 @@ export const VehicleList: React.FC<VehicleListProps> = ({
     } catch (error) {
       console.error("Failed to select vehicle vendor:", error);
       toast.error("Failed to update vehicle vendor");
+    } finally {
+      setIsUpdatingVehicle(false);
     }
   };
 
@@ -346,14 +350,23 @@ export const VehicleList: React.FC<VehicleListProps> = ({
                 setShowConfirmDialog(false);
                 setPendingVendorSelection(null);
               }}
+              disabled={isUpdatingVehicle}
             >
               Cancel
             </Button>
             <Button
               onClick={handleConfirmSelection}
               className="bg-purple-600 hover:bg-purple-700"
+              disabled={isUpdatingVehicle}
             >
-              Confirm
+              {isUpdatingVehicle ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Confirm"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

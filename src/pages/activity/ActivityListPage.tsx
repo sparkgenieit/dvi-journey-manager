@@ -103,11 +103,23 @@ export default function ActivityListPage() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await ActivitiesAPI.list(undefined, undefined);
-      const arr = (data as unknown as ActivityListRow[]) ?? [];
+      console.log("[ActivityListPage] loading activities...");
+      const res = await ActivitiesAPI.list(undefined, undefined);
+      console.log("[ActivityListPage] received response:", res);
+
+      // Safely extract array regardless of shape
+      let arr: ActivityListRow[] = [];
+      if (Array.isArray(res)) {
+        arr = res;
+      } else if (res && typeof res === "object" && "data" in res && Array.isArray((res as any).data)) {
+        arr = (res as any).data;
+      }
+
+      console.log("[ActivityListPage] final rows array:", arr);
       setRows(arr);
       setFiltered(arr);
-    } catch {
+    } catch (err) {
+      console.error("[ActivityListPage] load error:", err);
       toast.error("Failed to load activities");
     } finally {
       setLoading(false);
@@ -178,13 +190,16 @@ export default function ActivityListPage() {
       setFiltered((r) => r.filter((x) => x.activity_id !== id));
 
       try {
+        console.log("[ActivityListPage] deleting activity:", id);
         await ActivitiesAPI.delete(id);
+        console.log("[ActivityListPage] delete success:", id);
         toast.success("Activity deleted");
         // fix current page if it became empty
         const totalAfter = prevFiltered.filter((x) => x.activity_id !== id).length;
         const lastPage = Math.max(1, Math.ceil(totalAfter / pageSize));
         if (currentPage > lastPage) setCurrentPage(lastPage);
       } catch (e) {
+        console.error("[ActivityListPage] delete error:", e);
         // rollback
         setRows(prevRows);
         setFiltered(prevFiltered);

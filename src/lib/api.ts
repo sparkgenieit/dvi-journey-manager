@@ -80,6 +80,8 @@ console.debug("[api]", method, buildUrl(path));
     body: finalBody,
   });
 
+  console.debug(`[api] response ${res.status} ${res.statusText} for ${method} ${url}`);
+
   if (!res.ok) {
     // Handle 401 Unauthorized - redirect to login
     if (res.status === 401) {
