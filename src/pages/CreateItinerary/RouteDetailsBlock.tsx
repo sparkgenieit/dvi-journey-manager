@@ -12,10 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  AutoSuggestSelect,
-  AutoSuggestOption,
-} from "@/components/AutoSuggestSelect";
+import { AutoSuggestSelect, AutoSuggestOption } from "./CreateItineraryAutoSuggestSelect";
 import {
   LocationOption,
   fetchLocations,

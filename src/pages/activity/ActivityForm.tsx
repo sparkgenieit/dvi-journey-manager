@@ -1,4 +1,6 @@
+// REPLACE-WHOLE-FILE
 // FILE: src/pages/activity/ActivityForm.tsx
+
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,11 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import {
   CalendarIcon,
@@ -122,12 +120,6 @@ const getEmptyActivity = (): ActivityFormState => ({
   status: true,
 });
 
-/** Build absolute URL to backend for non-JSON FormData upload.
- * If your app is proxied, relative path is fine. Change if needed. */
-function buildApiUrl(path: string) {
-  return path.startsWith("/") ? path : `/${path}`;
-}
-
 const ActivityForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -167,7 +159,6 @@ const ActivityForm = () => {
   /* ------------------------ load hotspots & activity ------------------------ */
 
   useEffect(() => {
-    // hotspots for dropdown
     ActivitiesAPI.hotspots()
       .then((res) => setHotspotOptions(res || []))
       .catch(() => setHotspotOptions([]));
@@ -212,14 +203,19 @@ const ActivityForm = () => {
 
         if (preview.specialSlots && preview.specialSlots.length > 0) {
           base.isSpecialDay = true;
-          base.specialDays = preview.specialSlots.map((s) => ({
-            date: s.special_date,
-            timeSlots: [
-              {
-                startTime: s.start_time,
-                endTime: s.end_time,
-              },
-            ],
+
+          // group special slots by date so UI can show "Add Time slots" inside a date
+          const byDate = new Map<string, FormTimeSlot[]>();
+          for (const s of preview.specialSlots) {
+            const d = s.special_date;
+            const arr = byDate.get(d) ?? [];
+            arr.push({ startTime: s.start_time, endTime: s.end_time });
+            byDate.set(d, arr);
+          }
+
+          base.specialDays = Array.from(byDate.entries()).map(([date, timeSlots]) => ({
+            date,
+            timeSlots: timeSlots.length ? timeSlots : [{ startTime: "", endTime: "" }],
           }));
         }
 
@@ -233,8 +229,6 @@ const ActivityForm = () => {
       }
 
       setFormData(base);
-
-      // keep priceStartDate/EndDate empty unless you fetch existing pricebook
     } catch (err) {
       console.error(err);
       toast.error("Failed to load activity");
@@ -245,7 +239,17 @@ const ActivityForm = () => {
 
   /* ---------------------------- helpers & change ---------------------------- */
 
-  const handleInputChange = (field: keyof ActivityFormState, value: string | number | boolean | FormTimeSlot[] | FormSpecialDay[] | FormPricing | FormReview[]) => {
+  const handleInputChange = (
+    field: keyof ActivityFormState,
+    value:
+      | string
+      | number
+      | boolean
+      | FormTimeSlot[]
+      | FormSpecialDay[]
+      | FormPricing
+      | FormReview[]
+  ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -279,23 +283,92 @@ const ActivityForm = () => {
   const addDefaultTime = () => {
     setFormData((prev) => ({
       ...prev,
-      defaultAvailableTimes: [
-        ...prev.defaultAvailableTimes,
-        { startTime: "", endTime: "" },
-      ],
+      defaultAvailableTimes: [...prev.defaultAvailableTimes, { startTime: "", endTime: "" }],
     }));
   };
 
-  const updateDefaultTime = (
-    index: number,
-    field: keyof FormTimeSlot,
-    value: string
-  ) => {
+  const updateDefaultTime = (index: number, field: keyof FormTimeSlot, value: string) => {
     setFormData((prev) => ({
       ...prev,
       defaultAvailableTimes: prev.defaultAvailableTimes.map((t, i) =>
         i === index ? { ...t, [field]: value } : t
       ),
+    }));
+  };
+
+  // -------------------- Special Available Time (PHP-like UI) --------------------
+
+  const ensureSpecialHasOneDay = () => {
+    setFormData((prev) => {
+      if (!prev.specialDays || prev.specialDays.length === 0) {
+        return {
+          ...prev,
+          // first default day (NO delete button)
+          specialDays: [{ date: "", timeSlots: [{ startTime: "", endTime: "" }] }],
+        };
+      }
+      return prev;
+    });
+  };
+
+  const addSpecialDay = () => {
+    setFormData((prev) => ({
+      ...prev,
+      // newly added days CAN be deleted
+      specialDays: [...(prev.specialDays ?? []), { date: "", timeSlots: [{ startTime: "", endTime: "" }] }],
+    }));
+  };
+
+  const removeSpecialDay = (dayIndex: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      specialDays: prev.specialDays.filter((_, i) => i !== dayIndex),
+    }));
+  };
+
+  const updateSpecialDayDate = (dayIndex: number, date: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      specialDays: prev.specialDays.map((d, i) => (i === dayIndex ? { ...d, date } : d)),
+    }));
+  };
+
+  const addSpecialTimeSlot = (dayIndex: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      specialDays: prev.specialDays.map((d, i) => {
+        if (i !== dayIndex) return d;
+        const slots = d.timeSlots?.length ? d.timeSlots : [{ startTime: "", endTime: "" }];
+        return { ...d, timeSlots: [...slots, { startTime: "", endTime: "" }] };
+      }),
+    }));
+  };
+
+  const removeSpecialTimeSlot = (dayIndex: number, slotIndex: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      specialDays: prev.specialDays.map((d, i) => {
+        if (i !== dayIndex) return d;
+        const nextSlots = (d.timeSlots ?? []).filter((_, si) => si !== slotIndex);
+        return { ...d, timeSlots: nextSlots.length ? nextSlots : [{ startTime: "", endTime: "" }] };
+      }),
+    }));
+  };
+
+  const updateSpecialTimeSlot = (
+    dayIndex: number,
+    slotIndex: number,
+    field: keyof FormTimeSlot,
+    value: string
+  ) => {
+    setFormData((prev) => ({
+      ...prev,
+      specialDays: prev.specialDays.map((d, i) => {
+        if (i !== dayIndex) return d;
+        const slots = d.timeSlots ?? [{ startTime: "", endTime: "" }];
+        const next = slots.map((s, si) => (si === slotIndex ? { ...s, [field]: value } : s));
+        return { ...d, timeSlots: next };
+      }),
     }));
   };
 
@@ -326,7 +399,6 @@ const ActivityForm = () => {
 
     if (isEdit && id) {
       const activityId = Number(id);
-      // Backend expects: { activity_rating: string, activity_description?: string }
       await ActivitiesAPI.addReview(activityId, {
         activity_rating: String(reviewRating),
         activity_description: reviewFeedback,
@@ -336,7 +408,6 @@ const ActivityForm = () => {
       setReviewFeedback("");
       toast.success("Review added successfully");
     } else {
-      // For new activity (not saved yet), keep it local
       const newReview: FormReview = {
         id: String(Date.now()),
         rating: Number(reviewRating),
@@ -381,54 +452,41 @@ const ActivityForm = () => {
     toast.success("Pricing dates updated");
   };
 
-  /** Upload selected files to Multer endpoint, then persist filenames into gallery table.
-   * Expects backend route: POST /activities/:id/images/upload (Multer, files field = 'files')
-   * Returns server JSON: { files: Array<{ filename: string }> }
-   */
-// put near other helpers in ActivityForm.tsx
+  async function uploadImagesAndSaveGallery(activityId: number, files: File[]) {
+    if (!files || files.length === 0) return;
 
-async function uploadImagesAndSaveGallery(activityId: number, files: File[]) {
-  if (!files || files.length === 0) return;
+    const fd = new FormData();
+    files.forEach((f) => fd.append("images", f));
+    fd.append("createdby", "0");
 
-  const fd = new FormData();
-  // NOTE: the backend interceptor expects field name "images"
-  files.forEach((f) => fd.append("images", f));
-  fd.append("createdby", "0");
+    await api(`/activities/${activityId}/images/upload`, {
+      method: "POST",
+      body: fd,
+    });
+  }
 
-  // IMPORTANT: go through api() so it prefixes API_BASE_URL + /api/v1
-  // Resulting URL: http://localhost:4006/api/v1/activities/:id/images/upload
-  console.log("[upload] to", `/activities/${activityId}/images/upload`);
-  await api(`/activities/${activityId}/images/upload`, {
-    method: "POST",
-    body: fd, // do NOT set Content-Type manually
-  });
-}
+  const persistPendingReviews = async (activityId: number) => {
+    if (!formData.reviews?.length) return;
+    const pending = formData.reviews.filter((r) => Number.isNaN(Number(r.id)));
+    if (!pending.length) return;
 
-/** Persist locally-added reviews (added during create flow) after the activity is created */
-const persistPendingReviews = async (activityId: number) => {
-  if (!formData.reviews?.length) return;
-  // Only send those without a numeric server id (heuristic: non-numeric ids are local)
-  const pending = formData.reviews.filter((r) => Number.isNaN(Number(r.id)));
-  if (!pending.length) return;
+    await Promise.all(
+      pending.map((r) =>
+        ActivitiesAPI.addReview(activityId, {
+          activity_rating: String(r.rating ?? ""),
+          activity_description: r.description ?? "",
+          createdby: 1,
+        })
+      )
+    );
 
-  await Promise.all(
-    pending.map((r) =>
-      ActivitiesAPI.addReview(activityId, {
-        activity_rating: String(r.rating ?? ""),
-        activity_description: r.description ?? "",
-        createdby: 1,
-      })
-    )
-  );
-
-  // Refresh from server to get canonical ids/timestamps
-  await refreshReviewsFromServer(activityId);
-};
+    await refreshReviewsFromServer(activityId);
+  };
 
   const handleSubmit = async () => {
     try {
       setLoading(true);
-      // ----------------- BASIC -----------------
+
       const basicPayload = {
         activity_title: formData.title,
         hotspot_id: formData.hotspotId ?? 0,
@@ -447,13 +505,10 @@ const persistPendingReviews = async (activityId: number) => {
         activityIdNum = created.activity_id;
       }
 
-      // ----------------- IMAGES -----------------
-      // Upload actual files to Multer, then save filenames to DB
       if (imageFiles.length > 0) {
         await uploadImagesAndSaveGallery(activityIdNum, imageFiles);
       }
 
-      // ----------------- TIME SLOTS -----------------
       await ActivitiesAPI.saveTimeSlots(activityIdNum, {
         defaultSlots: formData.defaultAvailableTimes
           .filter((t) => t.startTime && t.endTime)
@@ -464,7 +519,7 @@ const persistPendingReviews = async (activityId: number) => {
         specialEnabled: formData.isSpecialDay,
         specialSlots: formData.isSpecialDay
           ? formData.specialDays.flatMap((day) =>
-              day.timeSlots
+              (day.timeSlots ?? [])
                 .filter((t) => t.startTime && t.endTime)
                 .map((t) => ({
                   date: day.date,
@@ -475,7 +530,6 @@ const persistPendingReviews = async (activityId: number) => {
           : [],
       });
 
-      // ----------------- PRICEBOOK -----------------
       if (formData.pricing.startDate && formData.pricing.endDate) {
         await ActivitiesAPI.savePriceBook(activityIdNum, {
           hotspot_id: formData.hotspotId ?? 0,
@@ -494,7 +548,6 @@ const persistPendingReviews = async (activityId: number) => {
         });
       }
 
-      // ----------------- REVIEWS (create-flow pending ones) -----------------
       if (!isEdit && formData.reviews.length) {
         try {
           await persistPendingReviews(activityIdNum);
@@ -666,17 +719,13 @@ const persistPendingReviews = async (activityId: number) => {
                 </div>
                 <div>
                   <Label>
-                    Max Allowed Person Count{" "}
-                    <span className="text-red-500">*</span>
+                    Max Allowed Person Count <span className="text-red-500">*</span>
                   </Label>
                   <Input
                     type="number"
                     value={formData.maxAllowedPersonCount}
                     onChange={(e) =>
-                      handleInputChange(
-                        "maxAllowedPersonCount",
-                        Number(e.target.value)
-                      )
+                      handleInputChange("maxAllowedPersonCount", Number(e.target.value))
                     }
                     disabled={isReadonly}
                   />
@@ -690,9 +739,7 @@ const persistPendingReviews = async (activityId: number) => {
                   </Label>
                   <Input
                     value={formData.duration}
-                    onChange={(e) =>
-                      handleInputChange("duration", e.target.value)
-                    }
+                    onChange={(e) => handleInputChange("duration", e.target.value)}
                     placeholder="HH:MM:SS"
                     disabled={isReadonly}
                   />
@@ -740,9 +787,7 @@ const persistPendingReviews = async (activityId: number) => {
                 </Label>
                 <Textarea
                   value={formData.description}
-                  onChange={(e) =>
-                    handleInputChange("description", e.target.value)
-                  }
+                  onChange={(e) => handleInputChange("description", e.target.value)}
                   rows={4}
                   disabled={isReadonly}
                 />
@@ -762,9 +807,7 @@ const persistPendingReviews = async (activityId: number) => {
                       <Input
                         type="time"
                         value={time.startTime}
-                        onChange={(e) =>
-                          updateDefaultTime(index, "startTime", e.target.value)
-                        }
+                        onChange={(e) => updateDefaultTime(index, "startTime", e.target.value)}
                         disabled={isReadonly}
                       />
                     </div>
@@ -775,9 +818,7 @@ const persistPendingReviews = async (activityId: number) => {
                       <Input
                         type="time"
                         value={time.endTime}
-                        onChange={(e) =>
-                          updateDefaultTime(index, "endTime", e.target.value)
-                        }
+                        onChange={(e) => updateDefaultTime(index, "endTime", e.target.value)}
                         disabled={isReadonly}
                       />
                     </div>
@@ -799,39 +840,199 @@ const persistPendingReviews = async (activityId: number) => {
                 <h3 className="text-lg font-medium text-primary mb-4">
                   Special Available Time
                 </h3>
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Checkbox
                       checked={formData.isSpecialDay}
-                      onCheckedChange={(checked) =>
-                        handleInputChange("isSpecialDay", !!checked)
-                      }
+                      onCheckedChange={(checked) => {
+                        const enabled = !!checked;
+                        setFormData((prev) => ({
+                          ...prev,
+                          isSpecialDay: enabled,
+                        }));
+                        if (enabled) ensureSpecialHasOneDay();
+                      }}
                       disabled={isReadonly}
                     />
-                    <Label>Special Day </Label>
+                    <Label>Special Day ?</Label>
                   </div>
+
                   {formData.isSpecialDay && !isReadonly && (
                     <Button
                       variant="outline"
                       className="text-primary border-primary hover:bg-primary/10"
+                      onClick={addSpecialDay}
+                      type="button"
                     >
                       + Add Days
                     </Button>
                   )}
                 </div>
+
+                {/* Rows */}
+                {formData.isSpecialDay && (
+                  <div className="mt-6 space-y-6">
+                    {formData.specialDays.map((day, dayIndex) => {
+                      const firstSlot = day.timeSlots?.[0] ?? { startTime: "", endTime: "" };
+                      const extraSlots = (day.timeSlots ?? []).slice(1);
+
+                      // ✅ RULE:
+                      // - First day (dayIndex === 0): NO delete button (default row)
+                      // - Added days (dayIndex > 0): show delete button
+                      const canDeleteDay = !isReadonly && dayIndex > 0;
+
+                      return (
+                        <div key={dayIndex} className="space-y-3">
+                          {/* Day Row */}
+                          <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1fr_1fr_auto] gap-4 items-end">
+                            <div>
+                              <Label>
+                                Date <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                type="date"
+                                value={day.date}
+                                onChange={(e) => updateSpecialDayDate(dayIndex, e.target.value)}
+                                disabled={isReadonly}
+                              />
+                            </div>
+
+                            <div>
+                              <Label>
+                                Start Time <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                type="time"
+                                value={firstSlot.startTime}
+                                onChange={(e) =>
+                                  updateSpecialTimeSlot(dayIndex, 0, "startTime", e.target.value)
+                                }
+                                disabled={isReadonly}
+                              />
+                            </div>
+
+                            <div>
+                              <Label>
+                                End Time <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                type="time"
+                                value={firstSlot.endTime}
+                                onChange={(e) =>
+                                  updateSpecialTimeSlot(dayIndex, 0, "endTime", e.target.value)
+                                }
+                                disabled={isReadonly}
+                              />
+                            </div>
+
+                            <div className="md:pt-6">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="w-full text-primary border-primary hover:bg-primary/10"
+                                onClick={() => addSpecialTimeSlot(dayIndex)}
+                                disabled={isReadonly}
+                              >
+                                + Add Time slots
+                              </Button>
+                            </div>
+
+                            {/* ✅ only for added days */}
+                            <div className="md:pt-6 flex justify-end">
+                              {canDeleteDay && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="border-red-200 text-red-500 hover:bg-red-50"
+                                  onClick={() => removeSpecialDay(dayIndex)}
+                                >
+                                  <X className="w-4 h-4 mr-2" />
+                                  Delete
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Extra Time Slots (these ALWAYS can delete, because they are added slots) */}
+                          {extraSlots.length > 0 && (
+                            <div className="space-y-3">
+                              {extraSlots.map((slot, slotOffset) => {
+                                const slotIndex = slotOffset + 1;
+                                return (
+                                  <div
+                                    key={`${dayIndex}-${slotIndex}`}
+                                    className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end md:pl-[calc(1.2fr+1rem)]"
+                                  >
+                                    <div>
+                                      <Label>
+                                        Start Time <span className="text-red-500">*</span>
+                                      </Label>
+                                      <Input
+                                        type="time"
+                                        value={slot.startTime}
+                                        onChange={(e) =>
+                                          updateSpecialTimeSlot(
+                                            dayIndex,
+                                            slotIndex,
+                                            "startTime",
+                                            e.target.value
+                                          )
+                                        }
+                                        disabled={isReadonly}
+                                      />
+                                    </div>
+
+                                    <div>
+                                      <Label>
+                                        End Time <span className="text-red-500">*</span>
+                                      </Label>
+                                      <Input
+                                        type="time"
+                                        value={slot.endTime}
+                                        onChange={(e) =>
+                                          updateSpecialTimeSlot(
+                                            dayIndex,
+                                            slotIndex,
+                                            "endTime",
+                                            e.target.value
+                                          )
+                                        }
+                                        disabled={isReadonly}
+                                      />
+                                    </div>
+
+                                    <div className="flex justify-start md:pt-6">
+                                      {!isReadonly && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          className="border-red-200 text-red-500 hover:bg-red-50"
+                                          onClick={() => removeSpecialTimeSlot(dayIndex, slotIndex)}
+                                        >
+                                          <X className="w-4 h-4 mr-2" />
+                                          Delete
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Buttons */}
               <div className="flex items-center justify-between pt-6 border-t">
-                <Button
-                  variant="secondary"
-                  onClick={() => navigate("/activities")}
-                >
+                <Button variant="secondary" onClick={() => navigate("/activities")}>
                   Back
                 </Button>
-                {!isReadonly && (
-                  <Button onClick={goToNextTab}>Update & Continue</Button>
-                )}
+                {!isReadonly && <Button onClick={goToNextTab}>Update & Continue</Button>}
               </div>
             </div>
           )}
@@ -846,9 +1047,7 @@ const persistPendingReviews = async (activityId: number) => {
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-[150px]">
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {priceStartDate
-                          ? format(priceStartDate, "PP")
-                          : "Start Date"}
+                        {priceStartDate ? format(priceStartDate, "PP") : "Start Date"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -861,6 +1060,7 @@ const persistPendingReviews = async (activityId: number) => {
                       />
                     </PopoverContent>
                   </Popover>
+
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-[150px]">
@@ -878,9 +1078,8 @@ const persistPendingReviews = async (activityId: number) => {
                       />
                     </PopoverContent>
                   </Popover>
-                  {!isReadonly && (
-                    <Button onClick={handleUpdatePricing}>Update</Button>
-                  )}
+
+                  {!isReadonly && <Button onClick={handleUpdatePricing}>Update</Button>}
                 </div>
               </div>
 
@@ -896,9 +1095,7 @@ const persistPendingReviews = async (activityId: number) => {
                     type="number"
                     placeholder="Enter Price"
                     value={formData.pricing.adult || ""}
-                    onChange={(e) =>
-                      handlePricingChange("adult", Number(e.target.value))
-                    }
+                    onChange={(e) => handlePricingChange("adult", Number(e.target.value))}
                     disabled={isReadonly}
                   />
                 </div>
@@ -908,9 +1105,7 @@ const persistPendingReviews = async (activityId: number) => {
                     type="number"
                     placeholder="Enter Price"
                     value={formData.pricing.children || ""}
-                    onChange={(e) =>
-                      handlePricingChange("children", Number(e.target.value))
-                    }
+                    onChange={(e) => handlePricingChange("children", Number(e.target.value))}
                     disabled={isReadonly}
                   />
                 </div>
@@ -920,9 +1115,7 @@ const persistPendingReviews = async (activityId: number) => {
                     type="number"
                     placeholder="Enter Price"
                     value={formData.pricing.infant || ""}
-                    onChange={(e) =>
-                      handlePricingChange("infant", Number(e.target.value))
-                    }
+                    onChange={(e) => handlePricingChange("infant", Number(e.target.value))}
                     disabled={isReadonly}
                   />
                 </div>
@@ -940,12 +1133,7 @@ const persistPendingReviews = async (activityId: number) => {
                     type="number"
                     placeholder="Enter Price"
                     value={formData.pricing.foreignAdult || ""}
-                    onChange={(e) =>
-                      handlePricingChange(
-                        "foreignAdult",
-                        Number(e.target.value)
-                      )
-                    }
+                    onChange={(e) => handlePricingChange("foreignAdult", Number(e.target.value))}
                     disabled={isReadonly}
                   />
                 </div>
@@ -956,10 +1144,7 @@ const persistPendingReviews = async (activityId: number) => {
                     placeholder="Enter Price"
                     value={formData.pricing.foreignChildren || ""}
                     onChange={(e) =>
-                      handlePricingChange(
-                        "foreignChildren",
-                        Number(e.target.value)
-                      )
+                      handlePricingChange("foreignChildren", Number(e.target.value))
                     }
                     disabled={isReadonly}
                   />
@@ -971,24 +1156,18 @@ const persistPendingReviews = async (activityId: number) => {
                     placeholder="Enter Price"
                     value={formData.pricing.foreignInfant || ""}
                     onChange={(e) =>
-                      handlePricingChange(
-                        "foreignInfant",
-                        Number(e.target.value)
-                      )
+                      handlePricingChange("foreignInfant", Number(e.target.value))
                     }
                     disabled={isReadonly}
                   />
                 </div>
               </div>
 
-              {/* Buttons */}
               <div className="flex items-center justify-between pt-6 border-t">
                 <Button variant="secondary" onClick={goToPrevTab}>
                   Back
                 </Button>
-                {!isReadonly && (
-                  <Button onClick={goToNextTab}>Update & Continue</Button>
-                )}
+                {!isReadonly && <Button onClick={goToNextTab}>Update & Continue</Button>}
               </div>
             </div>
           )}
@@ -999,14 +1178,8 @@ const persistPendingReviews = async (activityId: number) => {
               {/* Left: Add Review Form */}
               <Card>
                 <CardContent className="p-6">
-                  <h3 className="text-lg font-medium text-primary mb-4">
-                    Rating
-                  </h3>
-                  <Select
-                    value={reviewRating}
-                    onValueChange={setReviewRating}
-                    disabled={isReadonly}
-                  >
+                  <h3 className="text-lg font-medium text-primary mb-4">Rating</h3>
+                  <Select value={reviewRating} onValueChange={setReviewRating} disabled={isReadonly}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select Rating" />
                     </SelectTrigger>
@@ -1046,10 +1219,7 @@ const persistPendingReviews = async (activityId: number) => {
                   <div className="flex items-center justify-between gap-4 mb-4">
                     <div className="flex items-center gap-2">
                       <span className="text-sm">Show</span>
-                      <Select
-                        value={String(reviewPageSize)}
-                        onValueChange={(v) => setReviewPageSize(Number(v))}
-                      >
+                      <Select value={String(reviewPageSize)} onValueChange={(v) => setReviewPageSize(Number(v))}>
                         <SelectTrigger className="w-20">
                           <SelectValue />
                         </SelectTrigger>
@@ -1070,11 +1240,7 @@ const persistPendingReviews = async (activityId: number) => {
                       <Button variant="outline" size="sm">
                         <Copy className="w-4 h-4" />
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-green-600"
-                      >
+                      <Button variant="outline" size="sm" className="text-green-600">
                         <FileSpreadsheet className="w-4 h-4" />
                       </Button>
                       <Button variant="outline" size="sm">
@@ -1096,23 +1262,16 @@ const persistPendingReviews = async (activityId: number) => {
                     <TableBody>
                       {paginatedReviews.length === 0 ? (
                         <TableRow>
-                          <TableCell
-                            colSpan={5}
-                            className="text-center py-4 text-gray-500"
-                          >
+                          <TableCell colSpan={5} className="text-center py-4 text-gray-500">
                             No data available in table
                           </TableCell>
                         </TableRow>
                       ) : (
                         paginatedReviews.map((review, index) => (
                           <TableRow key={review.id}>
+                            <TableCell>{(reviewPage - 1) * reviewPageSize + index + 1}</TableCell>
                             <TableCell>
-                              {(reviewPage - 1) * reviewPageSize + index + 1}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex">
-                                {renderStars(review.rating)}
-                              </div>
+                              <div className="flex">{renderStars(review.rating)}</div>
                             </TableCell>
                             <TableCell>{review.description}</TableCell>
                             <TableCell>{review.createdOn}</TableCell>
@@ -1144,9 +1303,8 @@ const persistPendingReviews = async (activityId: number) => {
 
                   <div className="flex items-center justify-between mt-4">
                     <span className="text-sm text-gray-500">
-                      Showing {paginatedReviews.length > 0 ? 1 : 0} to{" "}
-                      {paginatedReviews.length} of {filteredReviews.length}{" "}
-                      entries
+                      Showing {paginatedReviews.length > 0 ? 1 : 0} to {paginatedReviews.length} of{" "}
+                      {filteredReviews.length} entries
                     </span>
                     <div className="flex gap-1">
                       <Button variant="outline" size="sm">
@@ -1160,14 +1318,11 @@ const persistPendingReviews = async (activityId: number) => {
                 </CardContent>
               </Card>
 
-              {/* Buttons */}
               <div className="col-span-full flex items-center justify-between pt-6 border-t">
                 <Button variant="secondary" onClick={goToPrevTab}>
                   Back
                 </Button>
-                {!isReadonly && (
-                  <Button onClick={goToNextTab}>Update & Continue</Button>
-                )}
+                {!isReadonly && <Button onClick={goToNextTab}>Update & Continue</Button>}
               </div>
             </div>
           )}
@@ -1177,11 +1332,8 @@ const persistPendingReviews = async (activityId: number) => {
             <div className="space-y-6">
               <h2 className="text-xl font-medium">Preview</h2>
 
-              {/* Basic Info */}
               <div>
-                <h3 className="text-lg font-medium text-primary mb-4">
-                  Basic Info
-                </h3>
+                <h3 className="text-lg font-medium text-primary mb-4">Basic Info</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <Label className="text-gray-500">Activity Title</Label>
@@ -1192,12 +1344,8 @@ const persistPendingReviews = async (activityId: number) => {
                     <p className="font-medium">{formData.hotspot || "-"}</p>
                   </div>
                   <div>
-                    <Label className="text-gray-500">
-                      Max Allowed Person Count
-                    </Label>
-                    <p className="font-medium">
-                      {formData.maxAllowedPersonCount}
-                    </p>
+                    <Label className="text-gray-500">Max Allowed Person Count</Label>
+                    <p className="font-medium">{formData.maxAllowedPersonCount}</p>
                   </div>
                   <div>
                     <Label className="text-gray-500">Duration</Label>
@@ -1210,12 +1358,9 @@ const persistPendingReviews = async (activityId: number) => {
                 </div>
               </div>
 
-              {/* Images */}
               {imagePreviews.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-medium text-primary mb-4">
-                    Images
-                  </h3>
+                  <h3 className="text-lg font-medium text-primary mb-4">Images</h3>
                   <div className="flex flex-wrap gap-2">
                     {imagePreviews.map((preview, index) => (
                       <img
@@ -1229,7 +1374,6 @@ const persistPendingReviews = async (activityId: number) => {
                 </div>
               )}
 
-              {/* Default Available Time */}
               <div>
                 <h3 className="text-lg font-medium text-primary mb-4">
                   Default Available Time
@@ -1254,11 +1398,8 @@ const persistPendingReviews = async (activityId: number) => {
                 </Table>
               </div>
 
-              {/* Special Day */}
               <div>
-                <h3 className="text-lg font-medium text-primary mb-4">
-                  Special Day
-                </h3>
+                <h3 className="text-lg font-medium text-primary mb-4">Special Day</h3>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-pink-100">
@@ -1271,32 +1412,35 @@ const persistPendingReviews = async (activityId: number) => {
                   <TableBody>
                     {formData.specialDays.length === 0 ? (
                       <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="text-center text-gray-500"
-                        >
+                        <TableCell colSpan={4} className="text-center text-gray-500">
                           No Special Time Found !!!
                         </TableCell>
                       </TableRow>
                     ) : (
-                      formData.specialDays.map((day, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{index + 1}</TableCell>
-                          <TableCell>{day.date}</TableCell>
-                          <TableCell>
-                            {day.timeSlots[0]?.startTime || "-"}
-                          </TableCell>
-                          <TableCell>
-                            {day.timeSlots[0]?.endTime || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                      formData.specialDays.flatMap((day, dayIndex) =>
+                        (day.timeSlots ?? [{ startTime: "", endTime: "" }]).map((slot, slotIndex) => {
+                          const rowNo =
+                            formData.specialDays
+                              .slice(0, dayIndex)
+                              .reduce((acc, d) => acc + (d.timeSlots?.length || 1), 0) +
+                            slotIndex +
+                            1;
+
+                          return (
+                            <TableRow key={`${dayIndex}-${slotIndex}`}>
+                              <TableCell>{rowNo}</TableCell>
+                              <TableCell>{day.date}</TableCell>
+                              <TableCell>{slot.startTime || "-"}</TableCell>
+                              <TableCell>{slot.endTime || "-"}</TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )
                     )}
                   </TableBody>
                 </Table>
               </div>
 
-              {/* Reviews */}
               <div>
                 <h3 className="text-lg font-medium text-primary mb-4">Review</h3>
                 <Table>
@@ -1311,10 +1455,7 @@ const persistPendingReviews = async (activityId: number) => {
                   <TableBody>
                     {formData.reviews.length === 0 ? (
                       <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="text-center text-gray-500"
-                        >
+                        <TableCell colSpan={4} className="text-center text-gray-500">
                           No reviews yet
                         </TableCell>
                       </TableRow>
@@ -1332,16 +1473,14 @@ const persistPendingReviews = async (activityId: number) => {
                 </Table>
               </div>
 
-              {/* Buttons */}
               <div className="flex items-center justify-between pt-6 border-t">
                 <Button variant="secondary" onClick={goToPrevTab}>
                   Back
                 </Button>
-                <Button onClick={handleSubmit}>
-                  {isEdit ? "Submit" : "Submit"}
-                </Button>
+                <Button onClick={handleSubmit}>{isEdit ? "Submit" : "Submit"}</Button>
               </div>
             </div>
+            
           )}
         </CardContent>
       </Card>
