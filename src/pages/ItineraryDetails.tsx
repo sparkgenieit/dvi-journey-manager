@@ -1050,7 +1050,16 @@ export const ItineraryDetails: React.FC = () => {
     setIsPreviewing(true);
     setPreviewTimeline(null);
     
-    // Don't force scroll list to top here, let the user stay where they clicked
+    // Auto-scroll left list to show selected hotspot at top
+    if (hotspotListRef.current) {
+      const hotspotCard = hotspotListRef.current.querySelector(`[data-hotspot-id="${hotspotId}"]`);
+      if (hotspotCard) {
+        const scrollPos = (hotspotCard as HTMLElement).offsetTop - 10;
+        hotspotListRef.current.scrollTop = scrollPos;
+      }
+    }
+    
+    // Reset timeline scroll to top
     if (timelinePreviewRef.current) {
       timelinePreviewRef.current.scrollTop = 0;
     }
@@ -1063,6 +1072,26 @@ export const ItineraryDetails: React.FC = () => {
       );
       // The backend returns { newHotspot, otherConflicts, fullTimeline }
       setPreviewTimeline(preview.fullTimeline || []);
+      
+      // After preview loads, scroll both panels to show selected hotspot at top
+      requestAnimationFrame(() => {
+        // Scroll left list to selected hotspot
+        if (hotspotListRef.current) {
+          const hotspotCard = hotspotListRef.current.querySelector(`[data-hotspot-id="${hotspotId}"]`);
+          if (hotspotCard) {
+            const scrollPos = (hotspotCard as HTMLElement).offsetTop - 10;
+            hotspotListRef.current.scrollTop = scrollPos;
+          }
+        }
+        // Scroll right timeline to selected hotspot
+        if (timelinePreviewRef.current) {
+          const selectedEl = timelinePreviewRef.current.querySelector('[data-selected="true"]');
+          if (selectedEl) {
+            const scrollPos = (selectedEl as HTMLElement).offsetTop - 10;
+            timelinePreviewRef.current.scrollTop = scrollPos;
+          }
+        }
+      });
     } catch (e: any) {
       console.error("Failed to preview hotspot", e);
       toast.error(e?.message || "Failed to preview hotspot");
@@ -2581,6 +2610,7 @@ export const ItineraryDetails: React.FC = () => {
                     {filteredHotspots.map((hotspot) => (
                       <div
                         key={hotspot.id}
+                        data-hotspot-id={hotspot.id}
                         className={`border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white ${selectedHotspotId === hotspot.id ? 'ring-2 ring-[#d546ab]' : ''}`}
                       >
                         <div className="p-4">
