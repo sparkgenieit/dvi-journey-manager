@@ -142,7 +142,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mt-4">
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mt-1">
       <h5 className="text-base font-bold uppercase mb-4">
         VEHICLE LIST FOR{" "}
         <span className="text-purple-600">"{vehicleTypeLabel}"</span>

@@ -42,7 +42,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         </div>
 
         {/* Main content inside the NEW full-width 'contentShell' */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden w-full relative z-10">
+        <main className="flex-1 w-full relative z-10">
           {/* THIS IS THE FIX: 
             We are now using 'contentShell' here instead of 'shell'.
           */}

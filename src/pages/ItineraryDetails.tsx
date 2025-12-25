@@ -549,23 +549,31 @@ export const ItineraryDetails: React.FC = () => {
     }
   }, [hotspotSearchQuery]);
 
-  // Scroll timeline to top when preview data is loaded
+  // Scroll timeline to show selected hotspot at top
   useEffect(() => {
-    if (previewTimeline && timelinePreviewRef.current) {
-      // Use a small delay to ensure the new timeline items are rendered
-      setTimeout(() => {
+    if (selectedHotspotId && previewTimeline && timelinePreviewRef.current) {
+      // Use requestAnimationFrame for proper timing with React render cycle
+      let animationFrameId: number;
+      
+      const scrollToSelected = () => {
         if (timelinePreviewRef.current) {
-          // Find the selected hotspot element in the preview
           const selectedEl = timelinePreviewRef.current.querySelector('[data-selected="true"]');
           if (selectedEl) {
-            selectedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          } else {
-            timelinePreviewRef.current.scrollTop = 0;
+            const scrollPos = (selectedEl as HTMLElement).offsetTop - 30;
+            timelinePreviewRef.current.scrollTop = scrollPos;
+            console.log('✅ Scrolled to selected:', scrollPos);
           }
         }
-      }, 100);
+      };
+      
+      // Use multiple frames to ensure proper rendering
+      animationFrameId = requestAnimationFrame(() => {
+        animationFrameId = requestAnimationFrame(scrollToSelected);
+      });
+      
+      return () => cancelAnimationFrame(animationFrameId);
     }
-  }, [previewTimeline]);
+  }, [selectedHotspotId]);
 
   // Filter hotspots based on search query
   const filteredHotspots = availableHotspots.filter(
@@ -1363,11 +1371,11 @@ export const ItineraryDetails: React.FC = () => {
     : "#";
   const modifyItineraryHref = backToListHref;
   return (
-    <div className="w-full max-w-full space-y-2 pb-8">
+    <div className="w-full max-w-full space-y-1 pb-8">
       {/* Header Card */}
       <Card className="border-none shadow-none bg-white">
         <CardContent className="pt-4 pb-0">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
             <h1 className="text-xl font-semibold text-[#4a4260]">
               Tour Itinerary Plan
             </h1>
@@ -1439,7 +1447,7 @@ export const ItineraryDetails: React.FC = () => {
           </div>
 
           {/* Quote Info */}
-          <div className="flex flex-col lg:flex-row justify-between gap-4 mb-2">
+          <div className="flex flex-col lg:flex-row justify-between gap-4 mb-1">
             <div className="flex flex-wrap items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-[#6c6c6c]" />
@@ -1478,7 +1486,7 @@ export const ItineraryDetails: React.FC = () => {
       {/* Daily Itinerary */}
       {itinerary.days.map((day) => (
         <Card key={day.id} className="border border-[#e5d9f2] bg-white">
-          <CardContent className="pt-4">
+          <CardContent className="pt-2">
             {/* Day Header */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-3 p-3 bg-[#f8f5fc] rounded-lg border border-[#e5d9f2]">
               <div className="flex items-center gap-3">
@@ -1942,7 +1950,7 @@ export const ItineraryDetails: React.FC = () => {
                               <Loader2 className="h-6 w-6 animate-spin text-[#d546ab]" />
                             </div>
                           ) : filteredHotspots.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pr-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                               {filteredHotspots.map((h) => (
                                 <div 
                                   key={h.id} 
@@ -2050,7 +2058,7 @@ export const ItineraryDetails: React.FC = () => {
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Package Includes */}
         <Card className="border-none shadow-none bg-white">
-          <CardContent className="pt-6">
+          <CardContent className="pt-2">
             <h2 className="text-lg font-semibold text-[#4a4260] mb-4">
               Package Includes
             </h2>
@@ -2080,7 +2088,7 @@ export const ItineraryDetails: React.FC = () => {
 
         {/* Overall Cost */}
         <Card className="border-none shadow-none bg-gradient-to-br from-[#faf5ff] to-white">
-          <CardContent className="pt-6">
+          <CardContent className="pt-2">
             <h2 className="text-lg font-semibold text-[#4a4260] mb-4">
               OVERALL COST
             </h2>
@@ -2538,7 +2546,7 @@ export const ItineraryDetails: React.FC = () => {
           setAddHotspotModal({ ...addHotspotModal, open })
         }
       >
-        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -2556,10 +2564,10 @@ export const ItineraryDetails: React.FC = () => {
               />
             </div>
           </DialogHeader>
-          <div className="py-4">
-            <div className="flex gap-4">
+          <div className="py-4 flex-1 overflow-hidden flex">
+            <div className="flex gap-4 w-full">
               {/* Left Column: Hotspot List */}
-              <div ref={hotspotListRef} className={`${selectedHotspotId ? 'w-1/2' : 'w-full'} pr-2`}>
+              <div ref={hotspotListRef} className={`${selectedHotspotId ? 'w-1/2 overflow-y-auto' : 'w-full overflow-y-auto'}`}>
                 {loadingHotspots ? (
                   <p className="text-sm text-[#6c6c6c] text-center py-8">
                     Loading available hotspots...
@@ -2642,12 +2650,12 @@ export const ItineraryDetails: React.FC = () => {
 
               {/* Right Column: Preview */}
               {selectedHotspotId && (
-                <div className="w-1/2 border-l pl-4">
-                  <h3 className="font-semibold text-[#4a4260] mb-4 flex items-center gap-2">
+                <div className="w-1/2 border-l pl-4 flex flex-col overflow-hidden">
+                  <h3 className="font-semibold text-[#4a4260] mb-4 flex items-center gap-2 flex-shrink-0">
                     <Clock className="h-4 w-4" />
                     Proposed Timeline
                   </h3>
-                  <div ref={timelinePreviewRef} className="flex-1 pr-2 space-y-3">
+                  <div ref={timelinePreviewRef} className="flex-1 space-y-3 overflow-y-auto">
                     {isPreviewing ? (
                       <div className="flex flex-col items-center justify-center h-32 text-[#6c6c6c]">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#d546ab] mb-2"></div>
@@ -2789,7 +2797,7 @@ export const ItineraryDetails: React.FC = () => {
                 {hotelSearchQuery ? "No hotels match your search" : "No hotels available within 20km"}
               </p>
             ) : (
-              <div className="pr-2">
+              <div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredHotels.map((hotel) => (
                     <div

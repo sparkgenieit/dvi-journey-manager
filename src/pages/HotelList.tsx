@@ -345,7 +345,7 @@ export const HotelList: React.FC<HotelListProps> = ({
   // ---------- RENDER ----------
   return (
     <Card className="border-none shadow-none bg-white">
-      <CardContent className="pt-6">
+      <CardContent className="pt-2">
         {/* Header + Display Rates toggle */}
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold text-[#4a4260]">HOTEL LIST</h2>
