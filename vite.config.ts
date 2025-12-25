@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
-    tsconfigPaths(),
+    tsconfigPaths({ root: "." }),
     mode === "development" && componentTagger()
   ].filter(Boolean),
   resolve: {
