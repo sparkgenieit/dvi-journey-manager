@@ -117,6 +117,12 @@ export const ItineraryService = {
     });
   },
 
+  async rebuildRoute(planId: number, routeId: number) {
+    return api(`itineraries/${planId}/route/${routeId}/rebuild`, {
+      method: "POST",
+    });
+  },
+
   async getAvailableActivities(hotspotId: number) {
     return api(`itineraries/activities/available/${hotspotId}`, {
       method: "GET",

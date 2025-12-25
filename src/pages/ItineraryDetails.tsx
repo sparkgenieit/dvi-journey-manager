@@ -1,6 +1,6 @@
 // FILE: src/pages/itineraries/ItineraryDetails.tsx
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useLayoutEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2, RefreshCw } from "lucide-react";
 import { ItineraryService } from "@/services/itinerary";
 import { api } from "@/lib/api";
 import { VehicleList } from "./VehicleList";
@@ -429,6 +429,9 @@ export const ItineraryDetails: React.FC = () => {
     hotspotName: "",
   });
   const [isDeleting, setIsDeleting] = useState(false);
+  const [routeNeedsRebuild, setRouteNeedsRebuild] = useState<number | null>(null);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const [excludedHotspotIds, setExcludedHotspotIds] = useState<number[]>([]);
 
   // Add activity modal state
   type AvailableActivity = {
@@ -486,6 +489,7 @@ export const ItineraryDetails: React.FC = () => {
     timeSpend: number;
     locationMap: string | null;
     timings?: string;
+    visitAgain?: boolean;
   };
 
   const [addHotspotModal, setAddHotspotModal] = useState<{
@@ -517,70 +521,126 @@ export const ItineraryDetails: React.FC = () => {
   const timelinePreviewRef = useRef<HTMLDivElement>(null);
 
   // Scroll management for Add Hotspot Modal
-  useEffect(() => {
-    if (addHotspotModal.open) {
-      const scrollAllToTop = () => {
-        if (hotspotListRef.current) {
-          hotspotListRef.current.scrollTop = 0;
-        }
-        if (timelinePreviewRef.current) {
-          timelinePreviewRef.current.scrollTop = 0;
-        }
-      };
+  // Unified scroll handler - execute after DOM is fully rendered
+  useLayoutEffect(() => {
+    if (!addHotspotModal.open) return;
+    if (!selectedHotspotId) return;
+    if (!previewTimeline || previewTimeline.length === 0) return;
 
-      // Try multiple times to account for rendering/layout shifts
-      scrollAllToTop();
-      const t1 = setTimeout(scrollAllToTop, 100);
-      const t2 = setTimeout(scrollAllToTop, 300);
-      const t3 = setTimeout(scrollAllToTop, 600);
+    // Declare in outer scope for cleanup function
+    let raf1: number;
+    let raf2: number;
+    let raf3: number;
 
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
-    }
-  }, [addHotspotModal.open]);
+    // Wait for next paint cycle to ensure all elements are rendered
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        raf3 = requestAnimationFrame(() => {
+          // Scroll left hotspot list
+          if (hotspotListRef.current) {
+            const card = hotspotListRef.current.querySelector(
+              `[data-hotspot-id="${selectedHotspotId}"]`
+            ) as HTMLElement | null;
+            
+            if (card && hotspotListRef.current) {
+              // Get container and card positions
+              const container = hotspotListRef.current;
+              const containerRect = container.getBoundingClientRect();
+              const cardRect = card.getBoundingClientRect();
+              
+              // Calculate relative position of card within container
+              const cardTopRelativeToContainer = card.offsetTop;
+              const cardHeightWithPadding = card.offsetHeight;
+              const containerHeight = container.clientHeight;
+              
+              // Scroll to position card more centered with larger offset
+              const scrollOffset = 150; // pixels from top - centers the card
+              const targetScrollTop = Math.max(0, cardTopRelativeToContainer - scrollOffset);
+              
+              container.scrollTo({
+                top: targetScrollTop,
+                behavior: "auto"
+              });
+              
+              // Debug logging
+              console.log('[Hotspot Scroll] Card found:', {
+                cardId: selectedHotspotId,
+                cardTop: cardTopRelativeToContainer,
+                containerHeight,
+                targetScrollTop,
+                containerScrollHeight: container.scrollHeight,
+                containerScrollTop: container.scrollTop
+              });
+            } else {
+              console.warn('[Hotspot Scroll] Card not found for ID:', selectedHotspotId);
+            }
+          } else {
+            console.warn('[Hotspot Scroll] Container ref not available');
+          }
+
+          // Scroll right timeline to show selected item
+          if (timelinePreviewRef.current) {
+            // Find the selected timeline item
+            const selectedItem = timelinePreviewRef.current.querySelector(
+              '[data-selected="true"]'
+            ) as HTMLElement | null;
+            
+            if (selectedItem) {
+              // Scroll to the selected item (the newly added hotspot)
+              const selectedItemTop = selectedItem.offsetTop;
+              const scrollOffset = 200; // pixels from top - larger offset for better visibility
+              const targetScroll = Math.max(0, selectedItemTop - scrollOffset);
+              
+              timelinePreviewRef.current.scrollTo({
+                top: targetScroll,
+                behavior: "auto"
+              });
+              
+              console.log('[Timeline Scroll] Found selected item, scrolled to:', {
+                selectedItemTop,
+                targetScroll,
+                containerScrollHeight: timelinePreviewRef.current.scrollHeight
+              });
+            } else {
+              // Fallback: scroll to top if no selected item
+              timelinePreviewRef.current.scrollTo({
+                top: 0,
+                behavior: "auto"
+              });
+              
+              console.log('[Timeline Scroll] No selected item, scrolled to top');
+            }
+          }
+        });
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      cancelAnimationFrame(raf3);
+    };
+  }, [addHotspotModal.open, selectedHotspotId, previewTimeline]);
 
   // Scroll list to top when search query changes
   useEffect(() => {
-    if (hotspotListRef.current) {
+    if (hotspotListRef.current && addHotspotModal.open) {
       hotspotListRef.current.scrollTop = 0;
     }
-  }, [hotspotSearchQuery]);
+  }, [hotspotSearchQuery, addHotspotModal.open]);
 
-  // Scroll timeline to show selected hotspot at top
-  useEffect(() => {
-    if (selectedHotspotId && previewTimeline && timelinePreviewRef.current) {
-      // Use requestAnimationFrame for proper timing with React render cycle
-      let animationFrameId: number;
-      
-      const scrollToSelected = () => {
-        if (timelinePreviewRef.current) {
-          const selectedEl = timelinePreviewRef.current.querySelector('[data-selected="true"]');
-          if (selectedEl) {
-            const scrollPos = (selectedEl as HTMLElement).offsetTop - 30;
-            timelinePreviewRef.current.scrollTop = scrollPos;
-            console.log('✅ Scrolled to selected:', scrollPos);
-          }
-        }
-      };
-      
-      // Use multiple frames to ensure proper rendering
-      animationFrameId = requestAnimationFrame(() => {
-        animationFrameId = requestAnimationFrame(scrollToSelected);
-      });
-      
-      return () => cancelAnimationFrame(animationFrameId);
-    }
-  }, [selectedHotspotId]);
-
-  // Filter hotspots based on search query
-  const filteredHotspots = availableHotspots.filter(
-    (h) =>
-      h.name.toLowerCase().includes(hotspotSearchQuery.toLowerCase()) ||
-      h.description.toLowerCase().includes(hotspotSearchQuery.toLowerCase())
-  );
+  // Filter hotspots based on search query and sort: non-visitAgain first, visitAgain at bottom
+  const filteredHotspots = availableHotspots
+    .filter(
+      (h) =>
+        h.name.toLowerCase().includes(hotspotSearchQuery.toLowerCase()) ||
+        h.description.toLowerCase().includes(hotspotSearchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      // Sort by visitAgain: false first, true at bottom
+      if (a.visitAgain === b.visitAgain) return 0;
+      return a.visitAgain ? 1 : -1;
+    });
 
   // Hotel selection modal state
   type AvailableHotel = {
@@ -781,6 +841,9 @@ export const ItineraryDetails: React.FC = () => {
         hotspotName: "",
       });
       
+      // Show rebuild button by setting route ID with pending rebuild
+      setRouteNeedsRebuild(deleteHotspotModal.routeId);
+      
       // Reload itinerary data
       if (quoteId) {
         const [detailsRes, hotelRes] = await Promise.all([
@@ -795,6 +858,32 @@ export const ItineraryDetails: React.FC = () => {
       toast.error(e?.message || "Failed to delete hotspot");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleRebuildRoute = async (planId: number, routeId: number) => {
+    setIsRebuilding(true);
+    try {
+      await ItineraryService.rebuildRoute(planId, routeId);
+      toast.success("Route rebuilt successfully");
+      
+      // Clear rebuild flag
+      setRouteNeedsRebuild(null);
+      
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to rebuild route", e);
+      toast.error(e?.message || "Failed to rebuild route");
+    } finally {
+      setIsRebuilding(false);
     }
   };
 
@@ -1004,6 +1093,12 @@ export const ItineraryDetails: React.FC = () => {
     try {
       const hotspots = await ItineraryService.getAvailableHotspots(dayId);
       setAvailableHotspots(hotspots as AvailableHotspot[]);
+      
+      // Get excluded hotspot IDs for this route
+      const currentRoute = itinerary?.days.find(d => d.id === dayId);
+      if (currentRoute) {
+        setExcludedHotspotIds((currentRoute as any).excluded_hotspot_ids || []);
+      }
     } catch (e: any) {
       console.error("Failed to fetch available hotspots", e);
       toast.error(e?.message || "Failed to load available hotspots");
@@ -1492,9 +1587,33 @@ export const ItineraryDetails: React.FC = () => {
               <div className="flex items-center gap-3">
                 <Calendar className="h-5 w-5 text-[#d546ab]" />
                 <div>
-                  <h3 className="font-semibold text-[#4a4260]">
-                    DAY {day.dayNumber} - {formatHeaderDate(day.date)}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-[#4a4260]">
+                      DAY {day.dayNumber} - {formatHeaderDate(day.date)}
+                    </h3>
+                    {/* Show rebuild button if this route needs rebuild */}
+                    {routeNeedsRebuild === day.id && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRebuildRoute(itinerary.planId, day.id)}
+                        disabled={isRebuilding}
+                        className="bg-yellow-50 border-yellow-300 hover:bg-yellow-100"
+                      >
+                        {isRebuilding ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Rebuilding...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Rebuild Route
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 text-sm text-[#6c6c6c] flex-wrap">
                     <span className="font-medium">{day.departure}</span>
                     {day.viaRoutes && day.viaRoutes.length > 0 && (
@@ -2564,10 +2683,10 @@ export const ItineraryDetails: React.FC = () => {
               />
             </div>
           </DialogHeader>
-          <div className="py-4 flex-1 overflow-hidden flex">
-            <div className="flex gap-4 w-full">
+          <div className="py-4 flex-1 overflow-hidden flex min-h-0">
+            <div className="flex gap-4 w-full min-h-0">
               {/* Left Column: Hotspot List */}
-              <div ref={hotspotListRef} className={`${selectedHotspotId ? 'w-1/2 overflow-y-auto' : 'w-full overflow-y-auto'}`}>
+              <div ref={hotspotListRef} className={`${selectedHotspotId ? 'w-1/2' : 'w-full'} overflow-y-auto min-h-0`}>
                 {loadingHotspots ? (
                   <p className="text-sm text-[#6c6c6c] text-center py-8">
                     Loading available hotspots...
@@ -2581,12 +2700,23 @@ export const ItineraryDetails: React.FC = () => {
                     {filteredHotspots.map((hotspot) => (
                       <div
                         key={hotspot.id}
+                        data-hotspot-id={hotspot.id}
                         className={`border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white ${selectedHotspotId === hotspot.id ? 'ring-2 ring-[#d546ab]' : ''}`}
                       >
                         <div className="p-4">
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-semibold text-base text-[#4a4260] flex items-center gap-2">
                               {hotspot.name}
+                              {hotspot.visitAgain && (
+                                <span className="text-[9px] font-bold text-white bg-blue-500 px-2 py-0.5 rounded whitespace-nowrap">
+                                  Visit Again
+                                </span>
+                              )}
+                              {excludedHotspotIds.includes(hotspot.id) && (
+                                <span className="text-[9px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded whitespace-nowrap">
+                                  Deleted from timeline
+                                </span>
+                              )}
                               {selectedHotspotId === hotspot.id && (
                                 <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold ${
                                   previewTimeline?.some(seg => seg.isConflict && Number(seg.locationId) === hotspot.id) 
@@ -2650,12 +2780,12 @@ export const ItineraryDetails: React.FC = () => {
 
               {/* Right Column: Preview */}
               {selectedHotspotId && (
-                <div className="w-1/2 border-l pl-4 flex flex-col overflow-hidden">
+                <div className="w-1/2 border-l pl-4 flex flex-col overflow-hidden min-h-0">
                   <h3 className="font-semibold text-[#4a4260] mb-4 flex items-center gap-2 flex-shrink-0">
                     <Clock className="h-4 w-4" />
                     Proposed Timeline
                   </h3>
-                  <div ref={timelinePreviewRef} className="flex-1 space-y-3 overflow-y-auto">
+                  <div ref={timelinePreviewRef} className="flex-1 space-y-3 overflow-y-auto min-h-0">
                     {isPreviewing ? (
                       <div className="flex flex-col items-center justify-center h-32 text-[#6c6c6c]">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#d546ab] mb-2"></div>
@@ -2664,7 +2794,7 @@ export const ItineraryDetails: React.FC = () => {
                     ) : previewTimeline ? (
                       <>
                         {previewTimeline.map((seg, idx) => {
-                          const isSelected = seg.type === 'hotspot' && Number(seg.locationId) === Number(selectedHotspotId);
+                          const isSelected = seg.type === 'attraction' && Number(seg.locationId) === Number(selectedHotspotId);
                           return (
                             <div 
                               key={idx} 
