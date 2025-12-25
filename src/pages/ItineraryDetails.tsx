@@ -549,31 +549,17 @@ export const ItineraryDetails: React.FC = () => {
     }
   }, [hotspotSearchQuery]);
 
-  // Scroll timeline to show selected hotspot at top
+  // Keep the Proposed Timeline pane pinned to the top whenever a new preview is rendered.
+  // (Prevents users being stuck deep-scrolled from a previous preview.)
   useEffect(() => {
-    if (selectedHotspotId && previewTimeline && timelinePreviewRef.current) {
-      // Use requestAnimationFrame for proper timing with React render cycle
-      let animationFrameId: number;
-      
-      const scrollToSelected = () => {
-        if (timelinePreviewRef.current) {
-          const selectedEl = timelinePreviewRef.current.querySelector('[data-selected="true"]');
-          if (selectedEl) {
-            const scrollPos = (selectedEl as HTMLElement).offsetTop - 30;
-            timelinePreviewRef.current.scrollTop = scrollPos;
-            console.log('✅ Scrolled to selected:', scrollPos);
-          }
-        }
-      };
-      
-      // Use multiple frames to ensure proper rendering
-      animationFrameId = requestAnimationFrame(() => {
-        animationFrameId = requestAnimationFrame(scrollToSelected);
-      });
-      
-      return () => cancelAnimationFrame(animationFrameId);
-    }
-  }, [selectedHotspotId]);
+    if (!previewTimeline) return;
+
+    const raf = requestAnimationFrame(() => {
+      timelinePreviewRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [previewTimeline]);
 
   // Filter hotspots based on search query
   const filteredHotspots = availableHotspots.filter(
@@ -1046,51 +1032,43 @@ export const ItineraryDetails: React.FC = () => {
     const rId = routeId || addHotspotModal.routeId;
     if (!pId || !rId) return;
 
+    const scrollHotspotCardToTop = (id: number) => {
+      const container = hotspotListRef.current;
+      if (!container) return;
+
+      const card = container.querySelector(`[data-hotspot-id="${id}"]`) as HTMLElement | null;
+      if (!card) return;
+
+      // Ensure the scroll happens within the modal pane (nearest scrollable ancestor).
+      card.scrollIntoView({ block: "start", behavior: "auto" });
+
+      // Force exact top alignment (scrollIntoView can land slightly off depending on layout).
+      const containerRect = container.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      container.scrollTop += cardRect.top - containerRect.top;
+    };
+
+    const scrollTimelineToTop = () => {
+      timelinePreviewRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    };
+
     setSelectedHotspotId(hotspotId);
     setIsPreviewing(true);
     setPreviewTimeline(null);
-    
-    // Auto-scroll left list to show selected hotspot at top
-    if (hotspotListRef.current) {
-      const hotspotCard = hotspotListRef.current.querySelector(`[data-hotspot-id="${hotspotId}"]`);
-      if (hotspotCard) {
-        const scrollPos = (hotspotCard as HTMLElement).offsetTop - 10;
-        hotspotListRef.current.scrollTop = scrollPos;
-      }
-    }
-    
-    // Reset timeline scroll to top
-    if (timelinePreviewRef.current) {
-      timelinePreviewRef.current.scrollTop = 0;
-    }
+
+    // Immediately scroll both panes (no page-level scroll).
+    requestAnimationFrame(() => scrollHotspotCardToTop(hotspotId));
+    scrollTimelineToTop();
 
     try {
-      const preview = await ItineraryService.previewAddHotspot(
-        pId,
-        rId,
-        hotspotId
-      );
+      const preview = await ItineraryService.previewAddHotspot(pId, rId, hotspotId);
       // The backend returns { newHotspot, otherConflicts, fullTimeline }
       setPreviewTimeline(preview.fullTimeline || []);
-      
-      // After preview loads, scroll both panels to show selected hotspot at top
+
+      // After render, ensure both panes are at the correct top position.
       requestAnimationFrame(() => {
-        // Scroll left list to selected hotspot
-        if (hotspotListRef.current) {
-          const hotspotCard = hotspotListRef.current.querySelector(`[data-hotspot-id="${hotspotId}"]`);
-          if (hotspotCard) {
-            const scrollPos = (hotspotCard as HTMLElement).offsetTop - 10;
-            hotspotListRef.current.scrollTop = scrollPos;
-          }
-        }
-        // Scroll right timeline to selected hotspot
-        if (timelinePreviewRef.current) {
-          const selectedEl = timelinePreviewRef.current.querySelector('[data-selected="true"]');
-          if (selectedEl) {
-            const scrollPos = (selectedEl as HTMLElement).offsetTop - 10;
-            timelinePreviewRef.current.scrollTop = scrollPos;
-          }
-        }
+        scrollHotspotCardToTop(hotspotId);
+        scrollTimelineToTop();
       });
     } catch (e: any) {
       console.error("Failed to preview hotspot", e);
