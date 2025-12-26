@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ItineraryService } from "../services/itinerary";
 import {
@@ -11,6 +11,18 @@ import {
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 import { AlertTriangle, Loader2 } from "lucide-react";
+
+export interface DayWisePricingItem {
+  date: string; // "2025-12-26"
+  dayLabel: string; // "Day 1 | 26 Dec 2025"
+  route: string; // "Chennai → Mahabalipuram"
+  rentalCharges: number;
+  tollCharges: number;
+  parkingCharges: number;
+  driverCharges: number;
+  permitCharges: number;
+  totalCharges: number;
+}
 
 export interface ItineraryVehicleRow {
   vendorName?: string | null;
@@ -40,7 +52,9 @@ export interface ItineraryVehicleRow {
   col3Duration?: string | null;
   vendorEligibleId?: number;
   vehicleTypeId?: number;
+  vehicleTypeName?: string;
   isAssigned?: boolean;
+  dayWisePricing?: DayWisePricingItem[];
 }
 
 const formatCurrencyINR = (value: number | string | undefined | null) => {
@@ -60,6 +74,8 @@ export type VehicleListProps = {
   vehicles: ItineraryVehicleRow[];
   itineraryPlanId?: number;
   onRefresh?: () => void;
+  dateRange?: string; // e.g., "Dec 26 - Dec 30, 2025"
+  routes?: Array<{ date: string; destination: string; label: string }>; // Day-wise route information
 };
 
 export const VehicleList: React.FC<VehicleListProps> = ({
@@ -67,12 +83,14 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   vehicles,
   itineraryPlanId,
   onRefresh,
+  dateRange,
+  routes,
 }) => {
   const [expandedVendorIndex, setExpandedVendorIndex] = useState<number | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(() => {
-    // Find the first assigned vendor
-    const assignedIndex = vehicles.findIndex(v => v.isAssigned);
-    return assignedIndex >= 0 ? assignedIndex : null;
+  const [selectedVendorEligibleId, setSelectedVendorEligibleId] = useState<number | null>(() => {
+    // Find the first assigned vendor by ID, not index
+    const assignedVendor = vehicles.find(v => v.isAssigned);
+    return assignedVendor?.vendorEligibleId ?? null;
   });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingVendorSelection, setPendingVendorSelection] = useState<{
@@ -83,6 +101,19 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   } | null>(null);
   const [isUpdatingVehicle, setIsUpdatingVehicle] = useState(false);
 
+  // Sync selected vendor when assigned vendor changes (from API refresh)
+  // Only sync if the assigned vendor ID is different from current selection
+  useEffect(() => {
+    const assignedVendor = vehicles.find(v => v.isAssigned);
+    const assignedId = assignedVendor?.vendorEligibleId ?? null;
+    
+    // Only update if there's an assigned vendor and it's different from current selection
+    if (assignedId && assignedId !== selectedVendorEligibleId) {
+      console.log(`[${vehicleTypeLabel}] Assigned vendor changed to:`, assignedVendor?.vendorName, assignedId);
+      setSelectedVendorEligibleId(assignedId);
+    }
+  }, [vehicles, vehicleTypeLabel, selectedVendorEligibleId]);
+
   const handleRowClick = (index: number) => {
     setExpandedVendorIndex((prev) => (prev === index ? null : index));
   };
@@ -90,16 +121,16 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   const handleRadioChange = (index: number) => {
     const vendor = vehicles[index];
     
-    console.log("handleRadioChange called", { 
+    console.log(`[${vehicleTypeLabel}] Radio clicked:`, { 
       index, 
-      vendor, 
-      itineraryPlanId,
+      vendorName: vendor?.vendorName,
       vendorEligibleId: vendor?.vendorEligibleId,
-      vehicleTypeId: vendor?.vehicleTypeId
+      vehicleTypeId: vendor?.vehicleTypeId,
+      itineraryPlanId
     });
 
     if (!vendor || !itineraryPlanId || !vendor.vendorEligibleId || !vendor.vehicleTypeId) {
-      console.error("Missing required vendor data", { vendor, itineraryPlanId });
+      console.error(`[${vehicleTypeLabel}] Missing required vendor data`, { vendor, itineraryPlanId });
       toast.error("Missing required vendor data");
       return;
     }
@@ -116,6 +147,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   const handleConfirmSelection = async () => {
     if (!pendingVendorSelection || !itineraryPlanId) return;
 
+    console.log(`[${vehicleTypeLabel}] Confirming vendor selection:`, pendingVendorSelection);
     setIsUpdatingVehicle(true);
     try {
       await ItineraryService.selectVehicleVendor(
@@ -124,17 +156,19 @@ export const VehicleList: React.FC<VehicleListProps> = ({
         pendingVendorSelection.vendorEligibleId
       );
 
+      console.log(`[${vehicleTypeLabel}] Selection confirmed, setting selectedVendorEligibleId to:`, pendingVendorSelection.vendorEligibleId);
       toast.success("Vehicle vendor changed successfully. Please update the amount.");
-      setSelectedIndex(pendingVendorSelection.index);
+      setSelectedVendorEligibleId(pendingVendorSelection.vendorEligibleId);
       setShowConfirmDialog(false);
       setPendingVendorSelection(null);
       setExpandedVendorIndex(null);
 
       if (onRefresh) {
+        console.log(`[${vehicleTypeLabel}] Calling onRefresh`);
         onRefresh();
       }
     } catch (error) {
-      console.error("Failed to select vehicle vendor:", error);
+      console.error(`[${vehicleTypeLabel}] Failed to select vehicle vendor:`, error);
       toast.error("Failed to update vehicle vendor");
     } finally {
       setIsUpdatingVehicle(false);
@@ -142,29 +176,37 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-2 mt-1">
-      <h5 className="text-base font-bold uppercase mb-4">
-        VEHICLE LIST FOR{" "}
-        <span className="text-purple-600">"{vehicleTypeLabel}"</span>
-      </h5>
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mt-4">
+      <div className="flex items-center justify-between mb-4">
+        <h5 className="text-base font-bold uppercase">
+          VEHICLE LIST FOR{" "}
+          <span className="text-purple-600">"{vehicleTypeLabel}"</span>
+        </h5>
+        {dateRange && (
+          <span className="text-sm text-gray-600">{dateRange}</span>
+        )}
+      </div>
 
+      {/* Horizontal Table View */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-gray-200">
-              <th className="text-left py-3 px-2 font-semibold text-gray-600 uppercase text-xs w-12">#</th>
-              <th className="text-left py-3 px-2 font-semibold text-gray-600 uppercase text-xs">VENDOR NAME</th>
-              <th className="text-left py-3 px-2 font-semibold text-gray-600 uppercase text-xs">BRANCH NAME</th>
-              <th className="text-left py-3 px-2 font-semibold text-gray-600 uppercase text-xs">VEHICLE ORIGIN</th>
-              <th className="text-left py-3 px-2 font-semibold text-gray-600 uppercase text-xs">TOTAL QTY</th>
-              <th className="text-right py-3 px-2 font-semibold text-gray-600 uppercase text-xs">TOTAL AMOUNT</th>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs w-12">#</th>
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Vendor</th>
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Branch</th>
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Origin</th>
+              <th className="text-center py-2 px-3 font-semibold text-gray-600 uppercase text-xs">Qty</th>
+              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[110px]">Rental</th>
+              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Toll</th>
+              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[110px]">Parking</th>
+              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[90px]">Driver</th>
+              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Total</th>
             </tr>
           </thead>
           <tbody>
             {vehicles.map((v, index) => {
-              const isExpanded = expandedVendorIndex === index;
               const radioId = `vehicle_${index}`;
-
               const qty = parseInt(v.totalQty || "0", 10) || 0;
               const totalAmtNum =
                 typeof v.totalAmount === "number"
@@ -176,7 +218,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
                   ? val
                   : parseFloat((val as string) || "0") || 0;
 
-              const rental = parseN(v.rentalCharges ?? v.totalAmount);
+              const rental = parseN(v.rentalCharges ?? totalAmtNum);
               const toll = parseN(v.tollCharges);
               const parking = parseN(v.parkingCharges);
               const driver = parseN(v.driverCharges);
@@ -186,138 +228,73 @@ export const VehicleList: React.FC<VehicleListProps> = ({
               const b6v = parseN(v.before6amVendor);
               const a8v = parseN(v.after8pmVendor);
               const grandTotal = rental + toll + parking + driver + permit + b6d + a8d + b6v + a8v;
+              const isExpanded = expandedVendorIndex === index;
 
               return (
                 <React.Fragment key={index}>
-                  {/* Main Row */}
                   <tr
-                    className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
                     onClick={() => handleRowClick(index)}
+                    className="border-b border-gray-100 hover:bg-purple-50 transition-colors cursor-pointer"
                   >
-                    <td className="py-3 px-2">
+                    <td className="py-3 px-3">
                       <input
                         type="radio"
                         id={radioId}
-                        name="selected_vehicle"
-                        checked={selectedIndex === index}
+                        name={`selected_vehicle_${vehicleTypeLabel.replace(/\s+/g, '_')}`}
+                        checked={selectedVendorEligibleId === v.vendorEligibleId}
                         onChange={() => handleRadioChange(index)}
                         onClick={(e) => e.stopPropagation()}
                         className="w-4 h-4 text-purple-600 border-gray-300 focus:ring-purple-500"
                       />
                     </td>
-                    <td className="py-3 px-2 text-gray-800">{safe(v.vendorName)}</td>
-                    <td className="py-3 px-2 text-gray-800">{safe(v.branchName)}</td>
-                    <td className="py-3 px-2 text-gray-800">{safe(v.vehicleOrigin)}</td>
-                    <td className="py-3 px-2 text-gray-800">
-                      {qty} x {formatCurrencyINR(totalAmtNum)}
-                    </td>
-                    <td className="py-3 px-2 text-right font-semibold text-gray-800">
-                      {formatCurrencyINR(totalAmtNum)}
+                    <td className="py-3 px-3 font-medium text-gray-900">{safe(v.vendorName)}</td>
+                    <td className="py-3 px-3 text-gray-700">{safe(v.branchName)}</td>
+                    <td className="py-3 px-3 text-gray-600 text-xs">{safe(v.vehicleOrigin)}</td>
+                    <td className="py-3 px-3 text-center text-gray-800 font-medium">{qty}</td>
+                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(rental)}</td>
+                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(toll)}</td>
+                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(parking)}</td>
+                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(driver)}</td>
+                    <td className="py-3 px-3 text-right font-semibold text-gray-900">
+                      {formatCurrencyINR(grandTotal)}
+                      <span className="ml-2 text-xs text-gray-500">{isExpanded ? "▼" : "▶"}</span>
                     </td>
                   </tr>
-
-                  {/* Expanded Detail Row */}
-                  {isExpanded && (
-                    <tr>
-                      <td colSpan={6} className="p-0">
-                        <div className="flex flex-wrap gap-6 p-4 bg-white">
-                          {/* Left: Vehicle Image */}
-                          <div className="w-[280px] flex-shrink-0">
-                            <div className="relative rounded-lg overflow-hidden">
-                              <img
-                                src={v.imageUrl || "https://www.b2b.dvi.co.in/head/uploads/no-photo.png"}
-                                alt="Vehicle"
-                                className="w-full h-[180px] object-cover"
-                              />
-                              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-purple-900/90 to-purple-600/70 text-white p-3">
-                                <div className="text-xs mb-1">
-                                  {safe(v.dayLabel) || "Day-1 | 05 Dec 2025 | Outstation"}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm font-bold truncate">
-                                  <span className="truncate">{safe(v.fromLabel) || "CHENNAI IN..."}</span>
-                                  <span>➔</span>
-                                  <span className="truncate">{safe(v.toLabel) || "CHENNAI C..."}</span>
-                                </div>
-                              </div>
-                            </div>
-                            <p className="mt-2 text-sm text-gray-700">
-                              {safe(v.packageLabel) || "Outstation - 250KM"}
-                            </p>
-                          </div>
-
-                          {/* Middle: Distance Columns */}
-                          <div className="flex gap-8 items-start pt-2">
-                            <div className="text-center">
-                              <div className="text-sm font-medium text-gray-800">
-                                {safe(v.col1Distance) || "30.22 KM"}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {safe(v.col1Duration) || "0 Min"}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-sm font-medium text-gray-800">
-                                {safe(v.col2Distance) || "0.00 KM"}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {safe(v.col2Duration) || "0 Min"}
-                              </div>
-                            </div>
-                            <div className="text-center">
-                              <div className="text-sm font-medium text-gray-800">
-                                {safe(v.col3Distance) || "30.22 KM"}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {safe(v.col3Duration) || "0 Min"}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Right: Charges Breakdown */}
-                          <div className="flex-1 min-w-[280px]">
-                            <div className="space-y-1 text-sm">
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Rental Charges</span>
-                                <span className="text-gray-800">{formatCurrencyINR(rental)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Toll Charges</span>
-                                <span className="text-gray-800">{formatCurrencyINR(toll)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Parking Charges</span>
-                                <span className="text-gray-800">{formatCurrencyINR(parking)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Driver Charges</span>
-                                <span className="text-gray-800">{formatCurrencyINR(driver)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Permit Charges</span>
-                                <span className="text-gray-800">{formatCurrencyINR(permit)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Before 6AM Charges for Driver</span>
-                                <span className="text-gray-800">{formatCurrencyINR(b6d)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Before 6AM Charges for Vendor</span>
-                                <span className="text-gray-800">{formatCurrencyINR(b6v)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">After 8PM Charges for Driver</span>
-                                <span className="text-gray-800">{formatCurrencyINR(a8d)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">After 8PM Charges for Vendor</span>
-                                <span className="text-gray-800">{formatCurrencyINR(a8v)}</span>
-                              </div>
-                              <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold">
-                                <span className="text-gray-800">Total Amount</span>
-                                <span className="text-gray-900">{formatCurrencyINR(grandTotal)}</span>
-                              </div>
-                            </div>
-                          </div>
+                  
+                  {/* Expanded Row - Day-wise Pricing */}
+                  {isExpanded && v.dayWisePricing && v.dayWisePricing.length > 0 && (
+                    <tr className="border-b border-gray-100 bg-purple-50">
+                      <td colSpan={10} className="py-4 px-3">
+                        <div className="ml-6">
+                          <h6 className="text-sm font-semibold text-gray-900 mb-3">Day-wise Pricing Breakdown</h6>
+                          <table className="w-full text-xs border border-gray-200">
+                            <thead>
+                              <tr className="bg-purple-100 border-b border-gray-200">
+                                <th className="text-left py-2 px-3 font-semibold text-gray-700">Date</th>
+                                <th className="text-left py-2 px-3 font-semibold text-gray-700">Route</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Rental</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Toll</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Parking</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Driver</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Permit</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {v.dayWisePricing.map((dayPricing, dayIndex) => (
+                                <tr key={dayIndex} className="border-b border-gray-100 hover:bg-purple-100">
+                                  <td className="py-2 px-3 text-gray-700 font-medium">{dayPricing.dayLabel}</td>
+                                  <td className="py-2 px-3 text-gray-700">{dayPricing.route}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.rentalCharges)}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.tollCharges)}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.parkingCharges)}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.driverCharges)}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.permitCharges)}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700 font-semibold">{formatCurrencyINR(dayPricing.totalCharges)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </td>
                     </tr>

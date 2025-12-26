@@ -169,6 +169,12 @@ export type ItineraryVehicleRow = {
   totalQty: string;
   totalAmount: string;
 
+  // vehicle type information
+  vendorEligibleId?: number;
+  vehicleTypeId?: number;
+  vehicleTypeName?: string;
+  isAssigned?: boolean;
+
   // per-vehicle charges (optional; fill from API)
   rentalCharges?: number | string;
   tollCharges?: number | string;
@@ -2165,13 +2171,51 @@ export const ItineraryDetails: React.FC = () => {
         />
       )}
 
-      {/* Vehicle List (separate component) */}
-      <VehicleList
-        vehicleTypeLabel="Sedan"
-        vehicles={itinerary.vehicles}
-        itineraryPlanId={itinerary.planId}
-        onRefresh={refreshVehicleData}
-      />
+      {/* Vehicle List (grouped by vehicle type) */}
+      {itinerary.vehicles && itinerary.vehicles.length > 0 && (() => {
+        // Group vehicles by vehicleTypeId
+        const vehiclesByType = new Map<number, typeof itinerary.vehicles>();
+        const typeOrder: number[] = [];
+        
+        for (const vehicle of itinerary.vehicles) {
+          const typeId = vehicle.vehicleTypeId || 0;
+          if (!vehiclesByType.has(typeId)) {
+            vehiclesByType.set(typeId, []);
+            typeOrder.push(typeId);
+          }
+          vehiclesByType.get(typeId)?.push(vehicle);
+        }
+
+        // Prepare date range and routes for day-wise breakdown
+        const dateRange = itinerary.dateRange || "";
+        const routes = itinerary.days?.map((day) => ({
+          date: day.date,
+          destination: day.departure || "",
+          label: `Day ${day.dayNumber} - ${day.date ? new Date(day.date).toLocaleDateString('en-GB', { month: 'short', day: '2-digit' }) : ""}`,
+        })) || [];
+        
+        return (
+          <>
+            {typeOrder.map((typeId) => {
+              const vehiclesForType = vehiclesByType.get(typeId) || [];
+              const firstVehicle = vehiclesForType[0];
+              const vehicleTypeLabel = firstVehicle?.vehicleTypeName || `Vehicle Type ${typeId}`;
+              
+              return (
+                <VehicleList
+                  key={typeId}
+                  vehicleTypeLabel={vehicleTypeLabel}
+                  vehicles={vehiclesForType}
+                  itineraryPlanId={itinerary.planId}
+                  onRefresh={refreshVehicleData}
+                  dateRange={dateRange}
+                  routes={routes}
+                />
+              );
+            })}
+          </>
+        );
+      })()}
 
       {/* Package Includes & Overall Cost */}
       <div className="grid lg:grid-cols-2 gap-6">

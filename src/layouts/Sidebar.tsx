@@ -93,6 +93,7 @@ const menuItems: MenuItem[] = [
     children: [
       { id: "hotspots-new", title: "New Hotspot", path: "/hotspots" },
       { id: "parking-charge", title: "Parking Charge", path: "/parking-charge-bulk-import" },
+      { id: "distance-cache", title: "Distance Cache", path: "/hotspot-distance-cache" },
     ],
   },
     // Single links

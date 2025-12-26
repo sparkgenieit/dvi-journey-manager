@@ -40,6 +40,8 @@ import HotspotList from "./pages/hotspot/HotspotList";
 import HotspotForm from "./pages/hotspot/HotspotForm";
 import HotspotPreview from "./pages/hotspot/HotspotPreview";
 import ParkingChargeBulkImport from "./pages/hotspot/ParkingChargeBulkImport";
+import HotspotDistanceCacheList from "./pages/hotspot/HotspotDistanceCacheList";
+import HotspotDistanceCacheForm from "./pages/hotspot/HotspotDistanceCacheForm";
 import ActivityForm from "./pages/activity/ActivityForm";
 import ActivityListPage from "./pages/activity/ActivityListPage";
 import GuideListPage from "./pages/guide/GuideListPage";
@@ -381,6 +383,32 @@ const App = () => (
               element={
                 <MainLayout>
                   <HotspotPreview />
+                </MainLayout>
+              }
+            />
+
+            {/* Hotspot Distance Cache */}
+            <Route
+              path="/hotspot-distance-cache"
+              element={
+                <MainLayout>
+                  <HotspotDistanceCacheList />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/hotspot-distance-cache/new"
+              element={
+                <MainLayout>
+                  <HotspotDistanceCacheForm />
+                </MainLayout>
+              }
+            />
+            <Route
+              path="/hotspot-distance-cache/:id/edit"
+              element={
+                <MainLayout>
+                  <HotspotDistanceCacheForm />
                 </MainLayout>
               }
             />
