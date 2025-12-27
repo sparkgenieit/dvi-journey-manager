@@ -12,10 +12,14 @@ import {
 import { Button } from "../components/ui/button";
 import { AlertTriangle, Loader2 } from "lucide-react";
 
+
 export interface DayWisePricingItem {
   date: string; // "2025-12-26"
   dayLabel: string; // "Day 1 | 26 Dec 2025"
   route: string; // "Chennai → Mahabalipuram"
+  travelKms: number; // Travel KM per day
+  sightseeingKms: number; // Sightseeing KM per day
+  totalKms: number; // Total KM per day
   rentalCharges: number;
   tollCharges: number;
   parkingCharges: number;
@@ -86,6 +90,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
   dateRange,
   routes,
 }) => {
+  const [hoveredTotalAmountIndex, setHoveredTotalAmountIndex] = useState<number | null>(null);
   const [expandedVendorIndex, setExpandedVendorIndex] = useState<number | null>(null);
   const [selectedVendorEligibleId, setSelectedVendorEligibleId] = useState<number | null>(() => {
     // Find the first assigned vendor by ID, not index
@@ -114,9 +119,7 @@ export const VehicleList: React.FC<VehicleListProps> = ({
     }
   }, [vehicles, vehicleTypeLabel, selectedVendorEligibleId]);
 
-  const handleRowClick = (index: number) => {
-    setExpandedVendorIndex((prev) => (prev === index ? null : index));
-  };
+
 
   const handleRadioChange = (index: number) => {
     const vendor = vehicles[index];
@@ -161,7 +164,6 @@ export const VehicleList: React.FC<VehicleListProps> = ({
       setSelectedVendorEligibleId(pendingVendorSelection.vendorEligibleId);
       setShowConfirmDialog(false);
       setPendingVendorSelection(null);
-      setExpandedVendorIndex(null);
 
       if (onRefresh) {
         console.log(`[${vehicleTypeLabel}] Calling onRefresh`);
@@ -173,6 +175,14 @@ export const VehicleList: React.FC<VehicleListProps> = ({
     } finally {
       setIsUpdatingVehicle(false);
     }
+  };
+
+  const handleCarouselPrevious = () => {
+    setCarouselIndex((prev) => (prev === 0 ? vehicles.length - 1 : prev - 1));
+  };
+
+  const handleCarouselNext = () => {
+    setCarouselIndex((prev) => (prev === vehicles.length - 1 ? 0 : prev + 1));
   };
 
   return (
@@ -193,15 +203,11 @@ export const VehicleList: React.FC<VehicleListProps> = ({
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">
               <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs w-12">#</th>
-              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Vendor</th>
-              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Branch</th>
-              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Origin</th>
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Vendor Name</th>
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Branch Name</th>
+              <th className="text-left py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Vehicle Origin</th>
               <th className="text-center py-2 px-3 font-semibold text-gray-600 uppercase text-xs">Qty</th>
-              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[110px]">Rental</th>
-              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Toll</th>
-              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[110px]">Parking</th>
-              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[90px]">Driver</th>
-              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[100px]">Total</th>
+              <th className="text-right py-2 px-3 font-semibold text-gray-600 uppercase text-xs min-w-[120px]">Total Amount</th>
             </tr>
           </thead>
           <tbody>
@@ -229,11 +235,19 @@ export const VehicleList: React.FC<VehicleListProps> = ({
               const a8v = parseN(v.after8pmVendor);
               const grandTotal = rental + toll + parking + driver + permit + b6d + a8d + b6v + a8v;
               const isExpanded = expandedVendorIndex === index;
+              const isHoveredTotalAmount = hoveredTotalAmountIndex === index;
+              
+              // Calculate price breakdown for tooltip
+              const subtotalVehicle = totalAmtNum;
+              const gstAmount = subtotalVehicle * 0.05; // 5% GST
+              const vendorMargin = subtotalVehicle * 0.10; // 10% Vendor Margin
+              const marginServiceTax = (subtotalVehicle + vendorMargin) * 0.05; // 5% on subtotal + margin
+              const calculatedGrandTotal = subtotalVehicle + gstAmount + vendorMargin + marginServiceTax;
 
               return (
                 <React.Fragment key={index}>
                   <tr
-                    onClick={() => handleRowClick(index)}
+                    onClick={() => setExpandedVendorIndex(expandedVendorIndex === index ? null : index)}
                     className="border-b border-gray-100 hover:bg-purple-50 transition-colors cursor-pointer"
                   >
                     <td className="py-3 px-3">
@@ -251,20 +265,60 @@ export const VehicleList: React.FC<VehicleListProps> = ({
                     <td className="py-3 px-3 text-gray-700">{safe(v.branchName)}</td>
                     <td className="py-3 px-3 text-gray-600 text-xs">{safe(v.vehicleOrigin)}</td>
                     <td className="py-3 px-3 text-center text-gray-800 font-medium">{qty}</td>
-                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(rental)}</td>
-                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(toll)}</td>
-                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(parking)}</td>
-                    <td className="py-3 px-3 text-right text-gray-800">{formatCurrencyINR(driver)}</td>
-                    <td className="py-3 px-3 text-right font-semibold text-gray-900">
-                      {formatCurrencyINR(grandTotal)}
+                    <td 
+                      className="py-3 px-3 text-right font-semibold text-gray-900"
+                      onMouseEnter={() => setHoveredTotalAmountIndex(index)}
+                      onMouseLeave={() => setHoveredTotalAmountIndex(null)}
+                    >
+                      {formatCurrencyINR(totalAmtNum)}
                       <span className="ml-2 text-xs text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+                      
+                      {/* Hover Tooltip - Price Breakdown */}
+                      {hoveredTotalAmountIndex === index && (
+                        <div className="fixed bg-white border-2 border-gray-300 rounded-lg shadow-2xl p-4 w-80 text-sm z-[9999]" 
+                             style={{
+                               bottom: 'auto',
+                               right: '20px',
+                               top: '80px',
+                               pointerEvents: 'none'
+                             }}>
+                          <div className="mb-2 border-b border-gray-200 pb-2">
+                            <div className="flex justify-between mb-1">
+                              <span className="text-gray-700 font-semibold">Subtotal Vehicle</span>
+                              <span className="font-semibold text-gray-900">{formatCurrencyINR(subtotalVehicle)}</span>
+                            </div>
+                          </div>
+                          <div className="mb-1">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">GST 5%</span>
+                              <span className="text-gray-900">{formatCurrencyINR(gstAmount)}</span>
+                            </div>
+                          </div>
+                          <div className="mb-1">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Vendor Margin (10%)</span>
+                              <span className="text-gray-900">{formatCurrencyINR(vendorMargin)}</span>
+                            </div>
+                          </div>
+                          <div className="mb-2 border-b border-gray-200 pb-2">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Margin Service Tax 5%</span>
+                              <span className="text-gray-900">{formatCurrencyINR(marginServiceTax)}</span>
+                            </div>
+                          </div>
+                          <div className="flex justify-between font-bold pt-2 border-t border-gray-300">
+                            <span className="text-purple-900">Grand Total</span>
+                            <span className="text-purple-900">{formatCurrencyINR(calculatedGrandTotal)}</span>
+                          </div>
+                        </div>
+                      )}
                     </td>
                   </tr>
                   
-                  {/* Expanded Row - Day-wise Pricing */}
+                  {/* Expanded Row - Day-wise Pricing (on click) */}
                   {isExpanded && v.dayWisePricing && v.dayWisePricing.length > 0 && (
-                    <tr className="border-b border-gray-100 bg-purple-50">
-                      <td colSpan={10} className="py-4 px-3">
+                    <tr className="border-b border-gray-100 bg-purple-50 transition-all duration-200">
+                      <td colSpan={6} className="py-4 px-3">
                         <div className="ml-6">
                           <h6 className="text-sm font-semibold text-gray-900 mb-3">Day-wise Pricing Breakdown</h6>
                           <table className="w-full text-xs border border-gray-200">
@@ -272,6 +326,9 @@ export const VehicleList: React.FC<VehicleListProps> = ({
                               <tr className="bg-purple-100 border-b border-gray-200">
                                 <th className="text-left py-2 px-3 font-semibold text-gray-700">Date</th>
                                 <th className="text-left py-2 px-3 font-semibold text-gray-700">Route</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Travel KM</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Sightseeing KM</th>
+                                <th className="text-right py-2 px-3 font-semibold text-gray-700">Total KM</th>
                                 <th className="text-right py-2 px-3 font-semibold text-gray-700">Rental</th>
                                 <th className="text-right py-2 px-3 font-semibold text-gray-700">Toll</th>
                                 <th className="text-right py-2 px-3 font-semibold text-gray-700">Parking</th>
@@ -285,6 +342,9 @@ export const VehicleList: React.FC<VehicleListProps> = ({
                                 <tr key={dayIndex} className="border-b border-gray-100 hover:bg-purple-100">
                                   <td className="py-2 px-3 text-gray-700 font-medium">{dayPricing.dayLabel}</td>
                                   <td className="py-2 px-3 text-gray-700">{dayPricing.route}</td>
+                                  <td className="py-2 px-3 text-right text-gray-700 font-semibold">{dayPricing.travelKms?.toFixed(2) || '0.00'} KM</td>
+                                  <td className="py-2 px-3 text-right text-gray-700 font-semibold">{dayPricing.sightseeingKms?.toFixed(2) || '0.00'} KM</td>
+                                  <td className="py-2 px-3 text-right text-gray-700 font-semibold">{dayPricing.totalKms?.toFixed(2) || '0.00'} KM</td>
                                   <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.rentalCharges)}</td>
                                   <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.tollCharges)}</td>
                                   <td className="py-2 px-3 text-right text-gray-700">{formatCurrencyINR(dayPricing.parkingCharges)}</td>
