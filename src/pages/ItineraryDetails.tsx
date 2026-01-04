@@ -26,6 +26,8 @@ import { VoucherDetailsModal } from "./VoucherDetailsModal";
 import { PluckCardModal } from "./PluckCardModal";
 import { InvoiceModal } from "./InvoiceModal";
 import { IncidentalExpensesModal } from "./IncidentalExpensesModal";
+import { HotelSearchModal } from "@/components/hotels/HotelSearchModal";
+import { HotelSearchResult } from "@/hooks/useHotelSearch";
 import { toast } from "sonner";
 
 // --------- Types aligned with CURRENT API RESPONSE ---------
@@ -664,6 +666,10 @@ export const ItineraryDetails: React.FC = () => {
     planId: number | null;
     routeId: number | null;
     routeDate: string;
+    cityCode?: string;
+    cityName?: string;
+    checkInDate?: string;
+    checkOutDate?: string;
   }>({
     open: false,
     planId: null,
@@ -714,6 +720,19 @@ export const ItineraryDetails: React.FC = () => {
   const [clipboardModal, setClipboardModal] = useState(false);
   const [shareModal, setShareModal] = useState(false);
   const [clipboardType, setClipboardType] = useState<'recommended' | 'highlights' | 'para'>('recommended');
+  
+  // TBO Hotel Selection State
+  // Structure: { [routeId]: { hotelCode, bookingCode, roomType, netAmount, hotelName, checkInDate, checkOutDate } }
+  const [selectedTboHotels, setSelectedTboHotels] = useState<{[routeId: number]: {
+    hotelCode: string;
+    bookingCode: string;
+    roomType: string;
+    netAmount: number;
+    hotelName: string;
+    checkInDate: string;
+    checkOutDate: string;
+  }}>({});
+  
   const [selectedHotels, setSelectedHotels] = useState<{[key: string]: boolean}>({});
 
   // Confirm Quotation modal state
@@ -803,7 +822,7 @@ export const ItineraryDetails: React.FC = () => {
     const fetchDetails = async () => {
       try {
         setLoading(true);
-      setError(null);
+        setError(null);
 
         const [detailsRes, hotelRes] = await Promise.all([
           ItineraryService.getDetails(quoteId),
@@ -814,7 +833,9 @@ export const ItineraryDetails: React.FC = () => {
         setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
       } catch (e: any) {
         console.error("Failed to load itinerary details", e);
-        setError("Failed to load itinerary details");
+        setError(e?.message || "Failed to load itinerary details");
+        setItinerary(null);
+        setHotelDetails(null);
       } finally {
         setLoading(false);
       }
@@ -1232,29 +1253,23 @@ export const ItineraryDetails: React.FC = () => {
     });
   };
 
-  const openHotelSelectionModal = async (
+  const openHotelSelectionModal = (
     planId: number,
     routeId: number,
-    routeDate: string
+    routeDate: string,
+    cityCode: string,
+    cityName: string
   ) => {
     setHotelSelectionModal({
       open: true,
       planId,
       routeId,
       routeDate,
+      cityCode,
+      cityName,
+      checkInDate: routeDate,
+      checkOutDate: routeDate, // This will be set properly by calculating next day
     });
-
-    // Fetch available hotels for this route
-    setLoadingHotels(true);
-    try {
-      const hotels = await ItineraryService.getAvailableHotels(routeId);
-      setAvailableHotels(hotels as AvailableHotel[]);
-    } catch (e: any) {
-      console.error("Failed to fetch available hotels", e);
-      toast.error(e?.message || "Failed to load available hotels");
-    } finally {
-      setLoadingHotels(false);
-    }
   };
 
   const handleSelectHotel = async (hotelId: number, roomTypeId: number = 1) => {
@@ -1296,6 +1311,95 @@ export const ItineraryDetails: React.FC = () => {
     } catch (e: any) {
       console.error("Failed to select hotel", e);
       toast.error(e?.message || "Failed to select hotel");
+    } finally {
+      setIsSelectingHotel(false);
+    }
+  };
+
+  // Handle hotel selection from HotelSearchModal
+  const handleSelectHotelFromSearch = async (
+    hotel: HotelSearchResult,
+    mealPlan?: any
+  ) => {
+    if (!hotelSelectionModal.planId || !hotelSelectionModal.routeId) {
+      return;
+    }
+
+    setIsSelectingHotel(true);
+    try {
+      // For now, use hotelCode as hotelId. If backend expects different format, adjust here
+      const hotelId = parseInt(hotel.hotelCode) || 0;
+      const roomTypeId = hotel.roomTypes?.[0]?.roomCode ? parseInt(hotel.roomTypes[0].roomCode) : 1;
+
+      // Store hotel details for TBO confirmation (ALL hotel selections)
+      // Calculate checkout date (next day after check-in)
+      const checkInDate = new Date(hotelSelectionModal.routeDate);
+      const checkOutDate = new Date(checkInDate);
+      checkOutDate.setDate(checkOutDate.getDate() + 1);
+      
+      // Format dates to YYYY-MM-DD
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      // Store ALL selected hotels (from any source)
+      setSelectedTboHotels(prev => ({
+        ...prev,
+        [hotelSelectionModal.routeId]: {
+          hotelCode: hotel.hotelCode,
+          // bookingCode should come from hotel.bookingCode (mapped from searchReference in useHotelSearch hook)
+          // Only fallback to hotelCode if bookingCode is not available
+          bookingCode: hotel.bookingCode || hotel.searchReference || hotel.hotelCode,
+          roomType: hotel.roomTypes?.[0]?.roomName || 'Standard',
+          netAmount: hotel.totalCost || hotel.totalRoomCost || hotel.price || 0,
+          hotelName: hotel.hotelName,
+          checkInDate: formatDate(checkInDate),
+          checkOutDate: formatDate(checkOutDate),
+        }
+      }));
+      
+      console.log('DEBUG: Hotel selected and stored', {
+        routeId: hotelSelectionModal.routeId,
+        hotelCode: hotel.hotelCode,
+        hotelName: hotel.hotelName,
+      });
+
+      await ItineraryService.selectHotel(
+        hotelSelectionModal.planId,
+        hotelSelectionModal.routeId,
+        hotelId,
+        roomTypeId,
+        mealPlan || selectedMealPlan
+      );
+
+      toast.success("Hotel selected successfully");
+
+      // Close modal
+      setHotelSelectionModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        routeDate: "",
+      });
+      setHotelSearchQuery("");
+      setSelectedMealPlan({ all: false, breakfast: false, lunch: false, dinner: false });
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to select hotel", e);
+      toast.error(e?.message || "Failed to select hotel");
+      throw e; // Re-throw for modal to handle
     } finally {
       setIsSelectingHotel(false);
     }
@@ -1380,6 +1484,120 @@ export const ItineraryDetails: React.FC = () => {
     setIsConfirmingQuotation(true);
 
     try {
+      // Build passengers array for TBO hotels
+      const passengers = [
+        {
+          title: guestDetails.salutation,
+          firstName: guestDetails.name.split(' ')[0],
+          lastName: guestDetails.name.split(' ').slice(1).join(' ') || guestDetails.name,
+          email: guestDetails.emailId || undefined,
+          paxType: 1, // Adult
+          leadPassenger: true,
+          age: parseInt(guestDetails.age) || 0,
+          passportNo: undefined,
+          passportIssueDate: undefined,
+          passportExpDate: undefined,
+          phoneNo: guestDetails.contactNo,
+        },
+        // Additional adults
+        ...additionalAdults.map((adult, idx) => ({
+          title: 'Mr',
+          firstName: adult.name.split(' ')[0],
+          lastName: adult.name.split(' ').slice(1).join(' ') || adult.name,
+          email: undefined,
+          paxType: 1,
+          leadPassenger: idx === 0 ? false : false,
+          age: parseInt(adult.age) || 0,
+          passportNo: undefined,
+          phoneNo: guestDetails.contactNo,
+        })),
+        // Children
+        ...additionalChildren.map((child, idx) => ({
+          title: 'Mr',
+          firstName: child.name.split(' ')[0],
+          lastName: child.name.split(' ').slice(1).join(' ') || child.name,
+          email: undefined,
+          paxType: 2, // Child
+          leadPassenger: false,
+          age: parseInt(child.age) || 0,
+          passportNo: undefined,
+          phoneNo: guestDetails.contactNo,
+        })),
+        // Infants
+        ...additionalInfants.map((infant, idx) => ({
+          title: 'Mr',
+          firstName: infant.name.split(' ')[0],
+          lastName: infant.name.split(' ').slice(1).join(' ') || infant.name,
+          email: undefined,
+          paxType: 3, // Infant
+          leadPassenger: false,
+          age: parseInt(infant.age) || 0,
+          passportNo: undefined,
+          phoneNo: guestDetails.contactNo,
+        })),
+      ];
+
+      // Build tbo_hotels array from BOTH manually selected AND auto-selected hotels
+      console.log('DEBUG: selectedTboHotels state:', selectedTboHotels);
+      console.log('DEBUG: hotelDetails from itinerary:', hotelDetails?.hotels);
+      
+      let tboHotels: any[] = [];
+      
+      // 1. Add manually selected hotels (user clicked Select Hotel)
+      tboHotels = Object.entries(selectedTboHotels).map(([routeId, hotelData]) => ({
+        routeId: parseInt(routeId),
+        hotelCode: hotelData.hotelCode,
+        bookingCode: hotelData.bookingCode,
+        roomType: hotelData.roomType,
+        checkInDate: hotelData.checkInDate,
+        checkOutDate: hotelData.checkOutDate,
+        numberOfRooms: 1,
+        guestNationality: 'IN',
+        netAmount: hotelData.netAmount,
+        passengers: passengers.filter(p => p.paxType !== 3 || passengers.length === 1),
+      }));
+      
+      // 2. Add auto-selected hotels from the itinerary (system-suggested)
+      if (hotelDetails?.hotels && hotelDetails.hotels.length > 0) {
+        const autoSelectedHotels = hotelDetails.hotels
+          .filter(h => h.hotelName && h.hotelName !== 'No Hotels Available') // Skip "No Hotels Available"
+          .map(h => {
+            // Skip if this route was already added manually
+            const alreadyAdded = tboHotels.some(t => t.routeId === h.itineraryRouteId);
+            if (alreadyAdded) return null;
+            
+            // Calculate dates from itinerary days
+            const routeDay = itinerary?.days?.find(d => d.id === h.itineraryRouteId);
+            const checkInDate = routeDay?.date || '';
+            const checkOutDate = routeDay ? new Date(new Date(routeDay.date).getTime() + 24*60*60*1000).toISOString().split('T')[0] : '';
+            
+            return {
+              routeId: h.itineraryRouteId,
+              hotelCode: String(h.hotelId || ''),
+              // Use bookingCode from API response (contains TBO searchReference)
+              bookingCode: h.bookingCode || h.searchReference || String(h.hotelId || ''),
+              roomType: h.roomType || 'Standard',
+              checkInDate,
+              checkOutDate,
+              numberOfRooms: 1,
+              guestNationality: 'IN',
+              netAmount: h.totalHotelCost || 0,
+              passengers: passengers.filter(p => p.paxType !== 3 || passengers.length === 1),
+            };
+          })
+          .filter(h => h !== null);
+        
+        tboHotels = [...tboHotels, ...autoSelectedHotels];
+      }
+      
+      console.log('DEBUG: Final tboHotels array (manual + auto):', tboHotels);
+
+      // Get client IP
+      const clientIp = await fetch('https://api.ipify.org?format=json')
+        .then(res => res.json())
+        .then(data => data.ip)
+        .catch(() => '192.168.1.1');
+
       await ItineraryService.confirmQuotation({
         itinerary_plan_ID: itinerary.planId,
         agent: agentInfo.agent_id,
@@ -1403,6 +1621,9 @@ export const ItineraryDetails: React.FC = () => {
         departure_flight_details: guestDetails.departureFlightDetails,
         price_confirmation_type: 'old',
         hotel_group_type: 'undefined',
+        // NEW: TBO Hotels
+        tbo_hotels: tboHotels.length > 0 ? tboHotels : undefined,
+        endUserIp: clientIp,
       });
 
       toast.success('Quotation confirmed successfully!');
@@ -1414,7 +1635,7 @@ export const ItineraryDetails: React.FC = () => {
         setItinerary(detailsRes as ItineraryDetailsResponse);
       }
 
-      // Reset form
+      // Reset form and selected hotels
       setGuestDetails({
         salutation: 'Mr',
         name: '',
@@ -1432,6 +1653,7 @@ export const ItineraryDetails: React.FC = () => {
       setAdditionalAdults([]);
       setAdditionalChildren([]);
       setAdditionalInfants([]);
+      setSelectedTboHotels({});
     } catch (e: any) {
       console.error('Failed to confirm quotation', e);
       toast.error(e?.message || 'Failed to confirm quotation');
@@ -1454,15 +1676,17 @@ export const ItineraryDetails: React.FC = () => {
         <p className="text-sm text-red-600">
           {error || "Itinerary details not found"}
         </p>
-        <Link to={`/create-itinerary?id=${itinerary.planId}`}>
-          <Button
-            variant="outline"
-            className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Route List
-          </Button>
-        </Link>
+        {itinerary?.planId && (
+          <Link to={`/create-itinerary?id=${itinerary.planId}`}>
+            <Button
+              variant="outline"
+              className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Route List
+            </Button>
+          </Link>
+        )}
       </div>
     );
   }
@@ -2005,11 +2229,33 @@ export const ItineraryDetails: React.FC = () => {
                   {segment.type === "checkin" && (
                     <div 
                       className="bg-[#e8f9fd] rounded-lg p-3 mb-3 border border-[#4ba3c3] cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() => openHotelSelectionModal(
-                        itinerary.planId || 0,
-                        day.id,
-                        day.date
-                      )}
+                      onClick={() => {
+                        // Get city code from hotel details if available, otherwise use default
+                        let cityCode = "1"; // Default city code
+                        const hotelForDay = hotelDetails?.hotels?.find(h => 
+                          h.itineraryRouteId === day.id
+                        );
+                        if (hotelForDay?.destination) {
+                          // Try to map destination to code or use as-is
+                          const cityMap: { [key: string]: string } = {
+                            'Delhi': '1',
+                            'Agra': '2',
+                            'Jaipur': '3',
+                            'New Delhi': '1',
+                            'Mumbai': '4',
+                            'Bangalore': '5',
+                          };
+                          cityCode = cityMap[hotelForDay.destination] || "1";
+                        }
+                        
+                        openHotelSelectionModal(
+                          itinerary.planId || 0,
+                          day.id,
+                          day.date,
+                          cityCode,
+                          day.arrival || "Hotel"
+                        );
+                      }}
                     >
                       <div className="flex items-center gap-3">
                         <Building2 className="h-6 w-6 text-[#4ba3c3]" />
@@ -2087,7 +2333,7 @@ export const ItineraryDetails: React.FC = () => {
                                       open: true,
                                       planId: pId,
                                       routeId: rId,
-                                      locationId: day.locationId || 0,
+                                      locationId: 0,
                                       locationName: day.arrival || "this location",
                                     });
                                     handlePreviewHotspot(h.id, pId, rId);
@@ -2936,168 +3182,26 @@ export const ItineraryDetails: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Hotel Selection Modal */}
-      <Dialog
+      {/* Hotel Search Modal - NEW Real-Time Search */}
+      <HotelSearchModal
         open={hotelSelectionModal.open}
-        onOpenChange={(open) =>
-          setHotelSelectionModal({ ...hotelSelectionModal, open })
-        }
-      >
-        <DialogContent className="sm:max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <DialogTitle>Available Hotels</DialogTitle>
-                <DialogDescription>
-                  Select a hotel for {hotelSelectionModal.routeDate}
-                </DialogDescription>
-              </div>
-              <input
-                type="text"
-                placeholder="Search Hotel..."
-                className="px-3 py-2 border border-gray-300 rounded-md text-sm w-64"
-                value={hotelSearchQuery}
-                onChange={(e) => setHotelSearchQuery(e.target.value)}
-              />
-            </div>
-          </DialogHeader>
-          <div className="py-4">
-            {loadingHotels ? (
-              <p className="text-sm text-[#6c6c6c] text-center py-8">
-                Loading available hotels...
-              </p>
-            ) : filteredHotels.length === 0 ? (
-              <p className="text-sm text-[#6c6c6c] text-center py-8">
-                {hotelSearchQuery ? "No hotels match your search" : "No hotels available within 20km"}
-              </p>
-            ) : (
-              <div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredHotels.map((hotel) => (
-                    <div
-                      key={hotel.id}
-                      className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white"
-                    >
-                      <div className="aspect-video bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center relative">
-                        <div className="text-center">
-                          <Building2 className="h-12 w-12 text-[#4ba3c3] mx-auto mb-2" />
-                          <p className="text-xs text-gray-500">No Photos Available</p>
-                        </div>
-                        <div className="absolute top-2 right-2 bg-white px-2 py-1 rounded-full text-xs font-semibold text-[#4ba3c3]">
-                          {hotel.distance} km
-                        </div>
-                      </div>
-                      <div className="p-4">
-                        <h4 className="font-semibold text-base text-[#4a4260] mb-1">
-                          {hotel.name}
-                        </h4>
-                        <p className="text-xs text-[#6c6c6c] mb-2 line-clamp-2">
-                          {hotel.address}
-                        </p>
-                        <div className="flex flex-wrap gap-2 text-xs text-[#6c6c6c] mb-3">
-                          <span className="bg-gray-100 px-2 py-1 rounded">
-                            Check-in: {hotel.checkIn}
-                          </span>
-                          <span className="bg-gray-100 px-2 py-1 rounded">
-                            Check-out: {hotel.checkOut}
-                          </span>
-                        </div>
-                        
-                        {/* Meal Plan Options */}
-                        <div className="mb-3">
-                          <p className="text-xs font-medium text-[#4a4260] mb-2">Meal Plan:</p>
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <label className="flex items-center gap-1 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="rounded"
-                                checked={selectedMealPlan.all}
-                                onChange={(e) => setSelectedMealPlan({
-                                  all: e.target.checked,
-                                  breakfast: e.target.checked,
-                                  lunch: e.target.checked,
-                                  dinner: e.target.checked,
-                                })}
-                              />
-                              <span>All</span>
-                            </label>
-                            <label className="flex items-center gap-1 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="rounded"
-                                checked={selectedMealPlan.breakfast}
-                                onChange={(e) => setSelectedMealPlan({
-                                  ...selectedMealPlan,
-                                  breakfast: e.target.checked,
-                                  all: false,
-                                })}
-                              />
-                              <span>Breakfast</span>
-                            </label>
-                            <label className="flex items-center gap-1 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="rounded"
-                                checked={selectedMealPlan.lunch}
-                                onChange={(e) => setSelectedMealPlan({
-                                  ...selectedMealPlan,
-                                  lunch: e.target.checked,
-                                  all: false,
-                                })}
-                              />
-                              <span>Lunch</span>
-                            </label>
-                            <label className="flex items-center gap-1 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="rounded"
-                                checked={selectedMealPlan.dinner}
-                                onChange={(e) => setSelectedMealPlan({
-                                  ...selectedMealPlan,
-                                  dinner: e.target.checked,
-                                  all: false,
-                                })}
-                              />
-                              <span>Dinner</span>
-                            </label>
-                          </div>
-                        </div>
-
-                        <Button
-                          size="sm"
-                          className="w-full bg-[#4ba3c3] hover:bg-[#3a8fa3] text-white"
-                          onClick={() => handleSelectHotel(hotel.id)}
-                          disabled={isSelectingHotel}
-                        >
-                          {isSelectingHotel ? "Selecting..." : "Choose Hotel"}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setHotelSelectionModal({
-                  open: false,
-                  planId: null,
-                  routeId: null,
-                  routeDate: "",
-                });
-                setHotelSearchQuery("");
-                setSelectedMealPlan({ all: false, breakfast: false, lunch: false, dinner: false });
-              }}
-              disabled={isSelectingHotel}
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={(open) => {
+          if (!open) {
+            setHotelSelectionModal({
+              open: false,
+              planId: null,
+              routeId: null,
+              routeDate: "",
+            });
+          }
+        }}
+        cityCode={hotelSelectionModal.cityCode || ""}
+        cityName={hotelSelectionModal.cityName || ""}
+        checkInDate={hotelSelectionModal.checkInDate || hotelSelectionModal.routeDate}
+        checkOutDate={hotelSelectionModal.checkOutDate || hotelSelectionModal.routeDate}
+        onSelectHotel={handleSelectHotelFromSearch}
+        isSelectingHotel={isSelectingHotel}
+      />
 
       {/* Gallery Modal */}
       <Dialog

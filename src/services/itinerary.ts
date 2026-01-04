@@ -429,4 +429,38 @@ export const ItineraryService = {
       method: "DELETE",
     });
   },
+
+  // Real-time hotel search
+  async searchHotels(searchParams: {
+    cityCode: string;
+    checkInDate: string;
+    checkOutDate: string;
+    roomCount: number;
+    guestCount: number;
+    hotelName?: string;
+  }) {
+    return api("hotels/search", {
+      method: "POST",
+      body: searchParams,
+    });
+  },
+
+  // Get detailed information for a specific hotel (TBO API)
+  async getHotelInfo(hotelCode: string) {
+    return api(`hotels/${hotelCode}`, {
+      method: "GET",
+    });
+  },
+
+  // Get room availability for specific hotel
+  async getRoomAvailability(
+    hotelCode: string,
+    checkInDate: string,
+    checkOutDate: string
+  ) {
+    return api(`hotels/${hotelCode}/availability`, {
+      method: "POST",
+      body: { checkInDate, checkOutDate },
+    });
+  },
 };

@@ -221,16 +221,75 @@ export const HotelList: React.FC<HotelListProps> = ({
 
       console.log('Mapped rooms:', mappedRooms);
 
-      setRoomDetails(mappedRooms);
+      // GROUP ROOMS BY HOTEL - aggregate all room types per unique hotel
+      const hotelGroups = new Map<number, HotelRoomDetail>();
+      mappedRooms.forEach((room) => {
+        const hotelId = room.hotelId!;
+        if (!hotelGroups.has(hotelId)) {
+          // First room for this hotel - initialize with all its room types
+          hotelGroups.set(hotelId, {
+            ...room,
+            availableRoomTypes: [
+              {
+                roomTypeId: room.roomTypeId!,
+                roomTypeTitle: room.roomTypeName!,
+              },
+            ],
+          });
+        } else {
+          // Add this room type to the existing hotel's availableRoomTypes
+          const existingHotel = hotelGroups.get(hotelId)!;
+          existingHotel.availableRoomTypes!.push({
+            roomTypeId: room.roomTypeId!,
+            roomTypeTitle: room.roomTypeName!,
+          });
+        }
+      });
+
+      // Convert map to array for rendering (one entry per unique hotel)
+      let uniqueHotels = Array.from(hotelGroups.values());
+      console.log('Unique hotels after grouping:', uniqueHotels);
+
+      // ADD CURRENTLY SELECTED HOTEL as the first card if not already present
+      const currentHotelExists = uniqueHotels.some(h => h.hotelId === hotel.hotelId);
+      if (!currentHotelExists && hotel.hotelId > 0) {
+        // Create a card for the currently selected hotel from the row data
+        const currentHotelCard: HotelRoomDetail = {
+          itineraryPlanId: (resp as any).planId,
+          itineraryRouteId: hotel.itineraryRouteId,
+          itineraryPlanHotelRoomDetailsId: 0,
+          hotelId: hotel.hotelId,
+          hotelName: hotel.hotelName,
+          hotelCategory: hotel.category,
+          roomTypeId: 1,
+          roomTypeName: hotel.roomType || "Current Selection",
+          availableRoomTypes: [
+            { roomTypeId: 1, roomTypeTitle: "Budget Room" },
+            { roomTypeId: 2, roomTypeTitle: "Mid-Range Room" },
+            { roomTypeId: 3, roomTypeTitle: "Premium Room" },
+            { roomTypeId: 4, roomTypeTitle: "Luxury Room" },
+          ],
+          noOfRooms: 1,
+          adultCount: 0,
+          childWithBed: 0,
+          childWithoutBed: 0,
+          extraBedCount: 0,
+          perNightAmount: hotel.totalHotelCost || 0,
+          taxAmount: hotel.totalHotelTaxAmount || 0,
+          totalAmount: (hotel.totalHotelCost || 0) + (hotel.totalHotelTaxAmount || 0),
+        };
+        uniqueHotels = [currentHotelCard, ...uniqueHotels];
+      }
+
+      setRoomDetails(uniqueHotels);
       setExpandedRowKey(rowKey);
 
-      // Initialize form data for each room with default values
+      // Initialize form data for each unique hotel with default values
       const initialFormData: Record<string, any> = {};
-      mappedRooms.forEach((room) => {
-        const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
-          `temp-${room.itineraryRouteId}-${room.hotelId}`;
+      uniqueHotels.forEach((hotel) => {
+        const roomKey = `hotel-${hotel.hotelId}`;
         initialFormData[roomKey] = {
-          roomTypeId: room.roomTypeId || (room.availableRoomTypes?.[0]?.roomTypeId ?? 0),
+          roomTypeId: hotel.availableRoomTypes?.[0]?.roomTypeId ?? 0,
           mealAll: false,
           mealBreakfast: false,
           mealLunch: false,
@@ -485,11 +544,10 @@ export const HotelList: React.FC<HotelListProps> = ({
                             </div>
                           ) : (
                             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                              {roomDetails.map((room) => {
-                                const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
-                                  `temp-${room.itineraryRouteId}-${room.hotelId}`;
+                              {roomDetails.map((hotel) => {
+                                const roomKey = `hotel-${hotel.hotelId}`;
                                 const formData = roomFormData[roomKey] || {
-                                  roomTypeId: room.roomTypeId || (room.availableRoomTypes?.[0]?.roomTypeId ?? 0),
+                                  roomTypeId: hotel.availableRoomTypes?.[0]?.roomTypeId ?? 0,
                                   mealAll: false,
                                   mealBreakfast: false,
                                   mealLunch: false,
@@ -498,26 +556,22 @@ export const HotelList: React.FC<HotelListProps> = ({
 
                                 return (
                                 <div
-                                  key={
-                                    room.itineraryPlanHotelRoomDetailsId ??
-                                    `${room.itineraryRouteId}-${room.roomTypeName}-${room.totalAmount}`
-                                  }
+                                  key={roomKey}
                                   className="bg-white rounded-lg shadow-md border border-[#e5d9f2] overflow-hidden"
                                 >
                                   {/* Hotel Image/Header */}
                                   <div className="relative h-40 bg-gradient-to-r from-[#7c3aed] to-[#a855f7]">
                                     <div className="absolute inset-0 flex flex-col justify-end p-3 bg-black/30">
                                       <h3 className="text-white font-semibold text-sm">
-                                        {room.hotelName || hotel.hotelName}
+                                        {hotel.hotelName}
                                       </h3>
                                       <p className="text-white/90 text-xs">
-                                        Category: {room.hotelCategory ?? hotel.category}*
+                                        Category: {hotel.hotelCategory}*
                                       </p>
                                     </div>
                                   </div>
 
-                                  <div className="p-4">
-                                    {/* Check-in/Check-out times */}
+                                  <div className="p-4">{/* Check-in/Check-out times */}
                                     <div className="grid grid-cols-2 gap-2 mb-3 pb-3 border-b">
                                       <div className="flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-[#f3e8ff] flex items-center justify-center">
@@ -549,14 +603,14 @@ export const HotelList: React.FC<HotelListProps> = ({
                                         value={formData.roomTypeId}
                                         onChange={(e) => updateRoomFormData(roomKey, 'roomTypeId', Number(e.target.value))}
                                       >
-                                        {room.availableRoomTypes && room.availableRoomTypes.length > 0 ? (
-                                          room.availableRoomTypes.map((rt) => (
+                                        {hotel.availableRoomTypes && hotel.availableRoomTypes.length > 0 ? (
+                                          hotel.availableRoomTypes.map((rt) => (
                                             <option key={rt.roomTypeId} value={rt.roomTypeId}>
                                               {rt.roomTypeTitle}
                                             </option>
                                           ))
                                         ) : (
-                                          <option value="">{room.roomTypeName || "No room types available"}</option>
+                                          <option value="">No room types available</option>
                                         )}
                                       </select>
                                     </div>
@@ -618,20 +672,20 @@ export const HotelList: React.FC<HotelListProps> = ({
                                     <div className="mb-3 p-2 bg-gray-50 rounded text-xs space-y-1">
                                       <div className="flex justify-between">
                                         <span className="text-gray-600">Rooms:</span>
-                                        <span className="font-medium">{room.noOfRooms ?? 1}</span>
+                                        <span className="font-medium">{hotel.noOfRooms ?? 1}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-gray-600">Per night:</span>
-                                        <span className="font-medium">{formatCurrency(room.perNightAmount)}</span>
+                                        <span className="font-medium">{formatCurrency(hotel.perNightAmount)}</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-gray-600">Tax:</span>
-                                        <span className="font-medium">{formatCurrency(room.taxAmount)}</span>
+                                        <span className="font-medium">{formatCurrency(hotel.taxAmount)}</span>
                                       </div>
                                       <div className="flex justify-between pt-1 border-t">
                                         <span className="font-semibold">Total:</span>
                                         <span className="font-semibold text-[#7c3aed]">
-                                          {formatCurrency(room.totalAmount)}
+                                          {formatCurrency(hotel.totalAmount)}
                                         </span>
                                       </div>
                                     </div>
@@ -639,9 +693,9 @@ export const HotelList: React.FC<HotelListProps> = ({
                                     {/* Choose/Update Button - Conditional based on selection status */}
                                     <button
                                       className="w-full py-2 px-4 bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-medium rounded-md transition-colors text-sm"
-                                      onClick={() => handleChooseOrUpdateHotel(room)}
+                                      onClick={() => handleChooseOrUpdateHotel(hotel)}
                                     >
-                                      {room.hotelId === selectedHotelId ? "Update" : "Choose"}
+                                      {hotel.hotelId === selectedHotelId ? "Update" : "Choose"}
                                     </button>
                                   </div>
                                 </div>
