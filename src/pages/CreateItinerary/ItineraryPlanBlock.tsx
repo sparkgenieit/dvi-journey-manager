@@ -282,6 +282,28 @@ const handleHotelFacilityChange = (vals: string[]) => {
   const tripStartDateObj = parseDDMMYYYY(tripStartDate);
   const tripEndDateObj = parseDDMMYYYY(tripEndDate);
 
+  // ✅ Auto-calculate Number of Nights and Days
+  const [numberOfNights, setNumberOfNights] = useState<number>(0);
+  const [numberOfDays, setNumberOfDays] = useState<number>(1);
+
+  useEffect(() => {
+    if (tripStartDateObj && tripEndDateObj) {
+      const diffTime = tripEndDateObj.getTime() - tripStartDateObj.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays >= 0) {
+        setNumberOfNights(diffDays);
+        setNumberOfDays(diffDays + 1);
+      } else {
+        setNumberOfNights(0);
+        setNumberOfDays(1);
+      }
+    } else {
+      setNumberOfNights(0);
+      setNumberOfDays(1);
+    }
+  }, [tripStartDateObj, tripEndDateObj]);
+
   // Itinerary Type default → "Customize"
   useEffect(() => {
     if (!itineraryTypeSelect && itineraryTypes.length) {
@@ -552,11 +574,23 @@ const handleHotelFacilityChange = (vals: string[]) => {
                 <Calendar
                   mode="single"
                   selected={tripEndDateObj}
+                  defaultMonth={tripStartDateObj || undefined}
                   onSelect={(date) => {
                     if (date) setTripEndDate(formatDDMMYYYY(date));
                     setIsTripEndOpen(false);
                   }}
-                  disabled={disablePastAndToday}
+                  disabled={(date) => {
+                    const d = new Date(date);
+                    d.setHours(0, 0, 0, 0);
+                    // Disable if before today OR before trip start date
+                    if (d <= today) return true;
+                    if (tripStartDateObj) {
+                      const start = new Date(tripStartDateObj);
+                      start.setHours(0, 0, 0, 0);
+                      return d < start;
+                    }
+                    return false;
+                  }}
                   initialFocus
                   classNames={{ day_today: "" }}
                 />
@@ -665,12 +699,24 @@ const handleHotelFacilityChange = (vals: string[]) => {
 
           <div>
             <Label className="text-sm block mb-1">Number of Nights</Label>
-            <Input defaultValue={0} type="number" className="h-9 border-[#e5d7f6]" />
+            <Input 
+              value={numberOfNights} 
+              type="number" 
+              className="h-9 border-[#e5d7f6] bg-gray-50" 
+              readOnly 
+              tabIndex={-1}
+            />
           </div>
 
           <div>
             <Label className="text-sm block mb-1">Number of Days</Label>
-            <Input defaultValue={1} type="number" className="h-9 border-[#e5d7f6]" />
+            <Input 
+              value={numberOfDays} 
+              type="number" 
+              className="h-9 border-[#e5d7f6] bg-gray-50" 
+              readOnly 
+              tabIndex={-1}
+            />
           </div>
 
           <div

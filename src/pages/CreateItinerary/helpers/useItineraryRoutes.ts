@@ -59,7 +59,7 @@ export function useItineraryRoutes({
       next: "",
       via: "",
       via_routes: [],
-      directVisit: "Yes",
+      directVisit: "",
     },
   ]);
 
@@ -106,7 +106,7 @@ export function useItineraryRoutes({
           via_routes: existing?.via_routes ?? [],
           next: existing?.next ?? "",
           via: existing?.via ?? "",
-          directVisit: existing?.directVisit ?? "Yes",
+          directVisit: existing?.directVisit ?? "",
         });
       }
 
@@ -118,9 +118,22 @@ export function useItineraryRoutes({
         };
       }
 
-      // Prefill LAST DAY next destination from Departure
+      // Clear departure location from all rows first
+      // Then set ONLY on LAST DAY next destination
       if (departureLocation && nextRoutes.length) {
         const lastIndex = nextRoutes.length - 1;
+        
+        // Clear departure location from all rows that are not the last day
+        for (let i = 0; i < nextRoutes.length; i++) {
+          if (i !== lastIndex && nextRoutes[i].next === departureLocation) {
+            nextRoutes[i] = {
+              ...nextRoutes[i],
+              next: "",
+            };
+          }
+        }
+        
+        // Set departure location only on last day
         nextRoutes[lastIndex] = {
           ...nextRoutes[lastIndex],
           next: departureLocation,

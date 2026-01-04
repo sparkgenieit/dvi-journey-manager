@@ -148,7 +148,10 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
         openDropdown();
       }
     }
-    // Tab on trigger: let it move to next field, no special handling
+    // Close dropdown on Tab/Shift+Tab to allow natural navigation
+    if (e.key === "Tab" && open) {
+      closeDropdown();
+    }
   };
 
   const handleInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -172,13 +175,63 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
       if (opt) {
         handleSelect(opt);
       }
+    } else if (e.key === "Tab") {
+      // Tab should select highlighted option then move to next field
+      const opt = filteredOptions[highlightIndex];
+      if (opt) {
+        e.preventDefault(); // Prevent default Tab to handle selection first
+        handleSelect(opt);
+        // After selection, move to next field
+        setTimeout(() => {
+          // Check if this is a "Next Destination" field in Route Details table
+          const isRouteDetailsNextDest = triggerRef.current?.closest('[id^="next-destination-"]');
+          
+          if (isRouteDetailsNextDest) {
+            // In Route Details: jump to next "Next Destination" AutoSuggestSelect and open it
+            const allTriggers = Array.from(
+              document.querySelectorAll('[id^="next-destination-"]')
+            ).map(el => el.querySelector('button[type="button"]'))
+            .filter(Boolean) as HTMLButtonElement[];
+            
+            const currentIndex = allTriggers.indexOf(triggerRef.current!);
+            const nextTrigger = e.shiftKey 
+              ? allTriggers[currentIndex - 1] 
+              : allTriggers[currentIndex + 1];
+            
+            if (nextTrigger) {
+              nextTrigger.focus();
+              nextTrigger.click(); // Auto-open next dropdown
+            } else {
+              // No next route, move to any next focusable
+              const focusable = document.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+              );
+              const arr = Array.from(focusable) as HTMLElement[];
+              const currentFocusIndex = arr.indexOf(triggerRef.current!);
+              const nextElement = arr[currentFocusIndex + 1];
+              if (nextElement) nextElement.focus();
+            }
+          } else {
+            // Regular form field: move to next focusable element naturally
+            const focusable = document.querySelectorAll(
+              'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+            );
+            const arr = Array.from(focusable) as HTMLElement[];
+            const currentFocusIndex = arr.indexOf(triggerRef.current!);
+            const nextElement = e.shiftKey 
+              ? arr[currentFocusIndex - 1] 
+              : arr[currentFocusIndex + 1];
+            if (nextElement) nextElement.focus();
+          }
+        }, 50);
+      } else {
+        // No option to select, just close and allow normal Tab
+        closeDropdown();
+      }
     } else if (e.key === "Escape") {
       e.preventDefault();
       closeDropdown();
       triggerRef.current?.focus();
-    } else if (e.key === "Tab") {
-      // close and allow focus to move to next field
-      closeDropdown();
     }
   };
 
@@ -189,12 +242,8 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
         ref={triggerRef}
         type="button"
         className="w-full h-9 px-3 flex items-center justify-between rounded-md border border-[#e5d7f6] bg-white text-sm text-left"
-        onClick={openDropdown} // 👈 always open, no toggle
+        onClick={openDropdown}
         onKeyDown={handleTriggerKeyDown}
-        onFocus={() => {
-          // When tabbing into the field, open suggestions
-          if (!open) openDropdown();
-        }}
       >
         <span className={triggerText ? "" : "text-muted-foreground"}>
           {triggerText || placeholder}

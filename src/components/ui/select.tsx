@@ -72,6 +72,31 @@ const SelectContent = React.forwardRef<
         className,
       )}
       position={position}
+      onKeyDown={(e) => {
+        // Tab key should select highlighted item and move to next field
+        if (e.key === "Tab") {
+          // Find the highlighted item and trigger click
+          const highlightedItem = e.currentTarget.querySelector('[data-highlighted]') as HTMLElement;
+          if (highlightedItem) {
+            e.preventDefault();
+            highlightedItem.click();
+            
+            // Move focus to next field after selection
+            setTimeout(() => {
+              const focusable = document.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]):not([disabled])'
+              );
+              const arr = Array.from(focusable) as HTMLElement[];
+              const currentIndex = arr.findIndex(el => el === document.activeElement);
+              const nextElement = e.shiftKey ? arr[currentIndex - 1] : arr[currentIndex + 1];
+              if (nextElement) {
+                nextElement.focus();
+              }
+            }, 50);
+          }
+          // If no item highlighted, let Tab work naturally to close and move focus
+        }
+      }}
       {...props}
     >
       <SelectScrollUpButton />

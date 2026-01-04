@@ -163,7 +163,7 @@ export const RouteDetailsBlock = ({
             source: "",
             next: "",
             via: "",
-            directVisit: "Yes",
+            directVisit: "",
           },
         ];
       }
@@ -189,7 +189,7 @@ export const RouteDetailsBlock = ({
         source: copiedSource,
         next: movedFinalDestination,
         via: "",
-        directVisit: "Yes",
+        directVisit: "",
       });
 
       return updated;
@@ -247,6 +247,7 @@ export const RouteDetailsBlock = ({
                   <TableCell>
                     <Input
                       readOnly
+                      tabIndex={-1}
                       placeholder="DD/MM/YYYY"
                       value={row.date}
                       className="h-8 rounded-md border-[#e5d7f6] bg-[#f9f4ff] cursor-not-allowed text-xs"
@@ -269,6 +270,7 @@ export const RouteDetailsBlock = ({
                     >
                       <Input
                         readOnly
+                        tabIndex={-1}
                         placeholder="Source Location"
                         value={row.source}
                         className="h-8 rounded-md border-[#e5d7f6] bg-[#f9f4ff] cursor-not-allowed"
