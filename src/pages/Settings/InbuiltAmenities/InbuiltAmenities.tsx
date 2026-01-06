@@ -87,7 +87,8 @@ export function InbuiltAmenitiesPage() {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const [deleteId, setDeleteId] = useState<string | number | null>(null);
+  // ✅ FIX: id is numeric in this module, so keep it number|null
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
@@ -152,7 +153,7 @@ export function InbuiltAmenitiesPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
+    if (deleteId === null) return;
     try {
       await inbuiltAmenitiesService.remove(deleteId);
       toast.success("Inbuilt amenity deleted");
@@ -164,10 +165,12 @@ export function InbuiltAmenitiesPage() {
   };
 
   const handleToggleStatus = async (row: InbuiltAmenity, nextStatus: boolean) => {
-    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: nextStatus } : r)));
+    const next01 = (nextStatus ? 1 : 0) as 0 | 1;
+
+    setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: next01 } : r)));
 
     try {
-      await inbuiltAmenitiesService.update(row.id, { status: nextStatus });
+      await inbuiltAmenitiesService.update(row.id, { status: next01 });
       toast.success("Status updated");
       await load();
     } catch (e: any) {
@@ -199,7 +202,6 @@ export function InbuiltAmenitiesPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-primary">List of Inbuilt Amenities</h1>
 
@@ -215,7 +217,6 @@ export function InbuiltAmenitiesPage() {
       </div>
 
       <div className="bg-white rounded-lg border p-4 space-y-4">
-        {/* Toolbar */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-sm">Show</span>
@@ -275,7 +276,6 @@ export function InbuiltAmenitiesPage() {
           </div>
         </div>
 
-        {/* Table */}
         <Table>
           <TableHeader>
             <TableRow>
@@ -296,7 +296,7 @@ export function InbuiltAmenitiesPage() {
                     <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                       <Pencil className="h-4 w-4 text-violet-600" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(r.id)}>
+                    <Button size="sm" variant="ghost" onClick={() => setDeleteId(Number(r.id))}>
                       <Trash2 className="h-4 w-4 text-red-600" />
                     </Button>
                   </div>
@@ -305,7 +305,7 @@ export function InbuiltAmenitiesPage() {
                 <TableCell className="text-slate-600 font-medium">{r.title}</TableCell>
 
                 <TableCell>
-                  <StatusToggle value={r.status} onChange={(v) => handleToggleStatus(r, v)} />
+                  <StatusToggle value={r.status === 1} onChange={(v) => handleToggleStatus(r, v)} />
                 </TableCell>
               </TableRow>
             ))}
@@ -320,7 +320,6 @@ export function InbuiltAmenitiesPage() {
           </TableBody>
         </Table>
 
-        {/* Pagination */}
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
             Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{" "}
@@ -341,7 +340,6 @@ export function InbuiltAmenitiesPage() {
         </div>
       </div>
 
-      {/* Modals */}
       <InbuiltAmenitiesModal
         open={modalOpen}
         mode={modalMode}
@@ -353,7 +351,11 @@ export function InbuiltAmenitiesPage() {
         onSubmit={handleModalSubmit}
       />
 
-      <DeleteModal open={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} />
+      <DeleteModal
+        open={deleteId !== null}
+        onClose={() => setDeleteId(null)}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

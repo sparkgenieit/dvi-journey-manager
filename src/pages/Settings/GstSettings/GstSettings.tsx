@@ -15,11 +15,31 @@ import {
 
 import { DeleteModal } from "@/components/hotspot/DeleteModal";
 import { GstSettingsAPI as gstSettingsService } from "@/services/gstSettingsService";
+import type { GstSettingListRow } from "@/services/gstSettingsService";
 
 import { GstSettingsModal, GstFormValues } from "./GstSettingsModal";
 
+/** UI type: keep status boolean in the page, convert to/from service (0|1) */
+type GstSettingUI = Omit<GstSettingListRow, "status"> & { status: boolean };
+
+type GstSettingUpsertInput = {
+  gstTitle: string;
+  gst: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  status?: 0 | 1;
+};
+
+const toUI = (r: GstSettingListRow): GstSettingUI => ({
+  ...r,
+  status: r.status === 1,
+});
+
+const toServiceStatus = (b: boolean): 0 | 1 => (b ? 1 : 0);
+
 // ----- export helpers (same style as HotspotList) -----
-function to2D(rows: GstSetting[]) {
+function to2D(rows: GstSettingUI[]) {
   const headers = ["S.NO", "GST TITLE", "GST", "CGST", "SGST", "IGST", "STATUS"];
   const data = rows.map((r, i) => [
     String(i + 1),
@@ -32,10 +52,12 @@ function to2D(rows: GstSetting[]) {
   ]);
   return { headers, data };
 }
+
 function toCSV({ headers, data }: { headers: string[]; data: string[][] }) {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   return [headers.map(esc).join(","), ...data.map(row => row.map(esc).join(","))].join("\n");
 }
+
 function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] }) {
   const th = headers
     .map(h => `<th style="background:#f3f4f6;border:1px solid #e5e7eb;padding:6px 8px;text-align:left;">${h}</th>`)
@@ -51,6 +73,7 @@ function toHTMLTable({ headers, data }: { headers: string[]; data: string[][] })
 </table>
 </body></html>`;
 }
+
 function downloadBlob(name: string, mime: string, content: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -82,8 +105,8 @@ function StatusToggle(props: { value: boolean; onChange: (v: boolean) => void })
 }
 
 export function GstSettingsPage() {
-  const [rows, setRows] = useState<GstSetting[]>([]);
-  const [filtered, setFiltered] = useState<GstSetting[]>([]);
+  const [rows, setRows] = useState<GstSettingUI[]>([]);
+  const [filtered, setFiltered] = useState<GstSettingUI[]>([]);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(10); // screenshot shows 10 default
   const [currentPage, setCurrentPage] = useState(1);
@@ -92,7 +115,7 @@ export function GstSettingsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editing, setEditing] = useState<GstSetting | null>(null);
+  const [editing, setEditing] = useState<GstSettingUI | null>(null);
 
   useEffect(() => { load(); }, []);
 
@@ -113,9 +136,10 @@ export function GstSettingsPage() {
 
   async function load() {
     try {
-      const data = await gstSettingsService.list();
-      setRows(data);
-      setFiltered(data);
+      const data = await gstSettingsService.list(); // GstSettingListRow[]
+      const ui = data.map(toUI);
+      setRows(ui);
+      setFiltered(ui);
     } catch (e: any) {
       toast.error(e?.message || "Failed to load GST settings");
     }
@@ -140,10 +164,12 @@ export function GstSettingsPage() {
       toast.error("Copy failed");
     }
   };
+
   const onCSV = () => {
     if (!canExport) return;
     downloadBlob("gst-settings.csv", "text/csv;charset=utf-8;", toCSV(dataset));
   };
+
   const onExcel = () => {
     if (!canExport) return;
     downloadBlob("gst-settings.xls", "application/vnd.ms-excel", toHTMLTable(dataset));
@@ -155,7 +181,7 @@ export function GstSettingsPage() {
     setModalOpen(true);
   };
 
-  const openEdit = (row: GstSetting) => {
+  const openEdit = (row: GstSettingUI) => {
     setModalMode("edit");
     setEditing(row);
     setModalOpen(true);
@@ -164,7 +190,7 @@ export function GstSettingsPage() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await gstSettingsService.remove(deleteId);
+      await gstSettingsService.remove(Number(deleteId));
       toast.success("GST setting deleted");
       setDeleteId(null);
       await load();
@@ -173,12 +199,12 @@ export function GstSettingsPage() {
     }
   };
 
-  const handleToggleStatus = async (row: GstSetting, nextStatus: boolean) => {
+  const handleToggleStatus = async (row: GstSettingUI, nextStatus: boolean) => {
     // optimistic UI
     setRows(prev => prev.map(r => (r.id === row.id ? { ...r, status: nextStatus } : r)));
 
     try {
-      await gstSettingsService.update(row.id, { status: nextStatus });
+      await gstSettingsService.update(row.id, { status: toServiceStatus(nextStatus) });
       toast.success("Status updated");
       await load();
     } catch (e: any) {

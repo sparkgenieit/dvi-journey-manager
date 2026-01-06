@@ -1,4 +1,4 @@
-import { useEffect, useState, Dispatch, SetStateAction } from "react";
+import { useEffect, useState, Dispatch, SetStateAction, type KeyboardEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -16,10 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
-import {
-  AutoSuggestSelect,
-  AutoSuggestOption,
-} from "@/components/AutoSuggestSelect";
+import { AutoSuggestSelect, AutoSuggestOption } from "./CreateItineraryAutoSuggestSelect";
 import { RoomsBlock } from "./RoomsBlock";
 import { AgentOption } from "@/services/accountsManagerApi";
 import { LocationOption, SimpleOption } from "@/services/itineraryDropdownsMock";
@@ -364,7 +361,24 @@ const handleHotelFacilityChange = (vals: string[]) => {
     if (!pickupTime && startTime) setPickupTime(startTime);
   }, [pickupTime, startTime, setPickupTime]);
 
-  return (
+  
+
+  // ✅ Tab-to-select for shadcn/Radix <Select /> dropdowns:
+  // When SelectContent is open and user presses Tab, we "click" the highlighted
+  // item (or first item) so it becomes selected, then we DO NOT preventDefault
+  // so focus naturally moves to the next field.
+  const onSelectContentKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Tab") return;
+
+    const root = e.currentTarget as HTMLElement;
+    const highlighted = root.querySelector("[data-highlighted]") as HTMLElement | null;
+    const first = root.querySelector("[data-radix-collection-item]") as HTMLElement | null;
+    const target = highlighted ?? first;
+
+    if (target) target.click();
+    // IMPORTANT: do not preventDefault — Tab must move focus to next field.
+  };
+return (
     <Card className="border border-[#efdef8] rounded-lg bg-white shadow-none">
       <CardHeader className="pb-0" />
       <CardContent className="pt-4 pb-5 space-y-4">
@@ -622,7 +636,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="Customize" />
               </SelectTrigger>
-              <SelectContent
+              <SelectContent onKeyDown={onSelectContentKeyDown}
                 position="popper"
                 side="bottom"
                 align="start"
@@ -652,7 +666,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="By Flight" />
               </SelectTrigger>
-              <SelectContent
+              <SelectContent onKeyDown={onSelectContentKeyDown}
                 position="popper"
                 side="bottom"
                 align="start"
@@ -679,7 +693,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="By Flight" />
               </SelectTrigger>
-              <SelectContent
+              <SelectContent onKeyDown={onSelectContentKeyDown}
                 position="popper"
                 side="bottom"
                 align="start"
@@ -748,7 +762,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="No" />
               </SelectTrigger>
-              <SelectContent
+              <SelectContent onKeyDown={onSelectContentKeyDown}
                 position="popper"
                 side="bottom"
                 align="start"
@@ -787,7 +801,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="No" />
               </SelectTrigger>
-              <SelectContent
+              <SelectContent onKeyDown={onSelectContentKeyDown}
                 position="popper"
                 side="bottom"
                 align="start"
@@ -833,7 +847,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <SelectTrigger className="h-9 border-[#e5d7f6]">
                 <SelectValue placeholder="Vegetarian" />
               </SelectTrigger>
-              <SelectContent
+              <SelectContent onKeyDown={onSelectContentKeyDown}
                 position="popper"
                 side="bottom"
                 align="start"
