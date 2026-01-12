@@ -17,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2, RefreshCw, Edit } from "lucide-react";
 import { ItineraryService } from "@/services/itinerary";
 import { api } from "@/lib/api";
 import { VehicleList } from "./VehicleList";
@@ -27,6 +27,7 @@ import { PluckCardModal } from "./PluckCardModal";
 import { InvoiceModal } from "./InvoiceModal";
 import { IncidentalExpensesModal } from "./IncidentalExpensesModal";
 import { HotelSearchModal } from "@/components/hotels/HotelSearchModal";
+import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
 import { HotelSearchResult } from "@/hooks/useHotelSearch";
 import { toast } from "sonner";
 
@@ -682,6 +683,17 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     routeId: null,
     routeDate: "",
   });
+  
+  const [roomSelectionModal, setRoomSelectionModal] = useState<{
+    open: boolean;
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_name: string;
+  } | null>(null);
+
   const [availableHotels, setAvailableHotels] = useState<AvailableHotel[]>([]);
   const [loadingHotels, setLoadingHotels] = useState(false);
   const [isSelectingHotel, setIsSelectingHotel] = useState(false);
@@ -1550,20 +1562,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     setIsConfirmingQuotation(true);
 
     try {
-      // ✅ STEP 1: Save all hotel selections first
-      if (hotelSaveFunctionRef.current) {
-        console.log('💾 Saving hotel selections before confirming quotation...');
-        const saveSuccess = await hotelSaveFunctionRef.current();
-        if (!saveSuccess) {
-          toast.error('Failed to save hotel selections');
-          setIsConfirmingQuotation(false);
-          return;
-        }
-        console.log('✅ Hotel selections saved successfully');
-      }
-
-      // ℹ️ NOTE: No validation needed for hotel selection anymore
-      // Auto-selection will handle it - first hotel from each route will be selected if user didn't choose
+      // ℹ️ NOTE: Hotel selections are sent in the confirm-quotation payload
+      // No need to save them separately via hotels/select
 
       // ✅ AUTO-SELECT: If user hasn't selected a hotel for a route, auto-select first hotel from Budget tier (groupType 1)
       let autoSelectedHotels = { ...selectedTboHotels };
@@ -1599,7 +1599,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                 checkOutDate,
               };
               
-              this.logger.log(`ℹ️ Auto-selected for Route ${routeId}: ${firstHotelForRoute.hotelName} (Budget Tier)`);
+              console.log(`ℹ️ Auto-selected for Route ${routeId}: ${firstHotelForRoute.hotelName} (Budget Tier)`);
             }
           }
         });
@@ -2314,39 +2314,39 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                   )}
 
                   {segment.type === "checkin" && !readOnly && (
-                    <div 
-                      className="bg-[#e8f9fd] rounded-lg p-3 mb-3 border border-[#4ba3c3] cursor-pointer hover:shadow-md transition-shadow"
-                      onClick={() => {
-                        // Get city code from hotel details if available, otherwise use default
-                        let cityCode = "1"; // Default city code
-                        const hotelForDay = hotelDetails?.hotels?.find(h => 
-                          h.itineraryRouteId === day.id
-                        );
-                        if (hotelForDay?.destination) {
-                          // Try to map destination to code or use as-is
-                          const cityMap: { [key: string]: string } = {
-                            'Delhi': '1',
-                            'Agra': '2',
-                            'Jaipur': '3',
-                            'New Delhi': '1',
-                            'Mumbai': '4',
-                            'Bangalore': '5',
-                          };
-                          cityCode = cityMap[hotelForDay.destination] || "1";
-                        }
-                        
-                        openHotelSelectionModal(
-                          itinerary.planId || 0,
-                          day.id,
-                          day.date,
-                          cityCode,
-                          day.arrival || "Hotel"
-                        );
-                      }}
-                    >
+                    <div className="bg-[#e8f9fd] rounded-lg p-3 mb-3 border border-[#4ba3c3]">
                       <div className="flex items-center gap-3">
                         <Building2 className="h-6 w-6 text-[#4ba3c3]" />
-                        <div className="flex-1">
+                        <div 
+                          className="flex-1 cursor-pointer hover:bg-white/50 rounded-lg p-2 -m-2 transition-colors"
+                          onClick={() => {
+                            // Get city code from hotel details if available, otherwise use default
+                            let cityCode = "1"; // Default city code
+                            const hotelForDay = hotelDetails?.hotels?.find(h => 
+                              h.itineraryRouteId === day.id
+                            );
+                            if (hotelForDay?.destination) {
+                              // Try to map destination to code or use as-is
+                              const cityMap: { [key: string]: string } = {
+                                'Delhi': '1',
+                                'Agra': '2',
+                                'Jaipur': '3',
+                                'New Delhi': '1',
+                                'Mumbai': '4',
+                                'Bangalore': '5',
+                              };
+                              cityCode = cityMap[hotelForDay.destination] || "1";
+                            }
+                            
+                            openHotelSelectionModal(
+                              itinerary.planId || 0,
+                              day.id,
+                              day.date,
+                              cityCode,
+                              day.arrival || "Hotel"
+                            );
+                          }}
+                        >
                           <p className="text-sm font-semibold text-[#4a4260] mb-1">
                             Check-in to {segment.hotelName}
                           </p>
@@ -2365,6 +2365,36 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                             Click to change hotel
                           </p>
                         </div>
+                        
+                        {/* Room Category Selection Button */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-full bg-[#d546ab]/10 hover:bg-[#d546ab]/20 text-[#d546ab] shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const hotelForDay = hotelDetails?.hotels?.find(h => 
+                              h.itineraryRouteId === day.id
+                            );
+                            
+                            if (hotelForDay) {
+                              setRoomSelectionModal({
+                                open: true,
+                                itinerary_plan_hotel_details_ID: hotelForDay.itineraryPlanHotelDetailsId,
+                                itinerary_plan_id: itinerary.planId || 0,
+                                itinerary_route_id: day.id,
+                                hotel_id: hotelForDay.hotelId,
+                                group_type: hotelForDay.groupType,
+                                hotel_name: hotelForDay.hotelName || segment.hotelName,
+                              });
+                            } else {
+                              toast.error('Hotel information not available');
+                            }
+                          }}
+                          title="Select room categories"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -3295,6 +3325,28 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         onSelectHotel={handleSelectHotelFromSearch}
         isSelectingHotel={isSelectingHotel}
       />
+
+      {/* Hotel Room Selection Modal */}
+      {roomSelectionModal && (
+        <HotelRoomSelectionModal
+          open={roomSelectionModal.open}
+          onOpenChange={(open) => {
+            if (!open) {
+              setRoomSelectionModal(null);
+            }
+          }}
+          itinerary_plan_hotel_details_ID={roomSelectionModal.itinerary_plan_hotel_details_ID}
+          itinerary_plan_id={roomSelectionModal.itinerary_plan_id}
+          itinerary_route_id={roomSelectionModal.itinerary_route_id}
+          hotel_id={roomSelectionModal.hotel_id}
+          group_type={roomSelectionModal.group_type}
+          hotel_name={roomSelectionModal.hotel_name}
+          onSuccess={() => {
+            toast.success('Room categories updated successfully');
+            // Note: Room selection is saved to DB but doesn't affect the hotel list display
+          }}
+        />
+      )}
 
       {/* Gallery Modal */}
       <Dialog

@@ -286,6 +286,31 @@ export const ItineraryService = {
     departure_flight_details?: string;
     price_confirmation_type: string;
     hotel_group_type?: string;
+    tbo_hotels?: Array<{
+      routeId: number;
+      hotelCode: string;
+      bookingCode: string;
+      roomType: string;
+      checkInDate: string;
+      checkOutDate: string;
+      numberOfRooms: number;
+      guestNationality: string;
+      netAmount: number;
+      passengers: Array<{
+        title: string;
+        firstName: string;
+        lastName: string;
+        email?: string;
+        paxType: number;
+        leadPassenger: boolean;
+        age: number;
+        passportNo?: string;
+        passportIssueDate?: string;
+        passportExpDate?: string;
+        phoneNo?: string;
+      }>;
+    }>;
+    endUserIp?: string;
   }) {
     return api("itineraries/confirm-quotation", {
       method: "POST",

@@ -11,13 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, Edit } from "lucide-react";
 import { toast } from "sonner";
 import type {
   ItineraryHotelRow,
   ItineraryHotelTab,
 } from "./ItineraryDetails";
 import { ItineraryService } from "@/services/itinerary";
+import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
 
 type HotelListProps = {
   hotels: ItineraryHotelRow[];
@@ -130,6 +131,17 @@ export const HotelList: React.FC<HotelListProps> = ({
     newHotelName: string;
     routeDate: string;
     groupType?: number; // ✅ NEW: The groupType (tier) of the selected hotel
+  } | null>(null);
+
+  // Room selection modal state
+  const [roomSelectionModal, setRoomSelectionModal] = useState<{
+    open: boolean;
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_name: string;
   } | null>(null);
 
   // Initialise active tab from backend groups
@@ -820,11 +832,45 @@ export const HotelList: React.FC<HotelListProps> = ({
                                       </div>
                                     </div>
 
-                                    {/* Room Type Display (Fixed, not selectable) */}
+                                    {/* Room Type Display with Edit Button */}
                                     <div className="mb-3">
-                                      <label className="block text-xs font-medium text-[#4a4260] mb-1">
-                                        Room Type
-                                      </label>
+                                      <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-medium text-[#4a4260]">
+                                          Room Type
+                                        </label>
+                                        {!readOnly && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 rounded-full bg-[#d546ab]/10 hover:bg-[#d546ab]/20 text-[#d546ab]"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              
+                                              // Ensure group_type is valid (1-4)
+                                              const groupType = hotel.groupType || activeGroupType || 1;
+                                              
+                                              console.log('Opening room selection modal:', {
+                                                hotel_id: hotel.hotelId,
+                                                group_type: groupType,
+                                                hotel_name: hotel.hotelName,
+                                              });
+                                              
+                                              setRoomSelectionModal({
+                                                open: true,
+                                                itinerary_plan_hotel_details_ID: hotel.itineraryPlanHotelDetailsId || 0,
+                                                itinerary_plan_id: planId,
+                                                itinerary_route_id: hotel.itineraryRouteId || 0,
+                                                hotel_id: hotel.hotelId || 0,
+                                                group_type: groupType,
+                                                hotel_name: hotel.hotelName || '',
+                                              });
+                                            }}
+                                            title="Select room categories"
+                                          >
+                                            <Edit className="h-3 w-3" />
+                                          </Button>
+                                        )}
+                                      </div>
                                       <p className="text-sm text-[#4a4260] font-medium">
                                         {hotel.availableRoomTypes && hotel.availableRoomTypes.length > 0 
                                           ? hotel.availableRoomTypes[0].roomTypeTitle 
@@ -950,6 +996,28 @@ export const HotelList: React.FC<HotelListProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Hotel Room Selection Modal */}
+      {roomSelectionModal && (
+        <HotelRoomSelectionModal
+          open={roomSelectionModal.open}
+          onOpenChange={(open) => {
+            if (!open) {
+              setRoomSelectionModal(null);
+            }
+          }}
+          itinerary_plan_hotel_details_ID={roomSelectionModal.itinerary_plan_hotel_details_ID}
+          itinerary_plan_id={roomSelectionModal.itinerary_plan_id}
+          itinerary_route_id={roomSelectionModal.itinerary_route_id}
+          hotel_id={roomSelectionModal.hotel_id}
+          group_type={roomSelectionModal.group_type}
+          hotel_name={roomSelectionModal.hotel_name}
+          onSuccess={() => {
+            toast.success('Room categories updated successfully');
+            // Note: Room selection doesn't affect hotel list, no refresh needed
+          }}
+        />
+      )}
     </Card>
   );
 };
