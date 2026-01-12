@@ -105,9 +105,37 @@ export const ItineraryService = {
       method: "GET",
     });
   },
+
+  async getConfirmedItinerary(confirmedId: number) {
+    return api(`itineraries/confirmed/${confirmedId}`, {
+      method: "GET",
+    });
+  },
+
 // inside ItineraryService
-  async getHotelRoomDetails(quoteId: string) {
-    const res = await api(`/itineraries/hotel_room_details/${quoteId}`);
+  async getHotelRoomDetails(quoteId: string, itineraryRouteId?: number, clearCache: boolean = false) {
+    // ✅ Add timestamp to URL to bust browser cache
+    const timestamp = Date.now();
+    
+    // ✅ Build URL with clearCache parameter to force backend to bypass its memory cache
+    let url = `/itineraries/hotel_room_details/${quoteId}?_ts=${timestamp}`;
+    if (itineraryRouteId) {
+      url += `&itineraryRouteId=${itineraryRouteId}`;
+    }
+    if (clearCache) {
+      url += `&clearCache=true`; // ✅ Tell backend to clear its memory cache
+    }
+    
+    // ✅ Force bypass browser cache with cache-busting headers and no-store cache policy
+    const res = await api(url, {
+      method: "GET",
+      cache: "no-store",
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+      }
+    });
     return res; // api() already returns the JSON response directly
   },
 
@@ -203,11 +231,12 @@ export const ItineraryService = {
     routeId: number,
     hotelId: number,
     roomTypeId: number,
-    mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean }
+    mealPlan?: { all?: boolean; breakfast?: boolean; lunch?: boolean; dinner?: boolean },
+    groupType?: number,  // ✅ Add groupType parameter
   ) {
     return api("itineraries/hotels/select", {
       method: "POST",
-      body: { planId, routeId, hotelId, roomTypeId, mealPlan },
+      body: { planId, routeId, hotelId, roomTypeId, mealPlan, groupType },  // ✅ Send groupType
     });
   },
 
@@ -266,12 +295,20 @@ export const ItineraryService = {
 
   async cancelItinerary(data: {
     itinerary_plan_ID: number;
-    cancellation_percentage: number;
+    reason?: string;
+    cancellation_percentage?: number;
     cancel_guide?: boolean;
     cancel_hotspot?: boolean;
     cancel_activity?: boolean;
     cancel_hotel?: boolean;
     cancel_vehicle?: boolean;
+    cancellation_options?: {
+      modify_guide?: boolean;
+      modify_hotspot?: boolean;
+      modify_activity?: boolean;
+      modify_hotel?: boolean;
+      modify_vehicle?: boolean;
+    };
   }) {
     return api("itineraries/cancel", {
       method: "POST",
@@ -299,6 +336,12 @@ export const ItineraryService = {
     });
 
     return api(`itineraries/confirmed?${queryParams.toString()}`, {
+      method: "GET",
+    });
+  },
+
+  async getConfirmedItineraryDetails(id: string) {
+    return api(`itineraries/confirmed/${id}`, {
       method: "GET",
     });
   },

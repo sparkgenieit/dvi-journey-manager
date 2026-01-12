@@ -20,6 +20,7 @@ import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
 import { ConfirmedItineraries } from "./pages/ConfirmedItineraries";
+import { ConfirmedItineraryDetails } from "./pages/ConfirmedItineraryDetails";
 import { CancelledItineraries } from "./pages/CancelledItineraries";
 import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";
@@ -35,7 +36,7 @@ import VendorFormPage from "./pages/vendor/VendorFormPage";
 import DriversPage from "./pages/drivers/DriversPage";
 import DriverFormPage from "./pages/drivers/DriverFormPage";
 import VehicleAvailabilityPage from "./pages/vehicle-availability/VehicleAvailabilityPage";
-import { ItineraryDetails } from "./pages/ItineraryDetails";
+import { ItineraryDetailsRouter } from "./pages/ItineraryDetailsRouter";
 import HotspotList from "./pages/hotspot/HotspotList";
 import HotspotForm from "./pages/hotspot/HotspotForm";
 import HotspotPreview from "./pages/hotspot/HotspotPreview";
@@ -169,6 +170,14 @@ const App = () => (
               }
             />
             <Route
+              path="/confirmed-itinerary/:id"
+              element={
+                <MainLayout>
+                  <ConfirmedItineraryDetails />
+                </MainLayout>
+              }
+            />
+            <Route
               path="/cancelled-itinerary"
               element={
                 <MainLayout>
@@ -180,7 +189,7 @@ const App = () => (
               path="/itinerary-details/:id"
               element={
                 <MainLayout>
-                  <ItineraryDetails />
+                  <ItineraryDetailsRouter />
                 </MainLayout>
               }
             />

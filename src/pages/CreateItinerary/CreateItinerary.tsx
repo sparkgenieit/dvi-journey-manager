@@ -21,6 +21,7 @@ import { ItineraryPlanBlock } from "./ItineraryPlanBlock";
 import { RouteDetailsBlock } from "./RouteDetailsBlock";
 import { VehicleBlock } from "./VehicleBlock";
 import { ViaRouteDialog } from "./ViaRouteDialog";
+import { DefaultRoutesSuggestions } from "@/components/DefaultRoutesSuggestions";
 import { useToast } from "@/components/ui/use-toast";
 
 import {
@@ -72,6 +73,27 @@ function csvToNumberArray(v: unknown): number[] {
     .filter((n) => Number.isFinite(n));
 }
 
+
+// Helper function to calculate number of days between two DD/MM/YYYY date strings
+function calculateDaysBetweenDates(startDate: string, endDate: string): number {
+  if (!startDate || !endDate) return 1;
+  try {
+    // Parse DD/MM/YYYY format
+    const [startDay, startMonth, startYear] = startDate.split("/").map(Number);
+    const [endDay, endMonth, endYear] = endDate.split("/").map(Number);
+    
+    const start = new Date(startYear, startMonth - 1, startDay);
+    const end = new Date(endYear, endMonth - 1, endDay);
+    
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
+    
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    return Math.max(1, diffDays);
+  } catch {
+    return 1;
+  }
+}
 
 // ----------------- main component ------------
 
@@ -166,6 +188,10 @@ export const CreateItinerary = () => {
 
   const [showRouteConfirm, setShowRouteConfirm] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<any | null>(null);
+
+  // Route suggestions modal
+  const [showDefaultRouteSuggestions, setShowDefaultRouteSuggestions] =
+    useState(false);
 
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
 
@@ -393,7 +419,50 @@ useEffect(() => {
     })();
   }, [itineraryPlanId, setRouteDetails]);
 
-  // ----------------- handlers -----------------
+  // Auto-open route suggestions modal when itinerary type is "Default"
+  useEffect(() => {
+    if (itineraryTypeSelect && itineraryTypes.length > 0) {
+      const selectedType = itineraryTypes.find(
+        (t) => t.id === itineraryTypeSelect
+      );
+
+      // Check if the selected type is "Default"
+      if (selectedType?.label === "Default") {
+        // Check if we have required fields
+        if (
+          arrivalLocation &&
+          departureLocation &&
+          tripStartDate &&
+          tripEndDate
+        ) {
+          const noOfDays = routeDetails.length || 1;
+          setShowDefaultRouteSuggestions(true);
+        }
+      }
+    }
+  }, [itineraryTypeSelect, itineraryTypes, arrivalLocation, departureLocation, tripStartDate, tripEndDate, routeDetails.length]);
+
+  // Handler for route suggestion selection
+  const handleRouteSelection = (
+    routeDetails: any[],
+    tabIndex: number
+  ) => {
+    if (Array.isArray(routeDetails) && routeDetails.length > 0) {
+      setRouteDetails(
+        routeDetails.map((r, idx): RouteRow => ({
+          id: idx + 1,
+          day: r.day || idx + 1,
+          date: r.date || "",
+          source: r.source || "",
+          next: r.next || "",
+          via: r.via || "",
+          via_routes: [],
+          directVisit: r.directVisit ? "Yes" : "No",
+        }))
+      );
+    }
+    setShowDefaultRouteSuggestions(false);
+  };
 
   const addVehicle = () => {
     setVehicles((prev) => {
@@ -829,12 +898,33 @@ const handleSaveWithType = async (
             : ""
         }
       >
-        <RouteDetailsBlock
-          locations={locations}
-          routeDetails={routeDetails}
-          setRouteDetails={setRouteDetails}
-          onOpenViaRoutes={openViaRoutes}
-        />
+        {/* Show default routes if itinerary type is "Default" */}
+        {itineraryTypeSelect && itineraryTypes.find((t) => t.id === itineraryTypeSelect)?.label === "Default" ? (
+          <DefaultRoutesSuggestions
+            arrivalLocation={arrivalLocation}
+            departureLocation={departureLocation}
+            noOfDays={calculateDaysBetweenDates(tripStartDate, tripEndDate)}
+            startDate={tripStartDate}
+            endDate={tripEndDate}
+            onNoRoutesFound={() => {
+              const customizeType = itineraryTypes.find((t) => t.label === "Customize");
+              if (customizeType) {
+                setItineraryTypeSelect(customizeType.id);
+              }
+            }}
+            locations={locations}
+            routeDetails={routeDetails}
+            setRouteDetails={setRouteDetails}
+            onOpenViaRoutes={openViaRoutes}
+          />
+        ) : (
+          <RouteDetailsBlock
+            locations={locations}
+            routeDetails={routeDetails}
+            setRouteDetails={setRouteDetails}
+            onOpenViaRoutes={openViaRoutes}
+          />
+        )}
         {validationErrors.firstRouteSource && (
           <p className="mt-1 text-xs text-red-500">{validationErrors.firstRouteSource}</p>
         )}
@@ -898,6 +988,7 @@ const handleSaveWithType = async (
         maxRoutes={2}
         onSubmit={handleViaDialogSubmit}
       />
+
     </div>
   );
 };

@@ -24,6 +24,7 @@ type ApiOptions = {
   auth?: boolean; // default true
   headers?: Record<string, string>;
   body?: Record<string, unknown> | string | FormData | Blob | ArrayBuffer | null | undefined; // if object, will JSON.stringify (except FormData/Blob/ArrayBuffer)
+  cache?: RequestCache; // fetch cache option for cache-busting
 };
 
 /** Token helpers */
@@ -46,7 +47,7 @@ function buildUrl(path: string) {
 
 /** Universal API function */
 export async function api(path: string, opts: ApiOptions = {} ) {
-  const { method = "GET", auth = true, headers = {}, body } = opts;
+  const { method = "GET", auth = true, headers = {}, body, cache } = opts;
 console.debug("[api]", method, buildUrl(path));
   const isFormLike =
     (typeof FormData !== "undefined" && body instanceof FormData) ||
@@ -78,6 +79,7 @@ console.debug("[api]", method, buildUrl(path));
     method,
     headers: h,
     body: finalBody,
+    ...(cache && { cache }), // Add cache option if provided
   });
 
   console.debug(`[api] response ${res.status} ${res.statusText} for ${method} ${url}`);

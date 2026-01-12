@@ -23,12 +23,18 @@ type HotelListProps = {
   hotels: ItineraryHotelRow[];
   hotelTabs: ItineraryHotelTab[];
   hotelRatesVisible: boolean;
+  quoteId: string; // ✅ Required: Quote ID from parent
+  planId: number; // ✅ Required: Plan ID for hotel selection
   // Optional: in case you later wire an API to persist the toggle
   onToggleHotelRates?: (visible: boolean) => void;
   // Callback to refresh parent data after hotel update
   onRefresh?: () => void;
   // Callback when hotel group type (recommendation tab) changes
   onGroupTypeChange?: (groupType: number) => void;
+  // ✅ Callback to get save function reference (called once on mount)
+  onGetSaveFunction?: (saveFn: () => Promise<boolean>) => void;
+  // ✅ NEW: Read-only mode for confirmed itinerary
+  readOnly?: boolean;
 };
 
 // Shape of each room item coming from /itineraries/hotel_room_details
@@ -53,8 +59,10 @@ type HotelRoomDetail = {
   childWithoutBed?: number;
   extraBedCount?: number;
   perNightAmount?: number;
+  pricePerNight?: number; // ✅ Price from TBO API
   taxAmount?: number;
   totalAmount?: number;
+  groupType?: number; // ✅ Tier/category from TBO API
   [key: string]: any; // keep flexible – we only use a few fields
 };
 
@@ -74,12 +82,22 @@ export const HotelList: React.FC<HotelListProps> = ({
   hotels,
   hotelTabs,
   hotelRatesVisible,
+  quoteId, // ✅ Receive quoteId from parent
+  planId, // ✅ Receive planId from parent
   onToggleHotelRates,
   onRefresh,
   onGroupTypeChange,
+  onGetSaveFunction,
+  readOnly = false, // ✅ NEW: Default to edit mode
 }) => {
-  // quoteId from route: /itinerary-details/:id
-  const { id: quoteId } = useParams<{ id: string }>();
+  // ✅ Track which hotels were explicitly selected by user (key: "routeId-groupType")
+  const [selectedHotels, setSelectedHotels] = useState<Map<string, number>>(new Map() as Map<string, number>);
+
+  // ✅ Track unsaved hotel selections (for batch save on confirm)
+  const [unsavedSelections, setUnsavedSelections] = useState<Map<string, HotelRoomDetail>>(new Map());
+
+  // ✅ Local copy of hotels that can be updated immediately
+  const [localHotels, setLocalHotels] = useState<ItineraryHotelRow[]>(hotels);
 
   // Active tab = current group_type from backend
   const [activeGroupType, setActiveGroupType] = useState<number | null>(null);
@@ -89,18 +107,19 @@ export const HotelList: React.FC<HotelListProps> = ({
   // Expanded hotel row key & loaded rooms
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
   const [loadingRowKey, setLoadingRowKey] = useState<string | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [roomDetails, setRoomDetails] = useState<HotelRoomDetail[]>([]);
   const [selectedHotelId, setSelectedHotelId] = useState<number | null>(null);
   const [isUpdatingHotel, setIsUpdatingHotel] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false); // ✅ Track sync operation
 
-  // Form state for each room card: key = itineraryPlanHotelRoomDetailsId or unique identifier
-  const [roomFormData, setRoomFormData] = useState<Record<string, {
-    roomTypeId: number;
-    mealAll: boolean;
-    mealBreakfast: boolean;
-    mealLunch: boolean;
-    mealDinner: boolean;
-  }>>({});
+  // Cache for hotel room details by quoteId
+  const [roomDetailsCache, setRoomDetailsCache] = useState<Record<string, HotelRoomDetail[]>>({});
+
+  // ✅ Sync local hotels with prop changes
+  useEffect(() => {
+    setLocalHotels(hotels);
+  }, [hotels]);
 
   // Confirmation dialog state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -110,6 +129,7 @@ export const HotelList: React.FC<HotelListProps> = ({
     previousHotelName: string;
     newHotelName: string;
     routeDate: string;
+    groupType?: number; // ✅ NEW: The groupType (tier) of the selected hotel
   } | null>(null);
 
   // Initialise active tab from backend groups
@@ -129,6 +149,14 @@ export const HotelList: React.FC<HotelListProps> = ({
     setShowRates(hotelRatesVisible);
   }, [hotelRatesVisible]);
 
+  // Reset expanded row and loading state when hotels data changes (after selection)
+  useEffect(() => {
+    setExpandedRowKey(null);
+    setRoomDetails([]);
+    setLoadingRowKey(null);
+    setSelectedHotelId(null);
+  }, [hotels]);
+
   // Current group's total (GRAND_TOTAL_OF_THE_HOTEL_CHARGES)
   const currentTabTotal = useMemo(() => {
     if (!hotelTabs || !hotelTabs.length || activeGroupType == null) return 0;
@@ -136,12 +164,50 @@ export const HotelList: React.FC<HotelListProps> = ({
     return tab ? tab.totalAmount : 0;
   }, [hotelTabs, activeGroupType]);
 
-  // Filter hotel rows by groupType (tab)
+  // Filter hotel rows by groupType (tab) and show either SELECTED or LOWEST-PRICED hotel per day/route
   const currentHotelRows = useMemo(() => {
-    if (!hotels || !hotels.length) return [];
-    if (activeGroupType == null) return hotels;
-    return hotels.filter((h) => h.groupType === activeGroupType);
-  }, [hotels, activeGroupType]);
+    if (!localHotels || !localHotels.length) return [];
+    
+    // Filter by active group type
+    const filtered = activeGroupType == null 
+      ? localHotels 
+      : localHotels.filter((h) => h.groupType === activeGroupType);
+    
+    // Group hotels by route
+    const hotelsByRoute = new Map<number, ItineraryHotelRow[]>();
+    
+    filtered.forEach(hotel => {
+      const routeId = hotel.itineraryRouteId;
+      if (!hotelsByRoute.has(routeId)) {
+        hotelsByRoute.set(routeId, []);
+      }
+      hotelsByRoute.get(routeId)!.push(hotel);
+    });
+    
+    // For each route, select either the explicitly chosen hotel or the cheapest one
+    const displayHotels: ItineraryHotelRow[] = [];
+    hotelsByRoute.forEach((hotels, routeId) => {
+      const selectionKey = `${routeId}-${activeGroupType}`;
+      const selectedHotelId = selectedHotels.get(selectionKey);
+      
+      // If user explicitly selected a hotel, show that one
+      if (selectedHotelId) {
+        const selectedHotel = hotels.find(h => h.hotelId === selectedHotelId);
+        if (selectedHotel) {
+          displayHotels.push(selectedHotel);
+          return;
+        }
+      }
+      
+      // Otherwise, show the cheapest hotel
+      const sortedByPrice = [...hotels].sort((a, b) => 
+        (a.totalHotelCost || 0) - (b.totalHotelCost || 0)
+      );
+      displayHotels.push(sortedByPrice[0]);
+    });
+    
+    return displayHotels;
+  }, [localHotels, activeGroupType, selectedHotels]);
 
   // ---------- CLICK HANDLER: LOAD ROOM DETAILS & EXPAND ROW ----------
   const handleRowClick = async (hotel: ItineraryHotelRow, idx: number) => {
@@ -159,166 +225,183 @@ export const HotelList: React.FC<HotelListProps> = ({
       return;
     }
 
-    if (!quoteId) {
-      console.warn("Missing quoteId in route params");
-      return;
+    // Collapse any currently expanded row before loading new one
+    if (expandedRowKey !== null) {
+      setExpandedRowKey(null);
+      setRoomDetails([]);
     }
 
     const itineraryRouteId = hotel.itineraryRouteId;
-
-    setLoadingRowKey(rowKey);
-    setSelectedHotelId(hotel.hotelId); // Store the selected hotel ID from the row
-
-    try {
-      const resp = await ItineraryService.getHotelRoomDetails(quoteId);
-      console.log('Raw API response:', resp);
-
-      // Support both shapes: resp.rooms OR resp.data.rooms
-      let allRooms: any[] = Array.isArray((resp as any)?.rooms)
-        ? (resp as any).rooms
-        : Array.isArray((resp as any)?.data?.rooms)
-        ? (resp as any).data.rooms
-        : [];
-
-      console.log('All rooms from API:', allRooms.length);
-      if (allRooms.length > 0) {
-        console.log('Sample room:', allRooms[0]);
-      }
-      console.log('Filtering for routeId:', itineraryRouteId);
-
-      // Filter rooms for this specific route
-      if (itineraryRouteId) {
-        allRooms = allRooms.filter(
-          (r: any) => r.itineraryRouteId === itineraryRouteId
-        );
-      }
-
-      console.log('Filtered rooms count:', allRooms.length);
-      if (allRooms.length > 0) {
-        console.log('Filtered rooms:', allRooms);
-      }
-
-      // Map API response fields to component expected fields
-      const mappedRooms: HotelRoomDetail[] = allRooms.map((r: any) => ({
-        itineraryPlanId: r.itineraryPlanId,
-        itineraryRouteId: r.itineraryRouteId,
-        itineraryPlanHotelRoomDetailsId: r.itineraryPlanHotelRoomDetailsId,
-        hotelId: r.hotelId,
-        hotelName: r.hotelName,
-        hotelCategory: r.hotelCategory,
-        roomTypeId: r.roomTypeId,
-        roomTypeName: r.roomTypeName,
-        availableRoomTypes: r.availableRoomTypes || [],
-        noOfRooms: 1, // Default to 1 if not provided
-        adultCount: r.totalAdult || 0,
-        childWithBed: r.totalChildWithBed || 0,
-        childWithoutBed: r.totalChildWithoutBed || 0,
-        extraBedCount: r.totalExtraBed || 0,
-        perNightAmount: r.pricePerNight || 0,
-        taxAmount: (r.pricePerNight || 0) * (r.gstPercentage || 0) / 100,
-        totalAmount: (r.pricePerNight || 0) * (1 + (r.gstPercentage || 0) / 100),
+    setSelectedHotelId(hotel.hotelId);
+    
+    // ✅ Filter from localHotels - NO API CALL
+    const hotelsForRoute = localHotels
+      .filter((h: any) => 
+        h.itineraryRouteId === itineraryRouteId && 
+        h.groupType === hotel.groupType
+      )
+      .map((h: any) => ({
+        ...h,
+        itineraryPlanId: planId,
+        hotelCategory: h.category,
+        pricePerNight: h.totalHotelCost,
+        perNightAmount: h.totalHotelCost,
+        taxAmount: h.totalHotelTaxAmount || 0,
+        totalAmount: h.totalHotelCost + (h.totalHotelTaxAmount || 0),
+        noOfRooms: h.noOfRooms || 1,
+        roomTypeName: h.roomType,
+        availableRoomTypes: h.roomType ? [{
+          roomTypeId: 1,
+          roomTypeTitle: h.roomType
+        }] : [],
       }));
 
-      console.log('Mapped rooms:', mappedRooms);
+    // ✅ Deduplicate by hotelId to prevent duplicate cards
+    const uniqueHotels = Array.from(
+      new Map(hotelsForRoute.map(h => [h.hotelId, h])).values()
+    );
 
-      // GROUP ROOMS BY HOTEL - aggregate all room types per unique hotel
-      const hotelGroups = new Map<number, HotelRoomDetail>();
-      mappedRooms.forEach((room) => {
-        const hotelId = room.hotelId!;
-        if (!hotelGroups.has(hotelId)) {
-          // First room for this hotel - initialize with all its room types
-          hotelGroups.set(hotelId, {
-            ...room,
-            availableRoomTypes: [
-              {
-                roomTypeId: room.roomTypeId!,
-                roomTypeTitle: room.roomTypeName!,
-              },
-            ],
-          });
-        } else {
-          // Add this room type to the existing hotel's availableRoomTypes
-          const existingHotel = hotelGroups.get(hotelId)!;
-          existingHotel.availableRoomTypes!.push({
-            roomTypeId: room.roomTypeId!,
-            roomTypeTitle: room.roomTypeName!,
-          });
-        }
-      });
-
-      // Convert map to array for rendering (one entry per unique hotel)
-      let uniqueHotels = Array.from(hotelGroups.values());
-      console.log('Unique hotels after grouping:', uniqueHotels);
-
-      // ADD CURRENTLY SELECTED HOTEL as the first card if not already present
-      const currentHotelExists = uniqueHotels.some(h => h.hotelId === hotel.hotelId);
-      if (!currentHotelExists && hotel.hotelId > 0) {
-        // Create a card for the currently selected hotel from the row data
-        const currentHotelCard: HotelRoomDetail = {
-          itineraryPlanId: (resp as any).planId,
-          itineraryRouteId: hotel.itineraryRouteId,
-          itineraryPlanHotelRoomDetailsId: 0,
-          hotelId: hotel.hotelId,
-          hotelName: hotel.hotelName,
-          hotelCategory: hotel.category,
-          roomTypeId: 1,
-          roomTypeName: hotel.roomType || "Current Selection",
-          availableRoomTypes: [
-            { roomTypeId: 1, roomTypeTitle: "Budget Room" },
-            { roomTypeId: 2, roomTypeTitle: "Mid-Range Room" },
-            { roomTypeId: 3, roomTypeTitle: "Premium Room" },
-            { roomTypeId: 4, roomTypeTitle: "Luxury Room" },
-          ],
-          noOfRooms: 1,
-          adultCount: 0,
-          childWithBed: 0,
-          childWithoutBed: 0,
-          extraBedCount: 0,
-          perNightAmount: hotel.totalHotelCost || 0,
-          taxAmount: hotel.totalHotelTaxAmount || 0,
-          totalAmount: (hotel.totalHotelCost || 0) + (hotel.totalHotelTaxAmount || 0),
-        };
-        uniqueHotels = [currentHotelCard, ...uniqueHotels];
-      }
-
+    console.log('✅ Filtered from local state:', uniqueHotels.length, 'hotels');
+    
+    if (uniqueHotels.length > 0) {
       setRoomDetails(uniqueHotels);
       setExpandedRowKey(rowKey);
+    } else {
+      toast.warning('No hotels found for this route and tier');
+    }
+  };
 
-      // Initialize form data for each unique hotel with default values
-      const initialFormData: Record<string, any> = {};
-      uniqueHotels.forEach((hotel) => {
-        const roomKey = `hotel-${hotel.hotelId}`;
-        initialFormData[roomKey] = {
-          roomTypeId: hotel.availableRoomTypes?.[0]?.roomTypeId ?? 0,
-          mealAll: false,
-          mealBreakfast: false,
-          mealLunch: false,
-          mealDinner: false,
-        };
+  // ---------- HELPER: NORMALIZE API ROOM RESPONSE TO UI SHAPE ----------
+  const normalizeRoom = (r: any): HotelRoomDetail => {
+    const perNightAmount = Number(r.perNightAmount ?? r.pricePerNight ?? 0);
+    const nights = Number(r.numberOfNights ?? 1);
+    const taxAmount = Number(r.taxAmount ?? 0);
+    const totalAmount = Number(
+      r.totalAmount ?? r.totalPrice ?? (perNightAmount * nights + taxAmount)
+    );
+
+    return {
+      ...r,
+      itineraryPlanId: Number(r.itineraryPlanId ?? planId),
+      itineraryRouteId: Number(r.itineraryRouteId),
+      hotelId: Number(r.hotelId),
+      hotelName: r.hotelName ?? "",
+      hotelCategory: r.hotelCategory ?? r.category ?? null,
+      groupType: Number(r.groupType ?? 1),
+      perNightAmount,
+      taxAmount,
+      totalAmount,
+      noOfRooms: Number(r.noOfRooms ?? 1),
+      roomTypeName: r.roomTypeName ?? r.roomType ?? "",
+      availableRoomTypes: Array.isArray(r.availableRoomTypes) ? r.availableRoomTypes : [],
+    };
+  };
+
+  // ---------- HANDLER: SYNC FRESH HOTELS FOR ROUTE ----------
+  const handleSyncRoute = async (routeId: number) => {
+    if (!quoteId) return;
+
+    // ✅ Check for unsaved changes and warn user
+    if (unsavedSelections.size > 0) {
+      const confirmed = window.confirm(
+        `⚠️ You have ${unsavedSelections.size} unsaved hotel selection(s).\n\nSyncing will discard your unsaved changes and fetch fresh hotels from TBO.\n\nDo you want to continue?`
+      );
+      if (!confirmed) return;
+      
+      // Clear unsaved selections for this route
+      setUnsavedSelections(prev => {
+        const newMap = new Map(prev);
+        // Remove selections for this specific route
+        Array.from(newMap.keys()).forEach(key => {
+          if (key.startsWith(`${routeId}-`)) {
+            newMap.delete(key);
+          }
+        });
+        return newMap;
       });
-      setRoomFormData(initialFormData);
+    }
+
+    // Save current expanded state to restore it after sync
+    const currentExpandedKey = expandedRowKey;
+    
+    // ✅ Show loader
+    setIsSyncing(true);
+    
+    try {
+      // ✅ Pass clearCache: true to force backend to bypass its memory cache
+      const response = await ItineraryService.getHotelRoomDetails(quoteId, routeId, true);
+      
+      // ✅ API returns 'rooms' property, not 'roomDetails'
+      const roomsRaw = response?.rooms || response?.roomDetails || [];
+      const normalizedRooms: HotelRoomDetail[] = roomsRaw.map((r: any) => normalizeRoom(r));
+      
+      // ✅ Deduplicate by hotelId to prevent duplicate entries
+      const uniqueRooms = Array.from(
+        new Map(normalizedRooms.map((r: any) => [r.hotelId, r])).values()
+      );
+      
+      if (uniqueRooms.length > 0) {
+        // ✅ Update cache for ALL groupTypes for this route
+        const groupedByTier = new Map<number, any[]>();
+        uniqueRooms.forEach((room: any) => {
+          if (!groupedByTier.has(room.groupType)) {
+            groupedByTier.set(room.groupType, []);
+          }
+          groupedByTier.get(room.groupType)!.push(room);
+        });
+        
+        // Update cache for each tier
+        const newCache = { ...roomDetailsCache };
+        groupedByTier.forEach((hotels, groupType) => {
+          const cacheKey = `${routeId}-${groupType}`;
+          newCache[cacheKey] = hotels;
+        });
+        setRoomDetailsCache(newCache);
+        
+        // If a row is currently expanded, update its display with fresh data
+        if (currentExpandedKey) {
+          const expandedHotel = currentHotelRows.find((h, idx) => 
+            `${h.groupType}-${idx}` === currentExpandedKey
+          );
+          if (expandedHotel) {
+            const hotelsForTier = uniqueRooms.filter((r: any) => r.groupType === expandedHotel.groupType);
+            setRoomDetails(hotelsForTier);
+          }
+          setExpandedRowKey(currentExpandedKey);
+        }
+        
+        toast.success(`Hotels refreshed from TBO (${uniqueRooms.length} options found)`);
+      } else {
+        toast.error('No hotels found for this route');
+      }
     } catch (err) {
-      console.error("Error loading hotel room details", err);
-      setRoomDetails([]);
-      setExpandedRowKey(rowKey); // still expand but show "No room details"
+      console.error('Error syncing hotels:', err);
+      toast.error('Failed to sync hotels');
     } finally {
-      setLoadingRowKey(null);
+      // ✅ Hide loader
+      setIsSyncing(false);
     }
   };
 
   // ---------- HANDLER: CHOOSE/UPDATE HOTEL ----------
   const handleChooseOrUpdateHotel = async (room: HotelRoomDetail) => {
-    const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
-      `temp-${room.itineraryRouteId}-${room.hotelId}`;
+    console.log('🏨 Choose button clicked', room);
     
-    const formData = roomFormData[roomKey];
-    if (!formData || !room.itineraryPlanId || !room.itineraryRouteId || !room.hotelId) {
-      console.error("Missing required data for hotel selection");
+    if (!room.itineraryPlanId || !room.itineraryRouteId || !room.hotelId) {
+      console.error('❌ Missing required fields:', {
+        itineraryPlanId: room.itineraryPlanId,
+        itineraryRouteId: room.itineraryRouteId,
+        hotelId: room.hotelId
+      });
+      toast.error('Missing required hotel information');
       return;
     }
 
-    const isReplacing = room.hotelId !== selectedHotelId;
-    const currentHotel = hotels.find(h => h.itineraryRouteId === room.itineraryRouteId);
+    const roomHotelId = Number(room.hotelId);
+    const roomRouteId = Number(room.itineraryRouteId);
+    
+    const isReplacing = roomHotelId !== selectedHotelId;
+    const currentHotel = localHotels.find(h => h.itineraryRouteId === roomRouteId);
     const routeDate = currentHotel?.day || "";
 
     // Show confirmation dialog
@@ -328,62 +411,74 @@ export const HotelList: React.FC<HotelListProps> = ({
       previousHotelName: currentHotel?.hotelName || "",
       newHotelName: room.hotelName || "",
       routeDate,
+      groupType: room.groupType ? Number(room.groupType) : undefined, // ✅ Use hotel's ORIGINAL groupType from TBO (maintains correct tier classification)
     });
     setShowConfirmDialog(true);
   };
 
-  // ---------- HANDLER: CONFIRM HOTEL SELECTION ----------
   const handleConfirmHotelSelection = async () => {
     if (!pendingHotelAction) return;
 
     const { room, isReplacing } = pendingHotelAction;
-    const roomKey = room.itineraryPlanHotelRoomDetailsId?.toString() || 
-      `temp-${room.itineraryRouteId}-${room.hotelId}`;
-    const formData = roomFormData[roomKey];
+
+    // Validate required fields
+    if (!room.itineraryPlanId || !room.itineraryRouteId || !room.hotelId) {
+      toast.error("Missing required hotel information");
+      return;
+    }
 
     setIsUpdatingHotel(true);
     try {
-      await ItineraryService.selectHotel(
-        room.itineraryPlanId!,
-        room.itineraryRouteId!,
-        room.hotelId!,
-        formData.roomTypeId,
-        {
-          all: formData.mealAll,
-          breakfast: formData.mealBreakfast,
-          lunch: formData.mealLunch,
-          dinner: formData.mealDinner,
-        }
-      );
-
-      setShowConfirmDialog(false);
-      setPendingHotelAction(null);
-      
-      toast.success("Successfully Hotel Updated !!!", {
-        description: isReplacing 
-          ? `Hotel changed to ${room.hotelName}` 
-          : "Hotel details updated",
+      console.log("🏨 [HotelList] Storing hotel selection in state:", {
+        hotelName: room.hotelName,
+        hotelId: room.hotelId,
+        groupType: pendingHotelAction.groupType,
+        isReplacing,
       });
       
-      // Refresh data without page reload
-      if (onRefresh) {
-        onRefresh();
-      }
-
-      // Collapse the expanded row after selection
-      setExpandedRowKey(null);
-      setRoomDetails([]);
-      setRoomFormData({});
+      // ✅ Store selection in state (NO DB SAVE - will save on confirm quotation)
+      const selectionKey = `${room.itineraryRouteId}-${pendingHotelAction.groupType}`;
       
-      // Update selected hotel ID if it changed
-      if (isReplacing && room.hotelId) {
-        setSelectedHotelId(room.hotelId);
-      }
-    } catch (err) {
-      console.error("Error selecting/updating hotel:", err);
+      // Mark as unsaved selection
+      setUnsavedSelections(prev => {
+        const newMap = new Map(prev);
+        newMap.set(selectionKey, room);
+        return newMap;
+      });
+      
+      // Mark this hotel as explicitly selected for this route+tier
+      setSelectedHotels(prev => {
+        const newMap = new Map(prev);
+        newMap.set(selectionKey, Number(room.hotelId!));
+        return newMap;
+      });
+      
+      // ✅ DO NOT mutate localHotels - selectedHotels map already handles which hotel shows in table
+      // localHotels must remain the full option list so expanded view shows all cards
+
       setShowConfirmDialog(false);
       setPendingHotelAction(null);
-      toast.error("Failed to update hotel", {
+      
+      // ✅ Keep expanded row open and update selectedHotelId to show correct button state
+      setSelectedHotelId(Number(room.hotelId));
+      
+      toast.success("Hotel selected! 👍", {
+        description: `${room.hotelName} - Changes will be saved when you confirm the quotation`,
+      });
+      
+      // ✅ Switch to the hotel's tier tab automatically (show where it was saved)
+      if (pendingHotelAction?.groupType !== undefined && pendingHotelAction.groupType !== activeGroupType) {
+        setActiveGroupType(pendingHotelAction.groupType);
+        if (onGroupTypeChange) {
+          onGroupTypeChange(pendingHotelAction.groupType);
+        }
+        console.log(`🔄 [HotelList] Switched to hotel's tier tab (groupType: ${pendingHotelAction.groupType})`);
+      }
+    } catch (err) {
+      console.error("❌ [HotelList] Error selecting hotel:", err);
+      setShowConfirmDialog(false);
+      setPendingHotelAction(null);
+      toast.error("Failed to select hotel", {
         description: "Please try again",
       });
     } finally {
@@ -391,19 +486,103 @@ export const HotelList: React.FC<HotelListProps> = ({
     }
   };
 
-  const updateRoomFormData = (roomKey: string, field: string, value: any) => {
-    setRoomFormData((prev) => ({
-      ...prev,
-      [roomKey]: {
-        ...prev[roomKey],
-        [field]: value,
-      },
-    }));
+  // ---------- FUNCTION: SAVE ALL HOTEL SELECTIONS TO DB ----------
+  const saveAllHotelSelections = async () => {
+    if (unsavedSelections.size === 0) {
+      toast.info("No unsaved hotel selections to save");
+      return true;
+    }
+
+    console.log(`💾 Saving ${unsavedSelections.size} hotel selections to database...`);
+    
+    const savePromises: Promise<any>[] = [];
+    
+    unsavedSelections.forEach((room, selectionKey) => {
+      const defaultRoomTypeId = Number(room.availableRoomTypes?.[0]?.roomTypeId ?? 1);
+      
+      const promise = ItineraryService.selectHotel(
+        Number(room.itineraryPlanId),
+        Number(room.itineraryRouteId),
+        Number(room.hotelId),
+        defaultRoomTypeId,
+        {
+          all: false,
+          breakfast: false,
+          lunch: false,
+          dinner: false,
+        },
+        Number(room.groupType ?? 1)
+      );
+      
+      savePromises.push(promise);
+    });
+
+    try {
+      await Promise.all(savePromises);
+      console.log("✅ All hotel selections saved successfully");
+      
+      // Clear unsaved selections
+      setUnsavedSelections(new Map());
+      
+      toast.success(`✅ ${savePromises.length} hotel selection(s) saved successfully!`);
+      return true;
+    } catch (error) {
+      console.error("❌ Error saving hotel selections:", error);
+      toast.error("Failed to save some hotel selections");
+      return false;
+    }
   };
+
+  // Expose save function to parent via callback
+  React.useEffect(() => {
+    if (onGetSaveFunction) {
+      onGetSaveFunction(saveAllHotelSelections);
+    }
+  }, [onGetSaveFunction]);
+
 
   // ---------- RENDER ----------
   return (
-    <Card className="border-none shadow-none bg-white">
+    <Card className="border-none shadow-none bg-white relative">
+      {/* Loading Overlay with Circular Progress */}
+      {loadingRowKey !== null && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50 rounded-lg">
+          <div className="bg-white rounded-lg p-8 shadow-lg flex flex-col items-center gap-4">
+            {/* Circular Progress */}
+            <div className="relative w-24 h-24 flex items-center justify-center">
+              {/* Background circle */}
+              <svg className="absolute w-24 h-24" viewBox="0 0 100 100">
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="45"
+                  fill="none"
+                  stroke="#e5d9f2"
+                  strokeWidth="8"
+                />
+                {/* Progress circle */}
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="45"
+                  fill="none"
+                  stroke="#7c3aed"
+                  strokeWidth="8"
+                  strokeDasharray={`${(loadingProgress / 100) * 282.7} 282.7`}
+                  strokeLinecap="round"
+                  style={{ transform: "rotate(-90deg)", transformOrigin: "50px 50px" }}
+                />
+              </svg>
+              {/* Percentage text */}
+              <div className="text-center z-10">
+                <p className="text-2xl font-bold text-[#7c3aed]">{Math.round(loadingProgress)}%</p>
+              </div>
+            </div>
+            <p className="text-sm font-medium text-[#4a4260]">Loading hotel details...</p>
+            <p className="text-xs text-gray-500">This may take up to 30 seconds</p>
+          </div>
+        </div>
+      )}
       <CardContent className="pt-2">
         {/* Header + Display Rates toggle */}
         <div className="flex justify-between items-center mb-4">
@@ -425,39 +604,65 @@ export const HotelList: React.FC<HotelListProps> = ({
           </Button>
         </div>
 
+        {/* ✅ Unsaved Changes Indicator */}
+        {unsavedSelections.size > 0 && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+            <span className="text-amber-600 font-medium">⚠️ {unsavedSelections.size} unsaved hotel selection(s)</span>
+            <span className="text-amber-600 text-sm">- Changes will be saved when you confirm the quotation</span>
+          </div>
+        )}
+
         {/* Hotel Tabs – based on real backend groups */}
-        <div className="flex gap-2 mb-4 overflow-x-auto">
-          {hotelTabs && hotelTabs.length > 0 ? (
-            hotelTabs.map((tab) => {
-              const isActive = tab.groupType === activeGroupType;
-              return (
-                <Button
-                  key={tab.groupType}
-                  variant={isActive ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => {
-                    setActiveGroupType(tab.groupType);
-                    setExpandedRowKey(null);
-                    setRoomDetails([]);
-                    // Notify parent that group type changed
-                    if (onGroupTypeChange) {
-                      onGroupTypeChange(tab.groupType);
+        {/* ✅ IN READ-ONLY MODE: Hide tabs, show only selected hotel tier */}
+        {!readOnly && (
+          <div className="flex gap-2 mb-4 overflow-x-auto">
+            {hotelTabs && hotelTabs.length > 0 ? (
+              hotelTabs.map((tab) => {
+                const isActive = tab.groupType === activeGroupType;
+                return (
+                  <Button
+                    key={tab.groupType}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    disabled={loadingRowKey !== null}
+                    onClick={() => {
+                      setActiveGroupType(tab.groupType);
+                      setExpandedRowKey(null);
+                      setRoomDetails([]);
+                      // Notify parent that group type changed
+                      if (onGroupTypeChange) {
+                        onGroupTypeChange(tab.groupType);
+                      }
+                    }}
+                    className={
+                      isActive
+                        ? "bg-[#d546ab] hover:bg-[#c03d9f] text-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                        : "border-[#e5d9f2] text-[#4a4260] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     }
-                  }}
-                  className={
-                    isActive
-                      ? "bg-[#d546ab] hover:bg-[#c03d9f] text-white whitespace-nowrap"
-                      : "border-[#e5d9f2] text-[#4a4260] whitespace-nowrap"
-                  }
-                >
-                  {tab.label} ({formatCurrency(tab.totalAmount)})
-                </Button>
-              );
-            })
-          ) : (
-            <span className="text-sm text-gray-500">No hotel groups</span>
-          )}
-        </div>
+                  >
+                    {tab.label} ({formatCurrency(tab.totalAmount)})
+                  </Button>
+                );
+              })
+            ) : (
+              <span className="text-sm text-gray-500">No hotel groups</span>
+            )}
+          </div>
+        )}
+
+        {/* Read-only mode: Show selected tier info */}
+        {readOnly && activeGroupType !== null && (
+          <div className="mb-4 p-3 bg-[#f8f5fc] border border-[#e5d9f2] rounded-lg">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-[#4a4260]">
+                {hotelTabs.find(t => t.groupType === activeGroupType)?.label}
+              </h4>
+              <span className="text-[#d546ab] font-bold">
+                {formatCurrency(hotelTabs.find(t => t.groupType === activeGroupType)?.totalAmount)}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Hotel Table */}
         <div className="overflow-x-auto border rounded-lg">
@@ -497,9 +702,17 @@ export const HotelList: React.FC<HotelListProps> = ({
                 return (
                   <React.Fragment key={rowKey}>
                     {/* MAIN ROW */}
+                    {/* ✅ IN READ-ONLY MODE: Make row non-clickable */}
                     <tr
-                      className="border-t cursor-pointer hover:bg-[#f8f5fc]"
-                      onClick={() => handleRowClick(hotel, idx)}
+                      className={`border-t ${
+                        !readOnly && loadingRowKey === null ? "cursor-pointer hover:bg-[#f8f5fc]" : readOnly ? "cursor-default" : "cursor-not-allowed opacity-50"
+                      }`}
+                      onClick={() => {
+                        // Only allow clicking if not in read-only mode and not loading
+                        if (!readOnly && loadingRowKey === null) {
+                          handleRowClick(hotel, idx);
+                        }
+                      }}
                     >
                       <td className="px-4 py-3 text-sm text-[#6c6c6c]">
                         {hotel.day}
@@ -543,16 +756,30 @@ export const HotelList: React.FC<HotelListProps> = ({
                               No room details available for this day.
                             </div>
                           ) : (
-                            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                            <>
+                              {/* Sync Button */}
+                              <div className="flex justify-end mb-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleSyncRoute(Number(hotel.itineraryRouteId))}
+                                  disabled={isSyncing}
+                                  className="border-[#7c3aed] text-[#7c3aed] hover:bg-[#f3e8ff] disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {isSyncing ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      Syncing from TBO...
+                                    </>
+                                  ) : (
+                                    <>🔄 Sync Fresh Hotels</>
+                                  )}
+                                </Button>
+                              </div>
+                              
+                              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                               {roomDetails.map((hotel) => {
                                 const roomKey = `hotel-${hotel.hotelId}`;
-                                const formData = roomFormData[roomKey] || {
-                                  roomTypeId: hotel.availableRoomTypes?.[0]?.roomTypeId ?? 0,
-                                  mealAll: false,
-                                  mealBreakfast: false,
-                                  mealLunch: false,
-                                  mealDinner: false,
-                                };
 
                                 return (
                                 <div
@@ -593,79 +820,16 @@ export const HotelList: React.FC<HotelListProps> = ({
                                       </div>
                                     </div>
 
-                                    {/* Room Type Dropdown */}
+                                    {/* Room Type Display (Fixed, not selectable) */}
                                     <div className="mb-3">
                                       <label className="block text-xs font-medium text-[#4a4260] mb-1">
                                         Room Type
                                       </label>
-                                      <select 
-                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#7c3aed] focus:border-transparent"
-                                        value={formData.roomTypeId}
-                                        onChange={(e) => updateRoomFormData(roomKey, 'roomTypeId', Number(e.target.value))}
-                                      >
-                                        {hotel.availableRoomTypes && hotel.availableRoomTypes.length > 0 ? (
-                                          hotel.availableRoomTypes.map((rt) => (
-                                            <option key={rt.roomTypeId} value={rt.roomTypeId}>
-                                              {rt.roomTypeTitle}
-                                            </option>
-                                          ))
-                                        ) : (
-                                          <option value="">No room types available</option>
-                                        )}
-                                      </select>
-                                    </div>
-
-                                    {/* Meal Plan Checkboxes */}
-                                    <div className="mb-3">
-                                      <label className="block text-xs font-medium text-[#4a4260] mb-2">
-                                        Meal
-                                      </label>
-                                      <div className="grid grid-cols-2 gap-2">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
-                                            checked={formData.mealAll}
-                                            onChange={(e) => {
-                                              const checked = e.target.checked;
-                                              updateRoomFormData(roomKey, 'mealAll', checked);
-                                              if (checked) {
-                                                updateRoomFormData(roomKey, 'mealBreakfast', true);
-                                                updateRoomFormData(roomKey, 'mealLunch', true);
-                                                updateRoomFormData(roomKey, 'mealDinner', true);
-                                              }
-                                            }}
-                                          />
-                                          <span className="text-sm text-gray-700">All</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
-                                            checked={formData.mealBreakfast}
-                                            onChange={(e) => updateRoomFormData(roomKey, 'mealBreakfast', e.target.checked)}
-                                          />
-                                          <span className="text-sm text-gray-700">Breakfast</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
-                                            checked={formData.mealLunch}
-                                            onChange={(e) => updateRoomFormData(roomKey, 'mealLunch', e.target.checked)}
-                                          />
-                                          <span className="text-sm text-gray-700">Lunch</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            className="w-4 h-4 text-[#7c3aed] border-gray-300 rounded focus:ring-[#7c3aed]"
-                                            checked={formData.mealDinner}
-                                            onChange={(e) => updateRoomFormData(roomKey, 'mealDinner', e.target.checked)}
-                                          />
-                                          <span className="text-sm text-gray-700">Dinner</span>
-                                        </label>
-                                      </div>
+                                      <p className="text-sm text-[#4a4260] font-medium">
+                                        {hotel.availableRoomTypes && hotel.availableRoomTypes.length > 0 
+                                          ? hotel.availableRoomTypes[0].roomTypeTitle 
+                                          : "Not Available"}
+                                      </p>
                                     </div>
 
                                     {/* Price Summary */}
@@ -701,6 +865,7 @@ export const HotelList: React.FC<HotelListProps> = ({
                                 </div>
                               );})}
                             </div>
+                            </>
                           )}
                         </td>
                       </tr>

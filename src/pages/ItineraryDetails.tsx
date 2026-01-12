@@ -412,8 +412,14 @@ const TimePickerPopover: React.FC<{
 
 // ----------------- Main Component -----------------
 
-export const ItineraryDetails: React.FC = () => {
+interface ItineraryDetailsProps {
+  readOnly?: boolean; // If true, component is read-only (confirmed itinerary view)
+}
+
+export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = false }) => {
   const { id: quoteId } = useParams();
+  console.log('🔵 ItineraryDetails component MOUNTED with quoteId:', quoteId, 'readOnly:', readOnly);
+  
   const [itinerary, setItinerary] = useState<ItineraryDetailsResponse | null>(
     null
   );
@@ -744,6 +750,10 @@ export const ItineraryDetails: React.FC = () => {
   const [incidentalModal, setIncidentalModal] = useState(false);
   const [isConfirmingQuotation, setIsConfirmingQuotation] = useState(false);
   const [walletBalance, setWalletBalance] = useState<string>('');
+  
+  // ✅ Reference to hotel save function
+  const hotelSaveFunctionRef = React.useRef<(() => Promise<boolean>) | null>(null);
+  
   const [agentInfo, setAgentInfo] = useState<{
     quotation_no: string;
     agent_name: string;
@@ -772,14 +782,17 @@ export const ItineraryDetails: React.FC = () => {
     if (!quoteId) return;
     
     try {
+      console.log("🔄 [ItineraryDetails] Starting hotel data refresh for quoteId:", quoteId);
       const [detailsRes, hotelRes] = await Promise.all([
         ItineraryService.getDetails(quoteId),
         ItineraryService.getHotelDetails(quoteId),
       ]);
+      console.log("✅ [ItineraryDetails] Hotel data received:", { detailsRes, hotelRes });
       setItinerary(detailsRes as ItineraryDetailsResponse);
       setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      console.log("✅ [ItineraryDetails] State updated with new hotel data");
     } catch (e: any) {
-      console.error("Failed to refresh hotel data", e);
+      console.error("❌ [ItineraryDetails] Failed to refresh hotel data", e);
     }
   };
 
@@ -800,11 +813,8 @@ export const ItineraryDetails: React.FC = () => {
     console.log("Hotel group type changed to:", groupType);
     
     try {
-      // Refetch hotel data for the new group type
-      const hotelRes = await ItineraryService.getHotelDetails(quoteId);
-      setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
-      
-      // Refetch overall itinerary with the selected group type to update costs
+      // Only refetch itinerary details with the selected group type to update costs
+      // Hotel data (hotels, hotelTabs) does NOT change by group type, only cost breakdown
       const detailsRes = await ItineraryService.getDetails(quoteId, groupType);
       setItinerary(detailsRes as ItineraryDetailsResponse);
     } catch (e: any) {
@@ -824,6 +834,7 @@ export const ItineraryDetails: React.FC = () => {
         setLoading(true);
         setError(null);
 
+        // Fetch both details and hotel data in parallel
         const [detailsRes, hotelRes] = await Promise.all([
           ItineraryService.getDetails(quoteId),
           ItineraryService.getHotelDetails(quoteId),
@@ -843,6 +854,38 @@ export const ItineraryDetails: React.FC = () => {
 
     fetchDetails();
   }, [quoteId]);
+
+  /**
+   * ⚡ Lazy-load hotel details when needed (e.g., when user opens hotel selection)
+   * This prevents the initial page load from making the unnecessary second API call
+   */
+  const ensureHotelDetailsLoaded = async () => {
+    if (hotelDetails) {
+      // Already loaded
+      return hotelDetails;
+    }
+
+    if (!quoteId) return null;
+
+    try {
+      let hotelRes;
+      
+      // If confirmed itinerary is available, fetch from confirmed endpoint
+      if (itinerary?.confirmed_itinerary_plan_ID) {
+        hotelRes = await ItineraryService.getConfirmedItinerary(itinerary.confirmed_itinerary_plan_ID);
+      } else {
+        // Fallback to hotel details endpoint
+        hotelRes = await ItineraryService.getHotelDetails(quoteId);
+      }
+      
+      setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      return hotelRes;
+    } catch (error: any) {
+      console.error("Failed to load hotel details", error);
+      toast.error("Failed to load hotel details");
+      return null;
+    }
+  };
 
   const handleDeleteHotspot = async () => {
     if (!deleteHotspotModal.planId || !deleteHotspotModal.routeId || !deleteHotspotModal.hotspotId) {
@@ -1102,6 +1145,11 @@ export const ItineraryDetails: React.FC = () => {
     locationId: number,
     locationName: string
   ) => {
+    if (readOnly) {
+      console.log('Cannot add hotspots in read-only mode');
+      return;
+    }
+
     if (expandedAddHotspotDayId === dayId) {
       setExpandedAddHotspotDayId(null);
       return;
@@ -1194,6 +1242,11 @@ export const ItineraryDetails: React.FC = () => {
   };
 
   const handleAddHotspot = async (hotspotId: number) => {
+    if (readOnly) {
+      console.log('Cannot add hotspot in read-only mode');
+      return;
+    }
+
     if (!addHotspotModal.planId || !addHotspotModal.routeId) {
       return;
     }
@@ -1260,6 +1313,9 @@ export const ItineraryDetails: React.FC = () => {
     cityCode: string,
     cityName: string
   ) => {
+    // ⚡ Lazy-load hotel details when modal opens (not on initial page load)
+    ensureHotelDetailsLoaded();
+
     setHotelSelectionModal({
       open: true,
       planId,
@@ -1273,6 +1329,11 @@ export const ItineraryDetails: React.FC = () => {
   };
 
   const handleSelectHotel = async (hotelId: number, roomTypeId: number = 1) => {
+    if (readOnly) {
+      console.log('Cannot select hotel in read-only mode');
+      return;
+    }
+
     if (!hotelSelectionModal.planId || !hotelSelectionModal.routeId) {
       return;
     }
@@ -1321,6 +1382,11 @@ export const ItineraryDetails: React.FC = () => {
     hotel: HotelSearchResult,
     mealPlan?: any
   ) => {
+    if (readOnly) {
+      console.log('Cannot select hotel in read-only mode');
+      return;
+    }
+
     if (!hotelSelectionModal.planId || !hotelSelectionModal.routeId) {
       return;
     }
@@ -1484,6 +1550,63 @@ export const ItineraryDetails: React.FC = () => {
     setIsConfirmingQuotation(true);
 
     try {
+      // ✅ STEP 1: Save all hotel selections first
+      if (hotelSaveFunctionRef.current) {
+        console.log('💾 Saving hotel selections before confirming quotation...');
+        const saveSuccess = await hotelSaveFunctionRef.current();
+        if (!saveSuccess) {
+          toast.error('Failed to save hotel selections');
+          setIsConfirmingQuotation(false);
+          return;
+        }
+        console.log('✅ Hotel selections saved successfully');
+      }
+
+      // ℹ️ NOTE: No validation needed for hotel selection anymore
+      // Auto-selection will handle it - first hotel from each route will be selected if user didn't choose
+
+      // ✅ AUTO-SELECT: If user hasn't selected a hotel for a route, auto-select first hotel from Budget tier (groupType 1)
+      let autoSelectedHotels = { ...selectedTboHotels };
+      
+      if (hotelDetails?.hotels && hotelDetails.hotels.length > 0) {
+        // Get all routes that have hotels available
+        const routesWithHotels = new Set(hotelDetails.hotels.map((h: any) => h.itineraryRouteId));
+        
+        // For each route with hotels, check if user has already selected
+        routesWithHotels.forEach((routeId: number) => {
+          if (!autoSelectedHotels[routeId]) {
+            // Find first hotel from this route (should be Budget/groupType 1)
+            const firstHotelForRoute = hotelDetails.hotels.find(
+              (h: any) => h.itineraryRouteId === routeId && h.groupType === 1
+            );
+            
+            if (firstHotelForRoute) {
+              // Calculate check-in and check-out dates
+              const routeDay = itinerary?.days?.find(d => d.id === routeId);
+              const checkInDate = routeDay?.date || '';
+              const checkOutDate = routeDay 
+                ? new Date(new Date(routeDay.date).getTime() + 24*60*60*1000).toISOString().split('T')[0] 
+                : '';
+              
+              // Auto-select this hotel
+              autoSelectedHotels[routeId] = {
+                hotelCode: String(firstHotelForRoute.hotelId || firstHotelForRoute.hotelCode),
+                bookingCode: firstHotelForRoute.bookingCode || firstHotelForRoute.searchReference || String(firstHotelForRoute.hotelId),
+                roomType: firstHotelForRoute.roomType || 'Standard',
+                netAmount: firstHotelForRoute.totalHotelCost || 0,
+                hotelName: firstHotelForRoute.hotelName,
+                checkInDate,
+                checkOutDate,
+              };
+              
+              this.logger.log(`ℹ️ Auto-selected for Route ${routeId}: ${firstHotelForRoute.hotelName} (Budget Tier)`);
+            }
+          }
+        });
+      }
+      
+      console.log('DEBUG: Auto-selected hotels (merged):', autoSelectedHotels);
+
       // Build passengers array for TBO hotels
       const passengers = [
         {
@@ -1537,14 +1660,11 @@ export const ItineraryDetails: React.FC = () => {
         })),
       ];
 
-      // Build tbo_hotels array from BOTH manually selected AND auto-selected hotels
-      console.log('DEBUG: selectedTboHotels state:', selectedTboHotels);
-      console.log('DEBUG: hotelDetails from itinerary:', hotelDetails?.hotels);
+      // Build tbo_hotels array - using auto-selected hotels if user didn't manually select
+      // ✅ FIX: Only book hotels that were selected (manually or auto-selected)
+      console.log('DEBUG: autoSelectedHotels state:', autoSelectedHotels);
       
-      let tboHotels: any[] = [];
-      
-      // 1. Add manually selected hotels (user clicked Select Hotel)
-      tboHotels = Object.entries(selectedTboHotels).map(([routeId, hotelData]) => ({
+      const tboHotels: any[] = Object.entries(autoSelectedHotels).map(([routeId, hotelData]) => ({
         routeId: parseInt(routeId),
         hotelCode: hotelData.hotelCode,
         bookingCode: hotelData.bookingCode,
@@ -1557,40 +1677,7 @@ export const ItineraryDetails: React.FC = () => {
         passengers: passengers.filter(p => p.paxType !== 3 || passengers.length === 1),
       }));
       
-      // 2. Add auto-selected hotels from the itinerary (system-suggested)
-      if (hotelDetails?.hotels && hotelDetails.hotels.length > 0) {
-        const autoSelectedHotels = hotelDetails.hotels
-          .filter(h => h.hotelName && h.hotelName !== 'No Hotels Available') // Skip "No Hotels Available"
-          .map(h => {
-            // Skip if this route was already added manually
-            const alreadyAdded = tboHotels.some(t => t.routeId === h.itineraryRouteId);
-            if (alreadyAdded) return null;
-            
-            // Calculate dates from itinerary days
-            const routeDay = itinerary?.days?.find(d => d.id === h.itineraryRouteId);
-            const checkInDate = routeDay?.date || '';
-            const checkOutDate = routeDay ? new Date(new Date(routeDay.date).getTime() + 24*60*60*1000).toISOString().split('T')[0] : '';
-            
-            return {
-              routeId: h.itineraryRouteId,
-              hotelCode: String(h.hotelId || ''),
-              // Use bookingCode from API response (contains TBO searchReference)
-              bookingCode: h.bookingCode || h.searchReference || String(h.hotelId || ''),
-              roomType: h.roomType || 'Standard',
-              checkInDate,
-              checkOutDate,
-              numberOfRooms: 1,
-              guestNationality: 'IN',
-              netAmount: h.totalHotelCost || 0,
-              passengers: passengers.filter(p => p.paxType !== 3 || passengers.length === 1),
-            };
-          })
-          .filter(h => h !== null);
-        
-        tboHotels = [...tboHotels, ...autoSelectedHotels];
-      }
-      
-      console.log('DEBUG: Final tboHotels array (manual + auto):', tboHotels);
+      console.log('DEBUG: Final tboHotels array (with auto-selected):', tboHotels);
 
       // Get client IP
       const clientIp = await fetch('https://api.ipify.org?format=json')
@@ -2226,7 +2313,7 @@ export const ItineraryDetails: React.FC = () => {
                     </div>
                   )}
 
-                  {segment.type === "checkin" && (
+                  {segment.type === "checkin" && !readOnly && (
                     <div 
                       className="bg-[#e8f9fd] rounded-lg p-3 mb-3 border border-[#4ba3c3] cursor-pointer hover:shadow-md transition-shadow"
                       onClick={() => {
@@ -2282,7 +2369,7 @@ export const ItineraryDetails: React.FC = () => {
                     </div>
                   )}
 
-                  {segment.type === "hotspot" && (
+                  {segment.type === "hotspot" && !readOnly && (
                     <div className="flex flex-col gap-2 mb-3">
                       <div className="flex items-center gap-2 text-[#d546ab]">
                         <Plus className="h-4 w-4" />
@@ -2300,7 +2387,7 @@ export const ItineraryDetails: React.FC = () => {
                         </button>
                       </div>
 
-                      {expandedAddHotspotDayId === day.id && (
+                      {expandedAddHotspotDayId === day.id && !readOnly && (
                         <div className="ml-6 mt-2 p-4 bg-white rounded-xl border-2 border-dashed border-[#e5d9f2] animate-in fade-in slide-in-from-top-2 duration-300">
                           <div className="flex items-center justify-between mb-4">
                             <h4 className="text-sm font-bold text-[#4a4260]">Available Places in {day.arrival || "this location"}</h4>
@@ -2412,8 +2499,14 @@ export const ItineraryDetails: React.FC = () => {
           hotels={hotelDetails.hotels}
           hotelTabs={hotelDetails.hotelTabs}
           hotelRatesVisible={hotelDetails.hotelRatesVisible}
+          quoteId={quoteId!}
+          planId={itinerary.planId}
           onRefresh={refreshHotelData}
           onGroupTypeChange={handleHotelGroupTypeChange}
+          onGetSaveFunction={(saveFn) => {
+            hotelSaveFunctionRef.current = saveFn;
+          }}
+          readOnly={false}
         />
       )}
 
