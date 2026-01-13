@@ -1,6 +1,6 @@
 # Git Commit Guide - Frontend Hotels Feature
 
-## Commit Message
+## Commit Messages
 
 ```
 feat: implement real-time hotel search modal with TBO integration
