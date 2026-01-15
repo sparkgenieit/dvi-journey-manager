@@ -180,21 +180,8 @@ export const HotelList: React.FC<HotelListProps> = ({
             const cheapest = sortedByPrice[0];
             if (cheapest) {
               newSelected[groupType][routeId] = cheapest;
-              
-              // Mark as unsaved selection
-              const selectionKey = `${routeId}-${groupType}`;
-              setUnsavedSelections(prev => {
-                if (!prev.has(selectionKey)) {
-                  const newMap = new Map(prev);
-                  newMap.set(selectionKey, {
-                    ...cheapest,
-                    itineraryPlanId: planId,
-                    groupType: cheapest.groupType,
-                  } as HotelRoomDetail);
-                  return newMap;
-                }
-                return prev;
-              });
+              // ✅ Do NOT mark auto-selected hotels as "unsaved"
+              // Only user-initiated changes via "Choose/Update" should be marked unsaved
             }
           }
         });
