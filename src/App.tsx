@@ -20,7 +20,6 @@ import Dashboard from "./pages/Dashboard";
 import { CreateItinerary } from "./pages/CreateItinerary/CreateItinerary";
 import { LatestItinerary } from "./pages/LatestItinerary";
 import { ConfirmedItineraries } from "./pages/ConfirmedItineraries";
-import { ConfirmedItineraryDetails } from "./pages/ConfirmedItineraryDetails";
 import { CancelledItineraries } from "./pages/CancelledItineraries";
 import { AccountsManager } from "./pages/accounts/AccountsManager";
 import "./App.css";
@@ -173,7 +172,7 @@ const App = () => (
               path="/confirmed-itinerary/:id"
               element={
                 <MainLayout>
-                  <ConfirmedItineraryDetails />
+                  <ItineraryDetailsRouter />
                 </MainLayout>
               }
             />

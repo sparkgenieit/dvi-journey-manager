@@ -19,6 +19,7 @@ import type {
 } from "./ItineraryDetails";
 import { ItineraryService } from "@/services/itinerary";
 import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
+import { useHotelVoucherStatus } from "@/services/useHotelVoucherStatus";
 
 type HotelListProps = {
   hotels: ItineraryHotelRow[];
@@ -36,6 +37,18 @@ type HotelListProps = {
   onGetSaveFunction?: (saveFn: () => Promise<boolean>) => void;
   // ✅ NEW: Read-only mode for confirmed itinerary
   readOnly?: boolean;
+  // ✅ NEW: Callback to open hotel voucher modal
+  onCreateVoucher?: (hotelData: {
+    hotelId: number;
+    hotelName: string;
+    hotelEmail: string;
+    hotelStateCity: string;
+    routeDates: string[];
+    dayNumbers: number[];
+    hotelDetailsIds: number[];
+  }) => void;
+  // ✅ NEW: Callback when total selected hotel amount changes
+  onTotalChange?: (totalAmount: number) => void;
 };
 
 // Shape of each room item coming from /itineraries/hotel_room_details
@@ -90,9 +103,13 @@ export const HotelList: React.FC<HotelListProps> = ({
   onGroupTypeChange,
   onGetSaveFunction,
   readOnly = false, // ✅ NEW: Default to edit mode
+  onCreateVoucher, // ✅ NEW: Callback for voucher creation
+  onTotalChange, // ✅ NEW: Callback for total amount changes
 }) => {
-  // ✅ Track which hotels were explicitly selected by user (key: "routeId-groupType")
-  const [selectedHotels, setSelectedHotels] = useState<Map<string, number>>(new Map() as Map<string, number>);
+  // ✅ Track selected hotel PER GROUP TYPE and PER ROUTE
+  // Structure: selectedByGroup[groupType][routeId] = selected hotel row
+  // This ensures each groupType has its own independent selections
+  const [selectedByGroup, setSelectedByGroup] = useState<Record<number, Record<number, ItineraryHotelRow>>>({});
 
   // ✅ Track unsaved hotel selections (for batch save on confirm)
   const [unsavedSelections, setUnsavedSelections] = useState<Map<string, HotelRoomDetail>>(new Map());
@@ -117,10 +134,75 @@ export const HotelList: React.FC<HotelListProps> = ({
   // Cache for hotel room details by quoteId
   const [roomDetailsCache, setRoomDetailsCache] = useState<Record<string, HotelRoomDetail[]>>({});
 
-  // ✅ Sync local hotels with prop changes
+  // ✅ Sync local hotels with prop changes and auto-select hotels for ALL groupTypes
   useEffect(() => {
     setLocalHotels(hotels);
-  }, [hotels]);
+    
+    if (hotels.length === 0) return;
+    
+    // Auto-select cheapest hotel per route for EACH groupType
+    setSelectedByGroup(prev => {
+      const newSelected = { ...prev };
+      
+      // Group hotels by groupType, then by routeId
+      const hotelsByGroupAndRoute: Record<number, Record<number, ItineraryHotelRow[]>> = {};
+      
+      hotels.forEach(h => {
+        if (!hotelsByGroupAndRoute[h.groupType]) {
+          hotelsByGroupAndRoute[h.groupType] = {};
+        }
+        if (!hotelsByGroupAndRoute[h.groupType][h.itineraryRouteId]) {
+          hotelsByGroupAndRoute[h.groupType][h.itineraryRouteId] = [];
+        }
+        hotelsByGroupAndRoute[h.groupType][h.itineraryRouteId].push(h);
+      });
+      
+      // For each groupType and each route, auto-select cheapest if not already selected
+      Object.entries(hotelsByGroupAndRoute).forEach(([groupTypeStr, routeMap]) => {
+        const groupType = Number(groupTypeStr);
+        
+        if (!newSelected[groupType]) {
+          newSelected[groupType] = {};
+        }
+        
+        Object.entries(routeMap).forEach(([routeIdStr, hotelOptions]) => {
+          const routeId = Number(routeIdStr);
+          
+          // Only auto-select if not already selected for this groupType + route
+          if (!newSelected[groupType][routeId]) {
+            // Find cheapest hotel by (totalHotelCost + totalHotelTaxAmount)
+            const sortedByPrice = [...hotelOptions].sort((a, b) => {
+              const priceA = (a.totalHotelCost || 0) + (a.totalHotelTaxAmount || 0);
+              const priceB = (b.totalHotelCost || 0) + (b.totalHotelTaxAmount || 0);
+              return priceA - priceB;
+            });
+            
+            const cheapest = sortedByPrice[0];
+            if (cheapest) {
+              newSelected[groupType][routeId] = cheapest;
+              
+              // Mark as unsaved selection
+              const selectionKey = `${routeId}-${groupType}`;
+              setUnsavedSelections(prev => {
+                if (!prev.has(selectionKey)) {
+                  const newMap = new Map(prev);
+                  newMap.set(selectionKey, {
+                    ...cheapest,
+                    itineraryPlanId: planId,
+                    groupType: cheapest.groupType,
+                  } as HotelRoomDetail);
+                  return newMap;
+                }
+                return prev;
+              });
+            }
+          }
+        });
+      });
+      
+      return newSelected;
+    });
+  }, [hotels, planId]);
 
   // Confirmation dialog state
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -169,57 +251,64 @@ export const HotelList: React.FC<HotelListProps> = ({
     setSelectedHotelId(null);
   }, [hotels]);
 
-  // Current group's total (GRAND_TOTAL_OF_THE_HOTEL_CHARGES)
-  const currentTabTotal = useMemo(() => {
-    if (!hotelTabs || !hotelTabs.length || activeGroupType == null) return 0;
-    const tab = hotelTabs.find((t) => t.groupType === activeGroupType);
-    return tab ? tab.totalAmount : 0;
-  }, [hotelTabs, activeGroupType]);
+  // ✅ Get selected hotels for a specific groupType
+  const getSelectedHotelsForGroup = (groupType: number): ItineraryHotelRow[] => {
+    if (!selectedByGroup[groupType]) return [];
+    return Object.values(selectedByGroup[groupType]);
+  };
 
-  // Filter hotel rows by groupType (tab) and show either SELECTED or LOWEST-PRICED hotel per day/route
+  // ✅ Calculate total for a specific groupType (sum of selected hotels)
+  const getGroupTotal = (groupType: number): number => {
+    const selectedHotels = getSelectedHotelsForGroup(groupType);
+    return selectedHotels.reduce((sum, h) => 
+      sum + (h.totalHotelCost || 0) + (h.totalHotelTaxAmount || 0), 0
+    );
+  };
+
+  // ✅ Get active tab total
+  const getActiveTabTotal = (): number => {
+    if (activeGroupType === null) return 0;
+    return getGroupTotal(activeGroupType);
+  };
+
+  // ✅ Get overall total (sum of active groupType only, as per requirements)
+  const getOverallSelectedHotelTotal = (): number => {
+    return getActiveTabTotal();
+  };
+
+  // Current group's total for display
+  const currentTabTotal = useMemo(() => {
+    return getActiveTabTotal();
+  }, [activeGroupType, selectedByGroup]);
+
+  // Filter hotel rows by groupType (tab) and show SELECTED hotel per route
   const currentHotelRows = useMemo(() => {
-    if (!localHotels || !localHotels.length) return [];
+    if (!localHotels || !localHotels.length || activeGroupType === null) return [];
     
-    // Filter by active group type
-    const filtered = activeGroupType == null 
-      ? localHotels 
-      : localHotels.filter((h) => h.groupType === activeGroupType);
+    // Get all unique routes for this groupType
+    const routesInGroup = new Set<number>();
+    localHotels
+      .filter(h => h.groupType === activeGroupType)
+      .forEach(h => routesInGroup.add(h.itineraryRouteId));
     
-    // Group hotels by route
-    const hotelsByRoute = new Map<number, ItineraryHotelRow[]>();
-    
-    filtered.forEach(hotel => {
-      const routeId = hotel.itineraryRouteId;
-      if (!hotelsByRoute.has(routeId)) {
-        hotelsByRoute.set(routeId, []);
-      }
-      hotelsByRoute.get(routeId)!.push(hotel);
-    });
-    
-    // For each route, select either the explicitly chosen hotel or the cheapest one
+    // For each route, show the selected hotel for this groupType
     const displayHotels: ItineraryHotelRow[] = [];
-    hotelsByRoute.forEach((hotels, routeId) => {
-      const selectionKey = `${routeId}-${activeGroupType}`;
-      const selectedHotelId = selectedHotels.get(selectionKey);
-      
-      // If user explicitly selected a hotel, show that one
-      if (selectedHotelId) {
-        const selectedHotel = hotels.find(h => h.hotelId === selectedHotelId);
-        if (selectedHotel) {
-          displayHotels.push(selectedHotel);
-          return;
-        }
+    const selectedForGroup = selectedByGroup[activeGroupType] || {};
+    
+    routesInGroup.forEach(routeId => {
+      const selectedHotel = selectedForGroup[routeId];
+      if (selectedHotel) {
+        displayHotels.push(selectedHotel);
       }
-      
-      // Otherwise, show the cheapest hotel
-      const sortedByPrice = [...hotels].sort((a, b) => 
-        (a.totalHotelCost || 0) - (b.totalHotelCost || 0)
-      );
-      displayHotels.push(sortedByPrice[0]);
     });
     
-    return displayHotels;
-  }, [localHotels, activeGroupType, selectedHotels]);
+    // Sort by day order if available
+    return displayHotels.sort((a, b) => {
+      const dayA = parseInt(a.day?.replace(/\D/g, '') || '0');
+      const dayB = parseInt(b.day?.replace(/\D/g, '') || '0');
+      return dayA - dayB;
+    });
+  }, [localHotels, activeGroupType, selectedByGroup]);
 
   // ---------- CLICK HANDLER: LOAD ROOM DETAILS & EXPAND ROW ----------
   const handleRowClick = async (hotel: ItineraryHotelRow, idx: number) => {
@@ -312,6 +401,12 @@ export const HotelList: React.FC<HotelListProps> = ({
   // ---------- HANDLER: SYNC FRESH HOTELS FOR ROUTE ----------
   const handleSyncRoute = async (routeId: number) => {
     if (!quoteId) return;
+    
+    // ✅ BLOCK sync when in read-only mode (confirmed itinerary)
+    if (readOnly) {
+      console.log('⛔ [HotelList] Blocked handleSyncRoute - read-only mode');
+      return;
+    }
 
     // ✅ Check for unsaved changes and warn user
     if (unsavedSelections.size > 0) {
@@ -399,6 +494,12 @@ export const HotelList: React.FC<HotelListProps> = ({
   const handleChooseOrUpdateHotel = async (room: HotelRoomDetail) => {
     console.log('🏨 Choose button clicked', room);
     
+    // ✅ BLOCK hotel selection when in read-only mode (confirmed itinerary)
+    if (readOnly) {
+      console.log('⛔ [HotelList] Blocked handleChooseOrUpdateHotel - read-only mode');
+      return;
+    }
+    
     if (!room.itineraryPlanId || !room.itineraryRouteId || !room.hotelId) {
       console.error('❌ Missing required fields:', {
         itineraryPlanId: room.itineraryPlanId,
@@ -448,26 +549,41 @@ export const HotelList: React.FC<HotelListProps> = ({
         isReplacing,
       });
       
-      // ✅ Store selection in state (NO DB SAVE - will save on confirm quotation)
-      const selectionKey = `${room.itineraryRouteId}-${pendingHotelAction.groupType}`;
+      // ✅ Store selection by groupType and routeId
+      const routeId = Number(room.itineraryRouteId);
+      const groupType = pendingHotelAction.groupType || activeGroupType || 1;
       
-      // Mark as unsaved selection
+      // Find the full hotel row from localHotels
+      const selectedHotel = localHotels.find(h => 
+        h.hotelId === room.hotelId && 
+        h.itineraryRouteId === routeId &&
+        h.groupType === groupType
+      );
+      
+      if (!selectedHotel) {
+        console.error('❌ Could not find hotel in localHotels');
+        toast.error('Failed to select hotel');
+        return;
+      }
+      
+      // Update selectedByGroup[groupType][routeId]
+      setSelectedByGroup(prev => {
+        const newSelected = { ...prev };
+        if (!newSelected[groupType]) {
+          newSelected[groupType] = {};
+        }
+        newSelected[groupType][routeId] = selectedHotel;
+        return newSelected;
+      });
+      
+      // Mark as unsaved selection for backend save
+      const selectionKey = `${routeId}-${groupType}`;
       setUnsavedSelections(prev => {
         const newMap = new Map(prev);
         newMap.set(selectionKey, room);
         return newMap;
       });
       
-      // Mark this hotel as explicitly selected for this route+tier
-      setSelectedHotels(prev => {
-        const newMap = new Map(prev);
-        newMap.set(selectionKey, Number(room.hotelId!));
-        return newMap;
-      });
-      
-      // ✅ DO NOT mutate localHotels - selectedHotels map already handles which hotel shows in table
-      // localHotels must remain the full option list so expanded view shows all cards
-
       setShowConfirmDialog(false);
       setPendingHotelAction(null);
       
@@ -552,6 +668,14 @@ export const HotelList: React.FC<HotelListProps> = ({
     }
   }, [onGetSaveFunction]);
 
+  // ✅ Notify parent when active group total changes (active groupType only)
+  React.useEffect(() => {
+    if (onTotalChange && activeGroupType !== null) {
+      const total = getActiveTabTotal();
+      onTotalChange(total);
+    }
+  }, [activeGroupType, selectedByGroup, onTotalChange]);
+
 
   // ---------- RENDER ----------
   return (
@@ -598,7 +722,14 @@ export const HotelList: React.FC<HotelListProps> = ({
       <CardContent className="pt-2">
         {/* Header + Display Rates toggle */}
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-[#4a4260]">HOTEL LIST</h2>
+          {/* ✅ Read-only mode: Show simple "Hotel Details (₹ total)" like PHP */}
+          {readOnly ? (
+            <h2 className="text-lg font-semibold text-[#4a4260]">
+              Hotel Details ({formatCurrency(getOverallSelectedHotelTotal())})
+            </h2>
+          ) : (
+            <h2 className="text-lg font-semibold text-[#4a4260]">HOTEL LIST</h2>
+          )}
 
           {/* Simple toggle using Button (no extra component imports) */}
           <Button
@@ -625,12 +756,14 @@ export const HotelList: React.FC<HotelListProps> = ({
         )}
 
         {/* Hotel Tabs – based on real backend groups */}
-        {/* ✅ IN READ-ONLY MODE: Hide tabs, show only selected hotel tier */}
+        {/* ✅ IN READ-ONLY MODE: Hide tabs completely, no group type display */}
         {!readOnly && (
           <div className="flex gap-2 mb-4 overflow-x-auto">
             {hotelTabs && hotelTabs.length > 0 ? (
               hotelTabs.map((tab) => {
                 const isActive = tab.groupType === activeGroupType;
+                // ✅ Show sum of SELECTED hotels for this groupType (1 per route)
+                const tabTotal = getGroupTotal(tab.groupType);
                 return (
                   <Button
                     key={tab.groupType}
@@ -652,27 +785,13 @@ export const HotelList: React.FC<HotelListProps> = ({
                         : "border-[#e5d9f2] text-[#4a4260] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     }
                   >
-                    {tab.label} ({formatCurrency(tab.totalAmount)})
+                    {tab.label} ({formatCurrency(tabTotal)})
                   </Button>
                 );
               })
             ) : (
               <span className="text-sm text-gray-500">No hotel groups</span>
             )}
-          </div>
-        )}
-
-        {/* Read-only mode: Show selected tier info */}
-        {readOnly && activeGroupType !== null && (
-          <div className="mb-4 p-3 bg-[#f8f5fc] border border-[#e5d9f2] rounded-lg">
-            <div className="flex items-center justify-between">
-              <h4 className="font-semibold text-[#4a4260]">
-                {hotelTabs.find(t => t.groupType === activeGroupType)?.label}
-              </h4>
-              <span className="text-[#d546ab] font-bold">
-                {formatCurrency(hotelTabs.find(t => t.groupType === activeGroupType)?.totalAmount)}
-              </span>
-            </div>
           </div>
         )}
 
@@ -747,8 +866,46 @@ export const HotelList: React.FC<HotelListProps> = ({
                           {formatCurrency(rowTotal)}
                         </td>
                       )}
-                      <td className="px-4 py-3 text-sm text-[#6c6c6c]">
-                        {hotel.mealPlan || "-"}
+                      <td className="px-4 py-3 text-sm text-[#6c6c6c] flex items-center justify-between">
+                        <span>{hotel.mealPlan || "-"}</span>
+                        {readOnly && onCreateVoucher && hotel.hotelId && hotel.hotelName && (
+                          (() => {
+                            const status = useHotelVoucherStatus(planId, hotel.hotelId!);
+                            if (status === 'cancelled') {
+                              return (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="ml-2 border-[#d546ab] text-[#d546ab] bg-gray-200 text-gray-400 cursor-not-allowed text-xs"
+                                  disabled
+                                >
+                                  Cancelled
+                                </Button>
+                              );
+                            }
+                            return (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="ml-2 border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff] text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCreateVoucher({
+                                    hotelId: hotel.hotelId!,
+                                    hotelName: hotel.hotelName!,
+                                    hotelEmail: '',
+                                    hotelStateCity: hotel.destination || '',
+                                    routeDates: [hotel.date || ''],
+                                    dayNumbers: [parseInt(hotel.day?.replace('Day ', '') || '0')],
+                                    hotelDetailsIds: [hotel.itineraryPlanHotelDetailsId || 0]
+                                  });
+                                }}
+                              >
+                                Cancel Voucher
+                              </Button>
+                            );
+                          })()
+                        )}
                       </td>
                     </tr>
 
@@ -905,7 +1062,12 @@ export const HotelList: React.FC<HotelListProps> = ({
                                       className="w-full py-2 px-4 bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-medium rounded-md transition-colors text-sm"
                                       onClick={() => handleChooseOrUpdateHotel(hotel)}
                                     >
-                                      {hotel.hotelId === selectedHotelId ? "Update" : "Choose"}
+                                      {(() => {
+                                        const groupType = activeGroupType || 1;
+                                        const routeId = Number(hotel.itineraryRouteId);
+                                        const selected = selectedByGroup[groupType]?.[routeId];
+                                        return selected?.hotelId === hotel.hotelId ? "Update" : "Choose";
+                                      })()}
                                     </button>
                                   </div>
                                 </div>

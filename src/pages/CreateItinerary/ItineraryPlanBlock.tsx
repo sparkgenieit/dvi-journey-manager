@@ -503,7 +503,13 @@ const handleHotelFacilityChange = (vals: string[]) => {
                   mode="single"
                   selected={tripStartDateObj}
                   onSelect={(date) => {
-                    if (date) setTripStartDate(formatDDMMYYYY(date));
+                    if (date) {
+                      setTripStartDate(formatDDMMYYYY(date));
+                      // Clear Trip End Date if it's before the new Trip Start Date
+                      if (tripEndDateObj && date > tripEndDateObj) {
+                        setTripEndDate("");
+                      }
+                    }
                     setIsTripStartOpen(false);
                   }}
                   disabled={disablePastAndToday}
@@ -556,7 +562,20 @@ const handleHotelFacilityChange = (vals: string[]) => {
                     if (date) setTripEndDate(formatDDMMYYYY(date));
                     setIsTripEndOpen(false);
                   }}
-                  disabled={disablePastAndToday}
+                  disabled={(date) => {
+                    // Block past dates and today
+                    if (disablePastAndToday(date)) return true;
+                    // Block dates before Trip Start Date (same day allowed)
+                    if (tripStartDateObj) {
+                      const d = new Date(date);
+                      d.setHours(0, 0, 0, 0);
+                      const startD = new Date(tripStartDateObj);
+                      startD.setHours(0, 0, 0, 0);
+                      return d < startD;
+                    }
+                    return false;
+                  }}
+                  defaultMonth={tripEndDateObj || tripStartDateObj || undefined}
                   initialFocus
                   classNames={{ day_today: "" }}
                 />

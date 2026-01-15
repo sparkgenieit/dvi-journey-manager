@@ -28,6 +28,8 @@ import { InvoiceModal } from "./InvoiceModal";
 import { IncidentalExpensesModal } from "./IncidentalExpensesModal";
 import { HotelSearchModal } from "@/components/hotels/HotelSearchModal";
 import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
+import { CancelItineraryModal } from "@/components/modals/CancelItineraryModal";
+import { HotelVoucherModal } from "@/components/modals/HotelVoucherModal";
 import { HotelSearchResult } from "@/hooks/useHotelSearch";
 import { toast } from "sonner";
 
@@ -306,7 +308,8 @@ const TimePickerPopover: React.FC<{
   value: string;
   onSave: (newValue: string) => Promise<void>;
   label: string;
-}> = ({ value, onSave, label }) => {
+  disabled?: boolean;
+}> = ({ value, onSave, label, disabled = false }) => {
   const parts = value.split(' ');
   const [localTime, setLocalTime] = useState(parts[0] || "09:00");
   const [localAmPm, setLocalAmPm] = useState(parts[1] || "AM");
@@ -356,13 +359,13 @@ const TimePickerPopover: React.FC<{
       <span className="text-[10px] font-bold text-[#6c6c6c] uppercase mb-3 tracking-wider">{label}</span>
       <div className="flex items-center gap-4">
         <div className="flex flex-col items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(1)} disabled={isSaving}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(1)} disabled={disabled || isSaving}>
             <ChevronUp className="h-5 w-5" />
           </Button>
           <div className="bg-[#f8f5fc] border border-[#e5d9f2] rounded-md w-12 h-12 flex items-center justify-center text-xl font-bold text-[#4a4260]">
             {String(hours).padStart(2, '0')}
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(-1)} disabled={isSaving}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(-1)} disabled={disabled || isSaving}>
             <ChevronDown className="h-5 w-5" />
           </Button>
         </div>
@@ -370,13 +373,13 @@ const TimePickerPopover: React.FC<{
         <span className="text-2xl font-bold text-[#4a4260] mt-2">:</span>
         
         <div className="flex flex-col items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(5)} disabled={isSaving}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(5)} disabled={disabled || isSaving}>
             <ChevronUp className="h-5 w-5" />
           </Button>
           <div className="bg-[#f8f5fc] border border-[#e5d9f2] rounded-md w-12 h-12 flex items-center justify-center text-xl font-bold text-[#4a4260]">
             {String(minutes).padStart(2, '0')}
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(-5)} disabled={isSaving}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(-5)} disabled={disabled || isSaving}>
             <ChevronDown className="h-5 w-5" />
           </Button>
         </div>
@@ -386,27 +389,33 @@ const TimePickerPopover: React.FC<{
             variant="outline" 
             className={`h-12 w-12 font-bold border-2 ${localAmPm === 'AM' ? 'border-[#d546ab] text-[#d546ab] bg-[#fdf2f8]' : 'border-[#4a4260] text-[#4a4260]'}`}
             onClick={toggleAmPm}
-            disabled={isSaving}
+            disabled={disabled || isSaving}
           >
             {localAmPm}
           </Button>
         </div>
       </div>
 
-      <Button 
-        className="w-full mt-4 bg-[#d546ab] hover:bg-[#c4359a] text-white shadow-md"
-        onClick={handleSave}
-        disabled={isSaving}
-      >
-        {isSaving ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Updating...
-          </>
-        ) : (
-          "Update Time"
-        )}
-      </Button>
+      {disabled ? (
+        <div className="w-full mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+          <p className="text-xs text-amber-700">⚠️ Confirmed itinerary – editing disabled</p>
+        </div>
+      ) : (
+        <Button 
+          className="w-full mt-4 bg-[#d546ab] hover:bg-[#c4359a] text-white shadow-md"
+          onClick={handleSave}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Updating...
+            </>
+          ) : (
+            "Update Time"
+          )}
+        </Button>
+      )}
     </div>
   );
 };
@@ -428,6 +437,20 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     useState<ItineraryHotelDetailsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // ✅ Track the total amount of selected hotels (overrides backend costBreakdown.totalHotelAmount)
+  const [selectedHotelTotal, setSelectedHotelTotal] = useState<number>(0);
+  
+  // ✅ Track active hotel groupType to pass to API calls
+  const [activeHotelGroupType, setActiveHotelGroupType] = useState<number | null>(null);
+  
+  // ✅ Determine if this is a confirmed itinerary (locked mode)
+  const isConfirmed = 
+    !!readOnly || 
+    itinerary?.isConfirmed === true || 
+    itinerary?.status === "CONFIRMED";
+  
+  console.log('🔒 isConfirmed:', isConfirmed, '| readOnly prop:', readOnly, '| itinerary.isConfirmed:', itinerary?.isConfirmed, '| itinerary.status:', itinerary?.status);
   
   // Delete hotspot modal state
   const [deleteHotspotModal, setDeleteHotspotModal] = useState<{
@@ -789,9 +812,30 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const [additionalChildren, setAdditionalChildren] = useState<Array<{ name: string; age: string }>>([]);
   const [additionalInfants, setAdditionalInfants] = useState<Array<{ name: string; age: string }>>([]);
 
+  // Cancellation modal state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  // Hotel voucher modal state
+  const [hotelVoucherModalOpen, setHotelVoucherModalOpen] = useState(false);
+  const [selectedHotelForVoucher, setSelectedHotelForVoucher] = useState<{
+    hotelId: number;
+    hotelName: string;
+    hotelEmail: string;
+    hotelStateCity: string;
+    routeDates: string[];
+    dayNumbers: number[];
+    hotelDetailsIds: number[];
+  } | null>(null);
+
   // Refresh hotel data after hotel update
   const refreshHotelData = async () => {
     if (!quoteId) return;
+    
+    // ✅ BLOCK hotel API calls when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Blocked refreshHotelData - confirmed mode');
+      return;
+    }
     
     try {
       console.log("🔄 [ItineraryDetails] Starting hotel data refresh for quoteId:", quoteId);
@@ -812,7 +856,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     if (!quoteId) return;
     
     try {
-      const detailsRes = await ItineraryService.getDetails(quoteId);
+      // ✅ Pass activeHotelGroupType to maintain hotel selection when vehicle changes
+      const detailsRes = await ItineraryService.getDetails(quoteId, activeHotelGroupType || undefined);
       setItinerary(detailsRes as ItineraryDetailsResponse);
     } catch (e: any) {
       console.error("Failed to refresh vehicle data", e);
@@ -822,7 +867,16 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const handleHotelGroupTypeChange = async (groupType: number) => {
     if (!quoteId) return;
     
+    // ✅ BLOCK hotel group changes when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Blocked handleHotelGroupTypeChange - confirmed mode');
+      return;
+    }
+    
     console.log("Hotel group type changed to:", groupType);
+    
+    // ✅ Update state to track active groupType
+    setActiveHotelGroupType(groupType);
     
     try {
       // Only refetch itinerary details with the selected group type to update costs
@@ -878,6 +932,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     }
 
     if (!quoteId) return null;
+    
+    // ✅ BLOCK hotel API calls when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Blocked ensureHotelDetailsLoaded - confirmed mode');
+      return null;
+    }
 
     try {
       let hotelRes;
@@ -929,7 +989,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       // Reload itinerary data
       if (quoteId) {
         const [detailsRes, hotelRes] = await Promise.all([
-          ItineraryService.getDetails(quoteId),
+          ItineraryService.getDetails(quoteId, activeHotelGroupType || undefined),
           ItineraryService.getHotelDetails(quoteId),
         ]);
         setItinerary(detailsRes as ItineraryDetailsResponse);
@@ -955,7 +1015,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       // Reload itinerary data
       if (quoteId) {
         const [detailsRes, hotelRes] = await Promise.all([
-          ItineraryService.getDetails(quoteId),
+          ItineraryService.getDetails(quoteId, activeHotelGroupType || undefined),
           ItineraryService.getHotelDetails(quoteId),
         ]);
         setItinerary(detailsRes as ItineraryDetailsResponse);
@@ -976,6 +1036,13 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     startTimeDisplay: string,
     endTimeDisplay: string
   ) => {
+    // ✅ BLOCK time updates when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Blocked handleUpdateRouteTimesDirect - confirmed mode');
+      toast.error('Cannot update times in confirmed itinerary');
+      return;
+    }
+
     const startTimeHms = parseDisplayTimeToHms(startTimeDisplay);
     const endTimeHms = parseDisplayTimeToHms(endTimeDisplay);
 
@@ -994,7 +1061,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       // Reload itinerary data
       if (quoteId) {
         const [detailsRes, hotelRes] = await Promise.all([
-          ItineraryService.getDetails(quoteId),
+          ItineraryService.getDetails(quoteId, activeHotelGroupType || undefined),
           ItineraryService.getHotelDetails(quoteId),
         ]);
         setItinerary(detailsRes as ItineraryDetailsResponse);
@@ -1028,6 +1095,13 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     hotspotId: number,
     hotspotName: string
   ) => {
+    // ✅ BLOCK add activity when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Blocked openAddActivityModal - confirmed mode');
+      toast.error('Cannot add activities in confirmed itinerary');
+      return;
+    }
+
     setAddActivityModal({
       open: true,
       planId,
@@ -1082,7 +1156,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       // Reload itinerary data
       if (quoteId) {
         const [detailsRes, hotelRes] = await Promise.all([
-          ItineraryService.getDetails(quoteId),
+          ItineraryService.getDetails(quoteId, activeHotelGroupType || undefined),
           ItineraryService.getHotelDetails(quoteId),
         ]);
         setItinerary(detailsRes as ItineraryDetailsResponse);
@@ -1123,7 +1197,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       // Reload itinerary data
       if (quoteId) {
         const [detailsRes, hotelRes] = await Promise.all([
-          ItineraryService.getDetails(quoteId),
+          ItineraryService.getDetails(quoteId, activeHotelGroupType || undefined),
           ItineraryService.getHotelDetails(quoteId),
         ]);
         setItinerary(detailsRes as ItineraryDetailsResponse);
@@ -1325,6 +1399,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     cityCode: string,
     cityName: string
   ) => {
+    // ✅ BLOCK hotel selection when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Blocked openHotelSelectionModal - confirmed mode');
+      return;
+    }
+    
     // ⚡ Lazy-load hotel details when modal opens (not on initial page load)
     ensureHotelDetailsLoaded();
 
@@ -1341,8 +1421,9 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   };
 
   const handleSelectHotel = async (hotelId: number, roomTypeId: number = 1) => {
-    if (readOnly) {
-      console.log('Cannot select hotel in read-only mode');
+    // ✅ BLOCK hotel selection when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Cannot select hotel - confirmed mode');
       return;
     }
 
@@ -1394,8 +1475,9 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     hotel: HotelSearchResult,
     mealPlan?: any
   ) => {
-    if (readOnly) {
-      console.log('Cannot select hotel in read-only mode');
+    // ✅ BLOCK hotel selection when confirmed
+    if (isConfirmed) {
+      console.log('⛔ [ItineraryDetails] Cannot select hotel - confirmed mode');
       return;
     }
 
@@ -1781,7 +1863,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const backToListHref = itinerary.planId
     ? `/create-itinerary?id=${itinerary.planId}`
     : "#";
-  const modifyItineraryHref = backToListHref;
+  
   return (
     <div className="w-full max-w-full space-y-1 pb-8">
       {/* Header Card */}
@@ -1828,15 +1910,14 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                     <Plus className="mr-2 h-4 w-4" />
                     Add Incidental Expenses
                   </Button>
-                  <Link to={modifyItineraryHref}>
-                    <Button 
-                      variant="outline"
-                      className="border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545] hover:text-white"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Modify Itinerary
-                    </Button>
-                  </Link>
+                  <Button 
+                    variant="outline"
+                    className="border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545] hover:text-white"
+                    onClick={() => setCancelModalOpen(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Modify Itinerary
+                  </Button>
                   <Button 
                     variant="outline"
                     className="border-[#17a2b8] text-[#17a2b8] hover:bg-[#17a2b8] hover:text-white"
@@ -1875,7 +1956,18 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
             <div className="text-right">
               <p className="text-sm text-[#6c6c6c]">Overall Trip Cost :</p>
               <p className="text-2xl font-bold text-[#d546ab]">
-                ₹ {itinerary.overallCost}
+                ₹ {(() => {
+                  // ✅ Calculate Net Payable dynamically with selectedHotelTotal
+                  const roomCost = itinerary.costBreakdown.totalRoomCost || 0;
+                  const vehicleCost = itinerary.costBreakdown.totalVehicleAmount || 0;
+                  const margin = itinerary.costBreakdown.additionalMargin || 0;
+                  const totalAmount = roomCost + vehicleCost + selectedHotelTotal + margin;
+                  const couponDiscount = itinerary.costBreakdown.couponDiscount || 0;
+                  const agentMargin = itinerary.costBreakdown.agentMargin || 0;
+                  const roundOff = itinerary.costBreakdown.totalRoundOff || 0;
+                  const netPayable = totalAmount - couponDiscount + agentMargin + roundOff;
+                  return netPayable.toFixed(2);
+                })()}
               </p>
             </div>
           </div>
@@ -1957,8 +2049,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
             <div className="flex items-center justify-between mb-4 ml-2">
               <div className="flex items-center gap-2 bg-white border border-[#e5d9f2] rounded-lg p-1 shadow-sm">
                 <Popover>
-                  <PopoverTrigger asChild>
-                    <div className="px-3 py-1.5 text-sm font-medium text-[#4a4260] cursor-pointer hover:bg-[#f8f5fc] rounded transition-colors border border-transparent hover:border-[#d546ab]">
+                  <PopoverTrigger asChild disabled={isConfirmed}>
+                    <div className={`px-3 py-1.5 text-sm font-medium text-[#4a4260] rounded transition-colors border border-transparent ${
+                      isConfirmed 
+                        ? 'cursor-default' 
+                        : 'cursor-pointer hover:bg-[#f8f5fc] hover:border-[#d546ab]'
+                    }`}>
                       {day.startTime}
                     </div>
                   </PopoverTrigger>
@@ -1966,6 +2062,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                     <TimePickerPopover 
                       value={day.startTime} 
                       label="Start Time"
+                      disabled={isConfirmed}
                       onSave={async (newTime) => {
                         await handleUpdateRouteTimesDirect(itinerary.planId || 0, day.id, day.dayNumber, newTime, day.endTime);
                         // Close popover by clicking outside or using state if we had it
@@ -1978,8 +2075,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                 <ArrowRight className="h-4 w-4 text-[#d546ab]" />
                 
                 <Popover>
-                  <PopoverTrigger asChild>
-                    <div className="px-3 py-1.5 text-sm font-medium text-[#4a4260] cursor-pointer hover:bg-[#f8f5fc] rounded transition-colors border border-transparent hover:border-[#d546ab]">
+                  <PopoverTrigger asChild disabled={isConfirmed}>
+                    <div className={`px-3 py-1.5 text-sm font-medium text-[#4a4260] rounded transition-colors border border-transparent ${
+                      isConfirmed 
+                        ? 'cursor-default' 
+                        : 'cursor-pointer hover:bg-[#f8f5fc] hover:border-[#d546ab]'
+                    }`}>
                       {day.endTime}
                     </div>
                   </PopoverTrigger>
@@ -1987,6 +2088,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                     <TimePickerPopover 
                       value={day.endTime} 
                       label="End Time"
+                      disabled={isConfirmed}
                       onSave={async (newTime) => {
                         await handleUpdateRouteTimesDirect(itinerary.planId || 0, day.id, day.dayNumber, day.startTime, newTime);
                         // Close popover
@@ -2137,21 +2239,23 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                                 <Clock className="h-3 w-3 mr-1" />
                                 {segment.visitTime}
                               </span>
-                              <button 
-                                className="text-[#d546ab] hover:underline flex items-center font-medium"
-                                onClick={() =>
-                                  openAddActivityModal(
-                                    itinerary.planId || 0,
-                                    day.id,
-                                    segment.routeHotspotId || 0,
-                                    segment.hotspotId || 0,
-                                    segment.name
-                                  )
-                                }
-                              >
-                                <Plus className="h-3 w-3 mr-1" />
-                                Add Activity
-                              </button>
+                              {!isConfirmed && (
+                                <button 
+                                  className="text-[#d546ab] hover:underline flex items-center font-medium"
+                                  onClick={() =>
+                                    openAddActivityModal(
+                                      itinerary.planId || 0,
+                                      day.id,
+                                      segment.routeHotspotId || 0,
+                                      segment.hotspotId || 0,
+                                      segment.name
+                                    )
+                                  }
+                                >
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  Add Activity
+                                </button>
+                              )}
                             </div>
                           </div>
                           <div className="flex flex-col gap-2 sm:ml-auto">
@@ -2531,12 +2635,19 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
           hotelRatesVisible={hotelDetails.hotelRatesVisible}
           quoteId={quoteId!}
           planId={itinerary.planId}
-          onRefresh={refreshHotelData}
-          onGroupTypeChange={handleHotelGroupTypeChange}
+          onRefresh={isConfirmed ? undefined : refreshHotelData}
+          onGroupTypeChange={isConfirmed ? undefined : handleHotelGroupTypeChange}
           onGetSaveFunction={(saveFn) => {
             hotelSaveFunctionRef.current = saveFn;
           }}
-          readOnly={false}
+          readOnly={isConfirmed}
+          onCreateVoucher={(hotelData) => {
+            setSelectedHotelForVoucher(hotelData);
+            setHotelVoucherModalOpen(true);
+          }}
+          onTotalChange={(totalAmount) => {
+            setSelectedHotelTotal(totalAmount);
+          }}
         />
       )}
 
@@ -2668,11 +2779,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                   </span>
                 </div>
               )}
-              {itinerary.costBreakdown.totalHotelAmount !== undefined && itinerary.costBreakdown.totalHotelAmount > 0 && (
+              {/* ✅ Show selected hotel total (sum of selected hotels) instead of backend totalHotelAmount */}
+              {selectedHotelTotal > 0 && (
                 <div className="flex justify-between font-semibold">
                   <span className="text-[#4a4260]">Total Hotel Amount</span>
                   <span className="text-[#4a4260]">
-                    ₹ {itinerary.costBreakdown.totalHotelAmount.toFixed(2)}
+                    ₹ {selectedHotelTotal.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -2737,7 +2849,14 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
               <div className="flex justify-between font-semibold">
                 <span className="text-[#4a4260]">Total Amount</span>
                 <span className="text-[#4a4260]">
-                  ₹ {itinerary.costBreakdown.totalAmount?.toFixed(2) ?? "0.00"}
+                  ₹ {(() => {
+                    // ✅ Calculate Total Amount = roomCost + vehicleCost + selectedHotelTotal + margin - discount + agentMargin + roundOff
+                    const roomCost = itinerary.costBreakdown.totalRoomCost || 0;
+                    const vehicleCost = itinerary.costBreakdown.totalVehicleAmount || 0;
+                    const margin = itinerary.costBreakdown.additionalMargin || 0;
+                    const total = roomCost + vehicleCost + selectedHotelTotal + margin;
+                    return total.toFixed(2);
+                  })()}
                 </span>
               </div>
               <div className="flex justify-between text-[#d546ab]">
@@ -2780,7 +2899,18 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                     Net Payable to {itinerary.costBreakdown.companyName || "Doview Holidays India Pvt ltd"}
                   </span>
                   <span className="text-[#d546ab]">
-                    ₹ {itinerary.costBreakdown.netPayable?.toFixed(2) ?? "0.00"}
+                    ₹ {(() => {
+                      // ✅ Net Payable = Total Amount - Coupon Discount + Agent Margin + Round Off
+                      const roomCost = itinerary.costBreakdown.totalRoomCost || 0;
+                      const vehicleCost = itinerary.costBreakdown.totalVehicleAmount || 0;
+                      const margin = itinerary.costBreakdown.additionalMargin || 0;
+                      const totalAmount = roomCost + vehicleCost + selectedHotelTotal + margin;
+                      const couponDiscount = itinerary.costBreakdown.couponDiscount || 0;
+                      const agentMargin = itinerary.costBreakdown.agentMargin || 0;
+                      const roundOff = itinerary.costBreakdown.totalRoundOff || 0;
+                      const netPayable = totalAmount - couponDiscount + agentMargin + roundOff;
+                      return netPayable.toFixed(2);
+                    })()}
                   </span>
                 </div>
               </div>
@@ -2789,93 +2919,95 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         </Card>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-3 justify-center">
-        {/* Clipboard Dropdown */}
-        <div className="relative group">
-          <Button className="bg-[#8b43d1] hover:bg-[#7c37c1]">
-            Clipboard ▼
+      {/* Action Buttons - Hidden for confirmed itineraries */}
+      {!isConfirmed && (
+        <div className="flex flex-wrap gap-3 justify-center">
+          {/* Clipboard Dropdown */}
+          <div className="relative group">
+            <Button className="bg-[#8b43d1] hover:bg-[#7c37c1]">
+              Clipboard ▼
+            </Button>
+            <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+                onClick={() => {
+                  setClipboardType('recommended');
+                  setClipboardModal(true);
+                }}
+              >
+                <span>📋</span> Copy Recommended
+              </button>
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+                onClick={() => {
+                  setClipboardType('highlights');
+                  setClipboardModal(true);
+                }}
+              >
+                <span>✨</span> Copy to Highlights
+              </button>
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2 rounded-b-lg"
+                onClick={() => {
+                  setClipboardType('para');
+                  setClipboardModal(true);
+                }}
+              >
+                <span>📝</span> Copy to Para
+              </button>
+            </div>
+          </div>
+
+          <Link to="/create-itinerary">
+            <Button className="bg-[#28a745] hover:bg-[#218838]">
+              Create Itinerary
+            </Button>
+          </Link>
+          
+          <Button 
+            className="bg-[#d546ab] hover:bg-[#c03d9f]"
+            onClick={openConfirmQuotationModal}
+          >
+            <Bell className="mr-2 h-4 w-4" />
+            Confirm Quotation
           </Button>
-          <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
-              onClick={() => {
-                setClipboardType('recommended');
-                setClipboardModal(true);
-              }}
-            >
-              <span>📋</span> Copy Recommended
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
-              onClick={() => {
-                setClipboardType('highlights');
-                setClipboardModal(true);
-              }}
-            >
-              <span>✨</span> Copy to Highlights
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2 rounded-b-lg"
-              onClick={() => {
-                setClipboardType('para');
-                setClipboardModal(true);
-              }}
-            >
-              <span>📝</span> Copy to Para
-            </button>
+
+          {/* Share Dropdown */}
+          <div className="relative group">
+            <Button className="bg-[#17a2b8] hover:bg-[#138496]">
+              Share ▼
+            </Button>
+            <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+                onClick={() => {
+                  const url = window.location.href;
+                  navigator.clipboard.writeText(url);
+                  toast.success("Link copied to clipboard!");
+                }}
+              >
+                <span>🔗</span> Copy Link
+              </button>
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+                onClick={() => {
+                  const url = window.location.href;
+                  const message = `Check out this itinerary: ${url}`;
+                  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+                }}
+              >
+                <span>💬</span> Share on WhatsApp
+              </button>
+              <button
+                className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2 rounded-b-lg"
+                onClick={() => setShareModal(true)}
+              >
+                <span>✉️</span> Share via Email
+              </button>
+            </div>
           </div>
         </div>
-
-        <Link to="/create-itinerary">
-          <Button className="bg-[#28a745] hover:bg-[#218838]">
-            Create Itinerary
-          </Button>
-        </Link>
-        
-        <Button 
-          className="bg-[#d546ab] hover:bg-[#c03d9f]"
-          onClick={openConfirmQuotationModal}
-        >
-          <Bell className="mr-2 h-4 w-4" />
-          Confirm Quotation
-        </Button>
-
-        {/* Share Dropdown */}
-        <div className="relative group">
-          <Button className="bg-[#17a2b8] hover:bg-[#138496]">
-            Share ▼
-          </Button>
-          <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
-              onClick={() => {
-                const url = window.location.href;
-                navigator.clipboard.writeText(url);
-                toast.success("Link copied to clipboard!");
-              }}
-            >
-              <span>🔗</span> Copy Link
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
-              onClick={() => {
-                const url = window.location.href;
-                const message = `Check out this itinerary: ${url}`;
-                window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
-              }}
-            >
-              <span>💬</span> Share on WhatsApp
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2 rounded-b-lg"
-              onClick={() => setShareModal(true)}
-            >
-              <span>✉️</span> Share via Email
-            </button>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Delete Hotspot Modal */}
       <Dialog
@@ -3306,28 +3438,30 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       </Dialog>
 
       {/* Hotel Search Modal - NEW Real-Time Search */}
-      <HotelSearchModal
-        open={hotelSelectionModal.open}
-        onOpenChange={(open) => {
-          if (!open) {
-            setHotelSelectionModal({
-              open: false,
-              planId: null,
-              routeId: null,
-              routeDate: "",
-            });
-          }
-        }}
-        cityCode={hotelSelectionModal.cityCode || ""}
-        cityName={hotelSelectionModal.cityName || ""}
-        checkInDate={hotelSelectionModal.checkInDate || hotelSelectionModal.routeDate}
-        checkOutDate={hotelSelectionModal.checkOutDate || hotelSelectionModal.routeDate}
-        onSelectHotel={handleSelectHotelFromSearch}
-        isSelectingHotel={isSelectingHotel}
-      />
+      {!isConfirmed && (
+        <HotelSearchModal
+          open={hotelSelectionModal.open}
+          onOpenChange={(open) => {
+            if (!open) {
+              setHotelSelectionModal({
+                open: false,
+                planId: null,
+                routeId: null,
+                routeDate: "",
+              });
+            }
+          }}
+          cityCode={hotelSelectionModal.cityCode || ""}
+          cityName={hotelSelectionModal.cityName || ""}
+          checkInDate={hotelSelectionModal.checkInDate || hotelSelectionModal.routeDate}
+          checkOutDate={hotelSelectionModal.checkOutDate || hotelSelectionModal.routeDate}
+          onSelectHotel={handleSelectHotelFromSearch}
+          isSelectingHotel={isSelectingHotel}
+        />
+      )}
 
       {/* Hotel Room Selection Modal */}
-      {roomSelectionModal && (
+      {!isConfirmed && roomSelectionModal && (
         <HotelRoomSelectionModal
           open={roomSelectionModal.open}
           onOpenChange={(open) => {
@@ -4057,6 +4191,35 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
             onClose={() => setIncidentalModal(false)}
             itineraryPlanId={itinerary.planId}
           />
+          <CancelItineraryModal
+            open={cancelModalOpen}
+            onOpenChange={setCancelModalOpen}
+            itineraryPlanId={itinerary.planId ?? null}
+            onSuccess={() => {
+              // Refresh itinerary data after successful cancellation
+              toast.success('Itinerary data will be refreshed');
+              // Force page reload to get updated data
+              window.location.reload();
+            }}
+          />
+          {selectedHotelForVoucher && (
+            <HotelVoucherModal
+              open={hotelVoucherModalOpen}
+              onOpenChange={setHotelVoucherModalOpen}
+              itineraryPlanId={itinerary.planId}
+              hotelId={selectedHotelForVoucher.hotelId}
+              hotelName={selectedHotelForVoucher.hotelName}
+              hotelEmail={selectedHotelForVoucher.hotelEmail}
+              hotelStateCity={selectedHotelForVoucher.hotelStateCity}
+              routeDates={selectedHotelForVoucher.routeDates}
+              dayNumbers={selectedHotelForVoucher.dayNumbers}
+              hotelDetailsIds={selectedHotelForVoucher.hotelDetailsIds}
+              onSuccess={() => {
+                toast.success('Hotel voucher created successfully');
+                fetchDetails();
+              }}
+            />
+          )}
         </>
       )}
     </div>
