@@ -1595,19 +1595,44 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     try {
       // Fetch customer info form data
       const customerInfo = await ItineraryService.getCustomerInfoForm(itinerary.planId);
-      setAgentInfo({
-        quotation_no: customerInfo.quotation_no,
-        agent_name: customerInfo.agent_name,
-        agent_id: itinerary.planId, // We'll need to pass actual agent ID
-      });
       setWalletBalance(customerInfo.wallet_balance);
 
       // Check wallet balance and get plan details
       const planDetails = await api(`itineraries/edit/${itinerary.planId}`, { method: 'GET' });
-      if (planDetails?.plan?.agent_ID) {
-        const walletData = await ItineraryService.checkWalletBalance(planDetails.plan.agent_ID);
-        setWalletBalance(walletData.formatted_balance);
-        setAgentInfo(prev => prev ? { ...prev, agent_id: planDetails.plan.agent_ID } : null);
+      
+      // ✅ FIX: Set agent_id from planDetails - try multiple possible field names
+      let agentId = planDetails?.plan?.agent_ID 
+                 || planDetails?.plan?.agent_id 
+                 || planDetails?.agent_ID 
+                 || planDetails?.agent_id
+                 || customerInfo?.agent_id;
+      
+      console.log('🔍 [openConfirmQuotationModal] planDetails:', planDetails);
+      console.log('🔍 [openConfirmQuotationModal] customerInfo:', customerInfo);
+      console.log('🔍 [openConfirmQuotationModal] agentId resolved to:', agentId);
+      
+      if (agentId) {
+        try {
+          const walletData = await ItineraryService.checkWalletBalance(agentId);
+          setWalletBalance(walletData.formatted_balance);
+        } catch (e) {
+          console.warn('⚠️ Failed to fetch wallet balance:', e);
+        }
+      }
+
+      // Set agentInfo with correct agent_id (only if we have valid agentId)
+      if (agentId) {
+        setAgentInfo({
+          quotation_no: customerInfo.quotation_no,
+          agent_name: customerInfo.agent_name,
+          agent_id: agentId, // Use actual agent ID from plan
+        });
+        console.log('✅ [openConfirmQuotationModal] agentInfo set with agent_id:', agentId);
+      } else {
+        console.error('❌ [openConfirmQuotationModal] Failed to get agent_id. Available data:', { planDetails, customerInfo });
+        toast.error('Failed to load agent information. Please try again.');
+        setConfirmQuotationModal(false);
+        return;
       }
 
       // Prefill arrival and departure details from plan
