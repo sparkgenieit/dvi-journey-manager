@@ -29,6 +29,7 @@ interface HotelVoucherModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   itineraryPlanId: number;
+  routeId: number;
   hotelId: number;
   hotelName: string;
   hotelEmail?: string;
@@ -43,6 +44,7 @@ export const HotelVoucherModal: React.FC<HotelVoucherModalProps> = ({
   open,
   onOpenChange,
   itineraryPlanId,
+  routeId,
   hotelId,
   hotelName,
   hotelEmail = '',
@@ -55,7 +57,7 @@ export const HotelVoucherModal: React.FC<HotelVoucherModalProps> = ({
   const [confirmedBy, setConfirmedBy] = useState('');
   const [emailId, setEmailId] = useState(hotelEmail);
   const [mobileNumber, setMobileNumber] = useState('');
-  const [status, setStatus] = useState<'confirmed' | 'cancelled' | 'pending'>('confirmed');
+  const [status, setStatus] = useState<'confirmed' | 'cancelled' | 'pending'>('cancelled');
   const [invoiceTo, setInvoiceTo] = useState<'gst_bill_against_dvi' | 'hotel_direct' | 'agent'>('gst_bill_against_dvi');
   const [voucherTerms, setVoucherTerms] = useState('');
   const [cancellationPolicies, setCancellationPolicies] = useState<HotelCancellationPolicy[]>([]);
@@ -145,6 +147,12 @@ export const HotelVoucherModal: React.FC<HotelVoucherModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Safety guard: Check if routeId is valid
+    if (!routeId || isNaN(routeId) || routeId <= 0) {
+      toast.error('Route ID is missing or invalid. Cannot create voucher.');
+      return;
+    }
+
     if (!confirmedBy.trim() || !emailId.trim() || !mobileNumber.trim()) {
       toast.error('Please fill in all required fields');
       return;
@@ -161,6 +169,7 @@ export const HotelVoucherModal: React.FC<HotelVoucherModalProps> = ({
       const response = await HotelVoucherService.createHotelVouchers({
         itineraryPlanId,
         vouchers: [{
+          routeId,
           hotelId,
           hotelDetailsIds,
           routeDates,

@@ -47,6 +47,13 @@ export const HotelSearchResultCard: React.FC<HotelSearchResultCardProps> = ({
           </div>
         )}
 
+        {/* Provider Badge */}
+        {hotel.provider && (
+          <div className="absolute top-2 left-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+            {hotel.provider === 'tbo' ? 'TBO' : hotel.provider}
+          </div>
+        )}
+
         {/* Availability Badge */}
         {hotel.availableRooms !== undefined && (
           <div className="absolute top-2 right-2 bg-white px-3 py-1 rounded-full text-xs font-semibold text-[#4ba3c3]">

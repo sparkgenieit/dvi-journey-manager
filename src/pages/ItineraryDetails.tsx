@@ -1,6 +1,6 @@
 // FILE: src/pages/itineraries/ItineraryDetails.tsx
 
-import React, { useEffect, useState, useRef, useLayoutEffect } from "react";
+import React, { useEffect, useState, useRef, useLayoutEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +28,8 @@ import { InvoiceModal } from "./InvoiceModal";
 import { IncidentalExpensesModal } from "./IncidentalExpensesModal";
 import { HotelSearchModal } from "@/components/hotels/HotelSearchModal";
 import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
+import { CancelItineraryModal } from "@/components/modals/CancelItineraryModal";
+import { HotelVoucherModal } from "@/components/modals/HotelVoucherModal";
 import { HotelSearchResult } from "@/hooks/useHotelSearch";
 import { toast } from "sonner";
 
@@ -150,6 +152,10 @@ export type ItineraryHotelRow = {
   mealPlan: string;
   totalHotelCost: number;
   totalHotelTaxAmount: number;
+  provider?: string; // Provider source (tbo, resavenue, hobse)
+  voucherCancelled?: boolean; // Whether voucher is cancelled
+  itineraryPlanHotelDetailsId?: number;
+  date?: string;
 };
 
 export type ItineraryHotelTab = {
@@ -739,9 +745,10 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const [shareModal, setShareModal] = useState(false);
   const [clipboardType, setClipboardType] = useState<'recommended' | 'highlights' | 'para'>('recommended');
   
-  // TBO Hotel Selection State
-  // Structure: { [routeId]: { hotelCode, bookingCode, roomType, netAmount, hotelName, checkInDate, checkOutDate } }
-  const [selectedTboHotels, setSelectedTboHotels] = useState<{[routeId: number]: {
+  // Hotel Selection State (Multi-Provider)
+  // Structure: { [routeId]: { provider, hotelCode, bookingCode, roomType, netAmount, hotelName, checkInDate, checkOutDate } }
+  const [selectedHotelBookings, setSelectedHotelBookings] = useState<{[routeId: number]: {
+    provider: string;
     hotelCode: string;
     bookingCode: string;
     roomType: string;
@@ -766,6 +773,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   // ✅ Reference to hotel save function
   const hotelSaveFunctionRef = React.useRef<(() => Promise<boolean>) | null>(null);
   
+  // ✅ Track if component is mounted to prevent state updates after unmount
+  const isMountedRef = useRef(true);
+  
+  // ✅ Track which quoteId we're currently fetching to prevent duplicate fetches
+  const currentFetchRef = useRef<string | null>(null);
+  
   const [agentInfo, setAgentInfo] = useState<{
     quotation_no: string;
     agent_name: string;
@@ -789,8 +802,24 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const [additionalChildren, setAdditionalChildren] = useState<Array<{ name: string; age: string }>>([]);
   const [additionalInfants, setAdditionalInfants] = useState<Array<{ name: string; age: string }>>([]);
 
+  // Cancellation modal state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  // Hotel voucher modal state
+  const [hotelVoucherModalOpen, setHotelVoucherModalOpen] = useState(false);
+  const [selectedHotelForVoucher, setSelectedHotelForVoucher] = useState<{
+    routeId: number;
+    hotelId: number;
+    hotelName: string;
+    hotelEmail: string;
+    hotelStateCity: string;
+    routeDates: string[];
+    dayNumbers: number[];
+    hotelDetailsIds: number[];
+  } | null>(null);
+
   // Refresh hotel data after hotel update
-  const refreshHotelData = async () => {
+  const refreshHotelData = useCallback(async () => {
     if (!quoteId) return;
     
     try {
@@ -806,9 +835,9 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     } catch (e: any) {
       console.error("❌ [ItineraryDetails] Failed to refresh hotel data", e);
     }
-  };
+  }, [quoteId]);
 
-  const refreshVehicleData = async () => {
+  const refreshVehicleData = useCallback(async () => {
     if (!quoteId) return;
     
     try {
@@ -817,9 +846,9 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     } catch (e: any) {
       console.error("Failed to refresh vehicle data", e);
     }
-  };
+  }, [quoteId]);
 
-  const handleHotelGroupTypeChange = async (groupType: number) => {
+  const handleHotelGroupTypeChange = useCallback(async (groupType: number) => {
     if (!quoteId) return;
     
     console.log("Hotel group type changed to:", groupType);
@@ -832,7 +861,41 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     } catch (e: any) {
       console.error("Failed to update data for group type change", e);
     }
-  };
+  }, [quoteId]);
+
+  const handleGetSaveFunction = useCallback((saveFn: () => Promise<boolean>) => {
+    hotelSaveFunctionRef.current = saveFn;
+  }, []);
+
+  const handleCreateVoucher = useCallback((hotelData: {
+    routeId: number;
+    hotelId: number;
+    hotelName: string;
+    hotelEmail: string;
+    hotelStateCity: string;
+    routeDates: string[];
+    dayNumbers: number[];
+    hotelDetailsIds: number[];
+  }) => {
+    setSelectedHotelForVoucher(hotelData);
+    setHotelVoucherModalOpen(true);
+  }, []);
+
+  const handleHotelSelectionsChange = useCallback((selections: Record<number, {
+    provider: string;
+    hotelCode: string;
+    bookingCode: string;
+    roomType: string;
+    netAmount: number;
+    hotelName: string;
+    checkInDate: string;
+    checkOutDate: string;
+    groupType: number;
+  }>) => {
+    // Update selectedHotelBookings when user selects hotels in HotelList
+    setSelectedHotelBookings(selections);
+    console.log('🏨 Hotel selections updated from HotelList:', selections);
+  }, []);
 
   useEffect(() => {
     if (!quoteId) {
@@ -841,8 +904,19 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       return;
     }
 
+    // If we're already fetching this quoteId, skip duplicate fetch
+    if (currentFetchRef.current === quoteId) {
+      console.log("🔄 [ItineraryDetails] Already fetching quoteId:", quoteId, "- skipping duplicate");
+      return;
+    }
+
+    // Mark that we're fetching this quoteId
+    currentFetchRef.current = quoteId;
+    isMountedRef.current = true;
+
     const fetchDetails = async () => {
       try {
+        console.log("🌐 [ItineraryDetails] FETCHING initial details for quoteId:", quoteId);
         setLoading(true);
         setError(null);
 
@@ -852,19 +926,37 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
           ItineraryService.getHotelDetails(quoteId),
         ]);
 
+        // Only update state if component is still mounted
+        if (!isMountedRef.current) {
+          console.log("🔄 [ItineraryDetails] Component unmounted, skipping state update");
+          return;
+        }
+
+        console.log("✅ [ItineraryDetails] Initial fetch completed successfully");
         setItinerary(detailsRes as ItineraryDetailsResponse);
         setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
       } catch (e: any) {
-        console.error("Failed to load itinerary details", e);
+        // Only update state if component is still mounted
+        if (!isMountedRef.current) return;
+        
+        console.error("❌ [ItineraryDetails] Failed to load itinerary details", e);
         setError(e?.message || "Failed to load itinerary details");
         setItinerary(null);
         setHotelDetails(null);
       } finally {
-        setLoading(false);
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
       }
     };
 
     fetchDetails();
+
+    // Cleanup: Mark component as unmounted
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [quoteId]);
 
   /**
@@ -1423,10 +1515,11 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         return `${year}-${month}-${day}`;
       };
       
-      // Store ALL selected hotels (from any source)
-      setSelectedTboHotels(prev => ({
+      // Store ALL selected hotels with provider info (multi-provider support)
+      setSelectedHotelBookings(prev => ({
         ...prev,
         [hotelSelectionModal.routeId]: {
+          provider: hotel.provider || 'tbo', // Get provider from search result
           hotelCode: hotel.hotelCode,
           // bookingCode should come from hotel.bookingCode (mapped from searchReference in useHotelSearch hook)
           // Only fallback to hotelCode if bookingCode is not available
@@ -1566,7 +1659,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       // No need to save them separately via hotels/select
 
       // ✅ AUTO-SELECT: If user hasn't selected a hotel for a route, auto-select first hotel from Budget tier (groupType 1)
-      let autoSelectedHotels = { ...selectedTboHotels };
+      let autoSelectedHotels = { ...selectedHotelBookings };
       
       if (hotelDetails?.hotels && hotelDetails.hotels.length > 0) {
         // Get all routes that have hotels available
@@ -1590,6 +1683,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
               
               // Auto-select this hotel
               autoSelectedHotels[routeId] = {
+                provider: firstHotelForRoute.provider || 'tbo', // Get provider from hotel data
                 hotelCode: String(firstHotelForRoute.hotelId || firstHotelForRoute.hotelCode),
                 bookingCode: firstHotelForRoute.bookingCode || firstHotelForRoute.searchReference || String(firstHotelForRoute.hotelId),
                 roomType: firstHotelForRoute.roomType || 'Standard',
@@ -1660,11 +1754,12 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         })),
       ];
 
-      // Build tbo_hotels array - using auto-selected hotels if user didn't manually select
+      // Build hotel_bookings array with provider field - using auto-selected hotels if user didn't manually select
       // ✅ FIX: Only book hotels that were selected (manually or auto-selected)
       console.log('DEBUG: autoSelectedHotels state:', autoSelectedHotels);
       
-      const tboHotels: any[] = Object.entries(autoSelectedHotels).map(([routeId, hotelData]) => ({
+      const hotelBookings: any[] = Object.entries(autoSelectedHotels).map(([routeId, hotelData]) => ({
+        provider: hotelData.provider, // Provider from hotel selection (tbo, ResAvenue, etc.)
         routeId: parseInt(routeId),
         hotelCode: hotelData.hotelCode,
         bookingCode: hotelData.bookingCode,
@@ -1677,13 +1772,16 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         passengers: passengers.filter(p => p.paxType !== 3 || passengers.length === 1),
       }));
       
-      console.log('DEBUG: Final tboHotels array (with auto-selected):', tboHotels);
+      console.log('DEBUG: Final hotel_bookings array (with auto-selected):', hotelBookings);
 
       // Get client IP
       const clientIp = await fetch('https://api.ipify.org?format=json')
         .then(res => res.json())
         .then(data => data.ip)
         .catch(() => '192.168.1.1');
+
+      // Extract hotel_group_type from selected hotels (all selections should have same groupType)
+      const selectedGroupType = Object.values(selectedHotelBookings)[0]?.groupType || 1;
 
       await ItineraryService.confirmQuotation({
         itinerary_plan_ID: itinerary.planId,
@@ -1707,9 +1805,9 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         departure_place: guestDetails.departurePlace,
         departure_flight_details: guestDetails.departureFlightDetails,
         price_confirmation_type: 'old',
-        hotel_group_type: 'undefined',
-        // NEW: TBO Hotels
-        tbo_hotels: tboHotels.length > 0 ? tboHotels : undefined,
+        hotel_group_type: selectedGroupType,
+        // Multi-provider hotel bookings (TBO, ResAvenue, etc.)
+        hotel_bookings: hotelBookings.length > 0 ? hotelBookings : undefined,
         endUserIp: clientIp,
       });
 
@@ -1740,7 +1838,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       setAdditionalAdults([]);
       setAdditionalChildren([]);
       setAdditionalInfants([]);
-      setSelectedTboHotels({});
+      setSelectedHotelBookings({});
     } catch (e: any) {
       console.error('Failed to confirm quotation', e);
       toast.error(e?.message || 'Failed to confirm quotation');
@@ -2373,7 +2471,11 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                           className="h-8 w-8 rounded-full bg-[#d546ab]/10 hover:bg-[#d546ab]/20 text-[#d546ab] shrink-0"
                           onClick={(e) => {
                             e.stopPropagation();
-                            const hotelForDay = hotelDetails?.hotels?.find(h => 
+                            // For confirmed itineraries, only show hotels that are actually confirmed (itineraryPlanHotelDetailsId > 0)
+                            const confirmedHotels = hotelDetails?.hotels?.filter(h => 
+                              itinerary?.isConfirmed ? h.itineraryPlanHotelDetailsId > 0 : true
+                            );
+                            const hotelForDay = confirmedHotels?.find(h => 
                               h.itineraryRouteId === day.id
                             );
                             
@@ -2533,10 +2635,10 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
           planId={itinerary.planId}
           onRefresh={refreshHotelData}
           onGroupTypeChange={handleHotelGroupTypeChange}
-          onGetSaveFunction={(saveFn) => {
-            hotelSaveFunctionRef.current = saveFn;
-          }}
-          readOnly={false}
+          onGetSaveFunction={handleGetSaveFunction}
+          readOnly={readOnly}
+          onCreateVoucher={handleCreateVoucher}
+          onHotelSelectionsChange={handleHotelSelectionsChange}
         />
       )}
 
@@ -2832,6 +2934,15 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
             Create Itinerary
           </Button>
         </Link>
+        
+        <Button
+          variant="outline"
+          className="border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545] hover:text-white"
+          onClick={() => setCancelModalOpen(true)}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Modify Itinerary
+        </Button>
         
         <Button 
           className="bg-[#d546ab] hover:bg-[#c03d9f]"
@@ -4057,6 +4168,34 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
             onClose={() => setIncidentalModal(false)}
             itineraryPlanId={itinerary.planId}
           />
+          <CancelItineraryModal
+            open={cancelModalOpen}
+            onOpenChange={setCancelModalOpen}
+            itineraryPlanId={itinerary.planId ?? null}
+            onSuccess={() => {
+              toast.success('Itinerary data will be refreshed');
+              window.location.reload();
+            }}
+          />
+          {selectedHotelForVoucher && (
+            <HotelVoucherModal
+              open={hotelVoucherModalOpen}
+              onOpenChange={setHotelVoucherModalOpen}
+              itineraryPlanId={itinerary.planId}
+              routeId={selectedHotelForVoucher.routeId}
+              hotelId={selectedHotelForVoucher.hotelId}
+              hotelName={selectedHotelForVoucher.hotelName}
+              hotelEmail={selectedHotelForVoucher.hotelEmail}
+              hotelStateCity={selectedHotelForVoucher.hotelStateCity}
+              routeDates={selectedHotelForVoucher.routeDates}
+              dayNumbers={selectedHotelForVoucher.dayNumbers}
+              hotelDetailsIds={selectedHotelForVoucher.hotelDetailsIds}
+              onSuccess={() => {
+                toast.success('Hotel voucher created successfully');
+                refreshHotelData();
+              }}
+            />
+          )}
         </>
       )}
     </div>

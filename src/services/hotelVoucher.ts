@@ -1,6 +1,8 @@
 // Hotel Voucher and Cancellation Policy Service
 // This service manages hotel vouchers and their cancellation policies
 
+import { api } from '@/lib/api';
+
 export interface HotelCancellationPolicy {
   id: number;
   hotelId: number;
@@ -13,6 +15,7 @@ export interface HotelCancellationPolicy {
 
 export interface HotelVoucherData {
   id?: number;
+  routeId: number;
   itineraryPlanId: number;
   hotelId: number;
   hotelName: string;
@@ -32,6 +35,7 @@ export interface HotelVoucherData {
 export interface CreateVoucherPayload {
   itineraryPlanId: number;
   vouchers: Array<{
+    routeId: number;
     hotelId: number;
     hotelDetailsIds: number[];
     routeDates: string[];
@@ -191,55 +195,21 @@ export const HotelVoucherService = {
   createHotelVouchers: async (
     payload: CreateVoucherPayload
   ): Promise<{ success: boolean; message: string }> => {
-    await new Promise(resolve => setTimeout(resolve, 800));
+    try {
+      // Make API call to backend
+      const response = await api(`/itineraries/${payload.itineraryPlanId}/hotel-vouchers`, {
+        method: 'POST',
+        body: payload
+      });
 
-    // Validate: Check if cancellation policies exist
-    const policiesExist = await HotelVoucherService.getCancellationPolicies(
-      payload.itineraryPlanId
-    );
-
-    if (policiesExist.length === 0) {
       return {
-        success: false,
-        message: 'Please add at least one cancellation policy before creating voucher'
+        success: true,
+        message: response.message || 'Hotel voucher successfully created and sent to respective hotels'
       };
+    } catch (error: any) {
+      console.error('Failed to create hotel vouchers:', error);
+      throw error;
     }
-
-    // Create/update vouchers
-    payload.vouchers.forEach(voucherData => {
-      const existingIndex = mockVouchers.findIndex(
-        v => v.itineraryPlanId === payload.itineraryPlanId && v.hotelId === voucherData.hotelId
-      );
-
-      const voucher: HotelVoucherData = {
-        id: existingIndex !== -1 ? mockVouchers[existingIndex].id : nextVoucherId++,
-        itineraryPlanId: payload.itineraryPlanId,
-        hotelId: voucherData.hotelId,
-        hotelName: voucherData.hotelDetailsIds[0] ? `Hotel ${voucherData.hotelId}` : '',
-        hotelEmail: voucherData.emailId,
-        hotelStateCity: '',
-        routeDates: voucherData.routeDates,
-        dayNumbers: [],
-        confirmedBy: voucherData.confirmedBy,
-        emailId: voucherData.emailId,
-        mobileNumber: voucherData.mobileNumber,
-        status: voucherData.status as any,
-        invoiceTo: voucherData.invoiceTo as any,
-        voucherTermsCondition: voucherData.voucherTermsCondition,
-        hotelDetailsIds: voucherData.hotelDetailsIds
-      };
-
-      if (existingIndex !== -1) {
-        mockVouchers[existingIndex] = voucher;
-      } else {
-        mockVouchers.push(voucher);
-      }
-    });
-    saveVouchersToStorage(mockVouchers);
-    return {
-      success: true,
-      message: 'Hotel voucher successfully created and sent to respective hotels'
-    };
   },
 
   /**

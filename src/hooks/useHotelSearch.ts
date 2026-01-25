@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { ItineraryService } from '@/services/itinerary';
 
 export type HotelSearchResult = {
+  provider: string; // Provider source: 'tbo' or 'ResAvenue'
   hotelCode: string;
   hotelName: string;
   address: string;
@@ -18,8 +19,7 @@ export type HotelSearchResult = {
   facilities?: string[];
   images?: string[];
   availableRooms?: number;
-  // TBO-specific fields
-  isFromTbo?: boolean;
+  // API-specific fields
   bookingCode?: string;
   totalCost?: number;
   totalRoomCost?: number;
@@ -72,11 +72,11 @@ export const useHotelSearch = (options: UseHotelSearchOptions = {}) => {
             hotelName: searchQuery,
           });
 
-          // Map searchReference from backend to bookingCode for TBO API
+          // Map searchReference from backend to bookingCode for API compatibility
           const mapBookingCode = (hotel: any): HotelSearchResult => ({
             ...hotel,
             bookingCode: hotel.searchReference || hotel.bookingCode,
-            isFromTbo: true,
+            // Provider field comes from backend (tbo, ResAvenue, etc.)
           });
 
           if (response?.data?.hotels) {

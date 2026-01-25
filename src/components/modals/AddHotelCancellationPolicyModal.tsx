@@ -31,7 +31,7 @@ export const AddHotelCancellationPolicyModal: React.FC<AddHotelCancellationPolic
   hotelName,
   onSuccess,
 }) => {
-  const [cancellationDate, setCancellationDate] = useState('');
+  const [cancellationDate, setCancellationDate] = useState(new Date().toISOString().split('T')[0]);
   const [cancellationPercentage, setCancellationPercentage] = useState('');
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);

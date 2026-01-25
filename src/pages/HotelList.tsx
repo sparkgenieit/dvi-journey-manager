@@ -19,7 +19,6 @@ import type {
 } from "./ItineraryDetails";
 import { ItineraryService } from "@/services/itinerary";
 import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
-import { useHotelVoucherStatus } from "@/services/useHotelVoucherStatus";
 
 type HotelListProps = {
   hotels: ItineraryHotelRow[];
@@ -39,6 +38,7 @@ type HotelListProps = {
   readOnly?: boolean;
   // ✅ NEW: Callback to open hotel voucher modal
   onCreateVoucher?: (hotelData: {
+    routeId: number;
     hotelId: number;
     hotelName: string;
     hotelEmail: string;
@@ -49,6 +49,18 @@ type HotelListProps = {
   }) => void;
   // ✅ NEW: Callback when total selected hotel amount changes
   onTotalChange?: (totalAmount: number) => void;
+  // ✅ NEW: Callback when hotel selections change (for confirm quotation payload)
+  onHotelSelectionsChange?: (selections: Record<number, {
+    provider: string;
+    hotelCode: string;
+    bookingCode: string;
+    roomType: string;
+    netAmount: number;
+    hotelName: string;
+    checkInDate: string;
+    checkOutDate: string;
+    groupType: number;
+  }>) => void;
 };
 
 // Shape of each room item coming from /itineraries/hotel_room_details
@@ -105,6 +117,7 @@ export const HotelList: React.FC<HotelListProps> = ({
   readOnly = false, // ✅ NEW: Default to edit mode
   onCreateVoucher, // ✅ NEW: Callback for voucher creation
   onTotalChange, // ✅ NEW: Callback for total amount changes
+  onHotelSelectionsChange, // ✅ NEW: Callback for selections
 }) => {
   // ✅ Track selected hotel PER GROUP TYPE and PER ROUTE
   // Structure: selectedByGroup[groupType][routeId] = selected hotel row
@@ -272,6 +285,28 @@ export const HotelList: React.FC<HotelListProps> = ({
   const currentHotelRows = useMemo(() => {
     if (!localHotels || !localHotels.length || activeGroupType === null) return [];
     
+    // ✅ For confirmed itineraries (readOnly mode), show ONLY ONE confirmed hotel per route
+    if (readOnly) {
+      const hotelsByRoute = new Map<number, ItineraryHotelRow>();
+      
+      // For each route, keep only the first (confirmed) hotel
+      localHotels
+        .filter(h => h.itineraryPlanHotelDetailsId && h.itineraryPlanHotelDetailsId > 0)
+        .forEach(h => {
+          // Only add if this route doesn't already have a confirmed hotel
+          if (!hotelsByRoute.has(h.itineraryRouteId)) {
+            hotelsByRoute.set(h.itineraryRouteId, h);
+          }
+        });
+      
+      return Array.from(hotelsByRoute.values()).sort((a, b) => {
+        const dayA = parseInt(a.day?.replace(/\D/g, '') || '0');
+        const dayB = parseInt(b.day?.replace(/\D/g, '') || '0');
+        return dayA - dayB;
+      });
+    }
+    
+    // For draft itineraries, show selected hotels per group type
     // Get all unique routes for this groupType
     const routesInGroup = new Set<number>();
     localHotels
@@ -295,7 +330,7 @@ export const HotelList: React.FC<HotelListProps> = ({
       const dayB = parseInt(b.day?.replace(/\D/g, '') || '0');
       return dayA - dayB;
     });
-  }, [localHotels, activeGroupType, selectedByGroup]);
+  }, [localHotels, activeGroupType, selectedByGroup, readOnly]);
 
   // ---------- CLICK HANDLER: LOAD ROOM DETAILS & EXPAND ROW ----------
   const handleRowClick = async (hotel: ItineraryHotelRow, idx: number) => {
@@ -663,6 +698,44 @@ export const HotelList: React.FC<HotelListProps> = ({
     }
   }, [activeGroupType, selectedByGroup, onTotalChange]);
 
+  // ✅ Notify parent when hotel selections change (for confirm quotation)
+  React.useEffect(() => {
+    if (onHotelSelectionsChange && activeGroupType !== null) {
+      // Get selected hotels for the active group type
+      const selectedHotels = getSelectedHotelsForGroup(activeGroupType);
+      
+      // Build selections map by routeId
+      const selections: Record<number, any> = {};
+      selectedHotels.forEach(hotel => {
+        const routeDay = localHotels.find(h => 
+          h.itineraryRouteId === hotel.itineraryRouteId && 
+          h.groupType === activeGroupType
+        );
+        
+        if (routeDay) {
+          const checkInDate = hotel.date || routeDay.day?.split(' | ')[1] || '';
+          const checkOutDate = checkInDate 
+            ? new Date(new Date(checkInDate).getTime() + 24*60*60*1000).toISOString().split('T')[0]
+            : '';
+          
+          selections[hotel.itineraryRouteId] = {
+            provider: hotel.provider || 'tbo',
+            hotelCode: String(hotel.hotelId),
+            bookingCode: hotel.bookingCode || hotel.searchReference || String(hotel.hotelId),
+            roomType: hotel.roomType || 'Standard',
+            netAmount: hotel.totalHotelCost || 0,
+            hotelName: hotel.hotelName || '',
+            checkInDate,
+            checkOutDate,
+            groupType: activeGroupType,
+          };
+        }
+      });
+      
+      onHotelSelectionsChange(selections);
+    }
+  }, [activeGroupType, selectedByGroup, onHotelSelectionsChange, localHotels]);
+
 
   // ---------- RENDER ----------
   return (
@@ -856,42 +929,39 @@ export const HotelList: React.FC<HotelListProps> = ({
                       <td className="px-4 py-3 text-sm text-[#6c6c6c] flex items-center justify-between">
                         <span>{hotel.mealPlan || "-"}</span>
                         {readOnly && onCreateVoucher && hotel.hotelId && hotel.hotelName && (
-                          (() => {
-                            const status = useHotelVoucherStatus(planId, hotel.hotelId!);
-                            if (status === 'cancelled') {
-                              return (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="ml-2 border-[#d546ab] text-[#d546ab] bg-gray-200 text-gray-400 cursor-not-allowed text-xs"
-                                  disabled
-                                >
-                                  Cancelled
-                                </Button>
-                              );
-                            }
-                            return (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="ml-2 border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff] text-xs"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onCreateVoucher({
-                                    hotelId: hotel.hotelId!,
-                                    hotelName: hotel.hotelName!,
-                                    hotelEmail: '',
-                                    hotelStateCity: hotel.destination || '',
-                                    routeDates: [hotel.date || ''],
-                                    dayNumbers: [parseInt(hotel.day?.replace('Day ', '') || '0')],
-                                    hotelDetailsIds: [hotel.itineraryPlanHotelDetailsId || 0]
-                                  });
-                                }}
-                              >
-                                Cancel Voucher
-                              </Button>
-                            );
-                          })()
+                          hotel.voucherCancelled ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="ml-2 border-gray-400 text-gray-500 cursor-not-allowed text-xs"
+                              disabled
+                            >
+                              Voucher Cancelled
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="ml-2 border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff] text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                // Ensure we have a valid date, fallback to today's date if missing
+                                const routeDate = hotel.date || new Date().toISOString().split('T')[0];
+                                onCreateVoucher({
+                                  routeId: hotel.itineraryRouteId,
+                                  hotelId: hotel.hotelId!,
+                                  hotelName: hotel.hotelName!,
+                                  hotelEmail: '',
+                                  hotelStateCity: hotel.destination || '',
+                                  routeDates: [routeDate],
+                                  dayNumbers: [parseInt(hotel.day?.replace('Day ', '') || '0')],
+                                  hotelDetailsIds: [hotel.itineraryPlanHotelDetailsId || 0]
+                                });
+                              }}
+                            >
+                              Cancel Voucher
+                            </Button>
+                          )
                         )}
                       </td>
                     </tr>
@@ -944,6 +1014,24 @@ export const HotelList: React.FC<HotelListProps> = ({
                                 >
                                   {/* Hotel Image/Header */}
                                   <div className="relative h-40 bg-gradient-to-r from-[#7c3aed] to-[#a855f7]">
+                                    {/* Provider Badge */}
+                                    {hotel.provider && (
+                                      <div className="absolute top-2 right-2 z-10">
+                                        <span 
+                                          className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                            hotel.provider.toLowerCase() === 'resavenue' 
+                                              ? 'bg-emerald-500 text-white' 
+                                              : hotel.provider.toLowerCase() === 'tbo'
+                                              ? 'bg-blue-500 text-white'
+                                              : 'bg-gray-500 text-white'
+                                          }`}
+                                        >
+                                          {hotel.provider.toLowerCase() === 'resavenue' ? '🌟 ResAvenue' : 
+                                           hotel.provider.toLowerCase() === 'tbo' ? '🔵 TBO' : 
+                                           hotel.provider?.toUpperCase()}
+                                        </span>
+                                      </div>
+                                    )}
                                     <div className="absolute inset-0 flex flex-col justify-end p-3 bg-black/30">
                                       <h3 className="text-white font-semibold text-sm">
                                         {hotel.hotelName}
