@@ -156,6 +156,11 @@ export type ItineraryHotelRow = {
   voucherCancelled?: boolean; // Whether voucher is cancelled
   itineraryPlanHotelDetailsId?: number;
   date?: string;
+  // ✅ HOBSE-specific fields (optional, used if provider === "HOBSE")
+  hotelCode?: string; // HOBSE hotel code
+  bookingCode?: string; // HOBSE booking code
+  checkInDate?: string; // YYYY-MM-DD format
+  checkOutDate?: string; // YYYY-MM-DD format
 };
 
 export type ItineraryHotelTab = {
@@ -746,7 +751,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const [clipboardType, setClipboardType] = useState<'recommended' | 'highlights' | 'para'>('recommended');
   
   // Hotel Selection State (Multi-Provider)
-  // Structure: { [routeId]: { provider, hotelCode, bookingCode, roomType, netAmount, hotelName, checkInDate, checkOutDate } }
+  // Structure: { [routeId]: { provider, hotelCode, bookingCode, roomType, netAmount, hotelName, checkInDate, checkOutDate, groupType } }
   const [selectedHotelBookings, setSelectedHotelBookings] = useState<{[routeId: number]: {
     provider: string;
     hotelCode: string;
@@ -756,7 +761,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     hotelName: string;
     checkInDate: string;
     checkOutDate: string;
-  }}>({});
+    groupType?: number; // ✅ NEW: group type for selected hotel
+  }}>({});;
   
   const [selectedHotels, setSelectedHotels] = useState<{[key: string]: boolean}>({});
 
@@ -1521,9 +1527,9 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         [hotelSelectionModal.routeId]: {
           provider: hotel.provider || 'tbo', // Get provider from search result
           hotelCode: hotel.hotelCode,
-          // bookingCode should come from hotel.bookingCode (mapped from searchReference in useHotelSearch hook)
+          // bookingCode should come from hotel.bookingCode (mapped from search data)
           // Only fallback to hotelCode if bookingCode is not available
-          bookingCode: hotel.bookingCode || hotel.searchReference || hotel.hotelCode,
+          bookingCode: hotel.bookingCode || hotel.hotelCode,
           roomType: hotel.roomTypes?.[0]?.roomName || 'Standard',
           netAmount: hotel.totalCost || hotel.totalRoomCost || hotel.price || 0,
           hotelName: hotel.hotelName,
@@ -1709,8 +1715,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
               // Auto-select this hotel
               autoSelectedHotels[routeId] = {
                 provider: firstHotelForRoute.provider || 'tbo', // Get provider from hotel data
-                hotelCode: String(firstHotelForRoute.hotelId || firstHotelForRoute.hotelCode),
-                bookingCode: firstHotelForRoute.bookingCode || firstHotelForRoute.searchReference || String(firstHotelForRoute.hotelId),
+                hotelCode: String(firstHotelForRoute.hotelCode || firstHotelForRoute.hotelId),
+                bookingCode: firstHotelForRoute.bookingCode || String(firstHotelForRoute.hotelId),
                 roomType: firstHotelForRoute.roomType || 'Standard',
                 netAmount: firstHotelForRoute.totalHotelCost || 0,
                 hotelName: firstHotelForRoute.hotelName,
@@ -1726,15 +1732,15 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       
       console.log('DEBUG: Auto-selected hotels (merged):', autoSelectedHotels);
 
-      // Build passengers array for TBO hotels
+      // Build passengers array for hotel booking (works for all providers: TBO, ResAvenue, HOBSE)
       const passengers = [
         {
           title: guestDetails.salutation,
           firstName: guestDetails.name.split(' ')[0],
           lastName: guestDetails.name.split(' ').slice(1).join(' ') || guestDetails.name,
           email: guestDetails.emailId || undefined,
-          paxType: 1, // Adult
-          leadPassenger: true,
+          paxType: 1, // 1 = Adult
+          leadPassenger: true, // ✅ IMPORTANT: Lead passenger for HOBSE/backend
           age: parseInt(guestDetails.age) || 0,
           passportNo: undefined,
           passportIssueDate: undefined,
@@ -1747,8 +1753,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
           firstName: adult.name.split(' ')[0],
           lastName: adult.name.split(' ').slice(1).join(' ') || adult.name,
           email: undefined,
-          paxType: 1,
-          leadPassenger: idx === 0 ? false : false,
+          paxType: 1, // 1 = Adult
+          leadPassenger: false,
           age: parseInt(adult.age) || 0,
           passportNo: undefined,
           phoneNo: guestDetails.contactNo,
@@ -1759,7 +1765,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
           firstName: child.name.split(' ')[0],
           lastName: child.name.split(' ').slice(1).join(' ') || child.name,
           email: undefined,
-          paxType: 2, // Child
+          paxType: 2, // 2 = Child
           leadPassenger: false,
           age: parseInt(child.age) || 0,
           passportNo: undefined,
@@ -1771,7 +1777,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
           firstName: infant.name.split(' ')[0],
           lastName: infant.name.split(' ').slice(1).join(' ') || infant.name,
           email: undefined,
-          paxType: 3, // Infant
+          paxType: 3, // 3 = Infant
           leadPassenger: false,
           age: parseInt(infant.age) || 0,
           passportNo: undefined,
@@ -1806,7 +1812,16 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         .catch(() => '192.168.1.1');
 
       // Extract hotel_group_type from selected hotels (all selections should have same groupType)
-      const selectedGroupType = Object.values(selectedHotelBookings)[0]?.groupType || 1;
+      const groupTypeValue = Object.values(selectedHotelBookings)[0]?.groupType ?? 1;
+      const selectedGroupType = String(groupTypeValue);
+
+      // ✅ Build primaryGuest object as fallback for HOBSE/backend
+      const primaryGuest = {
+        salutation: guestDetails.salutation,
+        name: guestDetails.name,
+        phone: guestDetails.contactNo,
+        email: guestDetails.emailId,
+      };
 
       await ItineraryService.confirmQuotation({
         itinerary_plan_ID: itinerary.planId,
@@ -1831,8 +1846,10 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         departure_flight_details: guestDetails.departureFlightDetails,
         price_confirmation_type: 'old',
         hotel_group_type: selectedGroupType,
-        // Multi-provider hotel bookings (TBO, ResAvenue, etc.)
+        // ✅ Multi-provider hotel bookings (TBO, ResAvenue, HOBSE, etc.)
         hotel_bookings: hotelBookings.length > 0 ? hotelBookings : undefined,
+        // ✅ NEW: Primary guest fallback for HOBSE/backend if lead passenger missing
+        primaryGuest,
         endUserIp: clientIp,
       });
 

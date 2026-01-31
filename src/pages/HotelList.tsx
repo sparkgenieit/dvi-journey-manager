@@ -226,6 +226,9 @@ export const HotelList: React.FC<HotelListProps> = ({
     hotel_name: string;
   } | null>(null);
 
+  // ✅ NEW: Hotel search query for expanded row
+  const [hotelSearchQuery, setHotelSearchQuery] = useState<string>("");
+
   // Initialise active tab from backend groups
   useEffect(() => {
     if (!activeGroupType && hotelTabs && hotelTabs.length > 0) {
@@ -332,19 +335,18 @@ export const HotelList: React.FC<HotelListProps> = ({
     });
   }, [localHotels, activeGroupType, selectedByGroup, readOnly]);
 
-  // ---------- CLICK HANDLER: LOAD ROOM DETAILS & EXPAND ROW ----------
+  // ---------- CLICK HANDLER: OPEN HOTEL SELECTION MODAL ----------
   const handleRowClick = async (hotel: ItineraryHotelRow, idx: number) => {
-    const rowKey = `${hotel.groupType}-${idx}`;
+    if (readOnly) return; // Don't expand in read-only mode
 
-    console.log('=== Hotel Row Clicked ===');
-    console.log('Hotel:', hotel);
-    console.log('itineraryRouteId:', hotel.itineraryRouteId);
+    const rowKey = `${hotel.groupType}-${idx}`;
 
     // Collapse if already open
     if (expandedRowKey === rowKey) {
       setExpandedRowKey(null);
       setRoomDetails([]);
       setSelectedHotelId(null);
+      setHotelSearchQuery("");
       return;
     }
 
@@ -357,12 +359,9 @@ export const HotelList: React.FC<HotelListProps> = ({
     const itineraryRouteId = hotel.itineraryRouteId;
     setSelectedHotelId(hotel.hotelId);
     
-    // ✅ Filter from localHotels - NO API CALL
+    // ✅ Get ALL hotels for this route across ALL groups (not just current group)
     const hotelsForRoute = localHotels
-      .filter((h: any) => 
-        h.itineraryRouteId === itineraryRouteId && 
-        h.groupType === hotel.groupType
-      )
+      .filter((h: any) => h.itineraryRouteId === itineraryRouteId)
       .map((h: any) => ({
         ...h,
         itineraryPlanId: planId,
@@ -380,17 +379,30 @@ export const HotelList: React.FC<HotelListProps> = ({
       }));
 
     // ✅ Deduplicate by hotelId to prevent duplicate cards
-    const uniqueHotels = Array.from(
+    let uniqueHotels = Array.from(
       new Map(hotelsForRoute.map(h => [h.hotelId, h])).values()
     );
+
+    // ✅ Sort to put selected hotel first, then remaining hotels
+    const selectedHotelId = selectedByGroup[activeGroupType || 1]?.[itineraryRouteId]?.hotelId;
+    if (selectedHotelId) {
+      uniqueHotels.sort((a, b) => {
+        // Selected hotel comes first
+        if (a.hotelId === selectedHotelId) return -1;
+        if (b.hotelId === selectedHotelId) return 1;
+        // Keep original order for others
+        return 0;
+      });
+    }
 
     console.log('✅ Filtered from local state:', uniqueHotels.length, 'hotels');
     
     if (uniqueHotels.length > 0) {
       setRoomDetails(uniqueHotels);
       setExpandedRowKey(rowKey);
+      setHotelSearchQuery("");
     } else {
-      toast.warning('No hotels found for this route and tier');
+      toast.warning('No hotels found for this route');
     }
   };
 
@@ -713,15 +725,19 @@ export const HotelList: React.FC<HotelListProps> = ({
         );
         
         if (routeDay) {
-          const checkInDate = hotel.date || routeDay.day?.split(' | ')[1] || '';
-          const checkOutDate = checkInDate 
+          const checkInDate = hotel.checkInDate || hotel.date || routeDay.day?.split(' | ')[1] || '';
+          const checkOutDate = hotel.checkOutDate || (checkInDate 
             ? new Date(new Date(checkInDate).getTime() + 24*60*60*1000).toISOString().split('T')[0]
-            : '';
+            : '');
+          
+          // ✅ HOBSE support: Use hotelCode/bookingCode if available (provider-specific), fallback to hotelId
+          const hotelCodeForProvider = hotel.hotelCode || String(hotel.hotelId);
+          const bookingCodeForProvider = hotel.bookingCode || String(hotel.hotelId);
           
           selections[hotel.itineraryRouteId] = {
             provider: hotel.provider || 'tbo',
-            hotelCode: String(hotel.hotelId),
-            bookingCode: hotel.bookingCode || hotel.searchReference || String(hotel.hotelId),
+            hotelCode: hotelCodeForProvider,
+            bookingCode: bookingCodeForProvider,
             roomType: hotel.roomType || 'Standard',
             netAmount: hotel.totalHotelCost || 0,
             hotelName: hotel.hotelName || '',
@@ -740,42 +756,12 @@ export const HotelList: React.FC<HotelListProps> = ({
   // ---------- RENDER ----------
   return (
     <Card className="border-none shadow-none bg-white relative">
-      {/* Loading Overlay with Circular Progress */}
+      {/* Loading Overlay with Spinner */}
       {loadingRowKey !== null && (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50 rounded-lg">
           <div className="bg-white rounded-lg p-8 shadow-lg flex flex-col items-center gap-4">
-            {/* Circular Progress */}
-            <div className="relative w-24 h-24 flex items-center justify-center">
-              {/* Background circle */}
-              <svg className="absolute w-24 h-24" viewBox="0 0 100 100">
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="#e5d9f2"
-                  strokeWidth="8"
-                />
-                {/* Progress circle */}
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="45"
-                  fill="none"
-                  stroke="#7c3aed"
-                  strokeWidth="8"
-                  strokeDasharray={`${(loadingProgress / 100) * 282.7} 282.7`}
-                  strokeLinecap="round"
-                  style={{ transform: "rotate(-90deg)", transformOrigin: "50px 50px" }}
-                />
-              </svg>
-              {/* Percentage text */}
-              <div className="text-center z-10">
-                <p className="text-2xl font-bold text-[#7c3aed]">{Math.round(loadingProgress)}%</p>
-              </div>
-            </div>
+            <Loader2 className="w-12 h-12 text-[#7c3aed] animate-spin" />
             <p className="text-sm font-medium text-[#4a4260]">Loading hotel details...</p>
-            <p className="text-xs text-gray-500">This may take up to 30 seconds</p>
           </div>
         </div>
       )}
@@ -815,42 +801,54 @@ export const HotelList: React.FC<HotelListProps> = ({
           </div>
         )}
 
-        {/* Hotel Tabs – based on real backend groups */}
+        {/* Recommended Hotel Groups – based on real backend groups */}
         {/* ✅ IN READ-ONLY MODE: Hide tabs completely, no group type display */}
         {!readOnly && (
-          <div className="flex gap-2 mb-4 overflow-x-auto">
+          <div className="mb-4">
             {hotelTabs && hotelTabs.length > 0 ? (
-              hotelTabs.map((tab) => {
-                const isActive = tab.groupType === activeGroupType;
-                // ✅ Show sum of SELECTED hotels for this groupType (1 per route)
-                const tabTotal = getGroupTotal(tab.groupType);
-                return (
-                  <Button
-                    key={tab.groupType}
-                    variant={isActive ? "default" : "outline"}
-                    size="sm"
-                    disabled={loadingRowKey !== null}
-                    onClick={() => {
-                      setActiveGroupType(tab.groupType);
-                      setExpandedRowKey(null);
-                      setRoomDetails([]);
-                      // Notify parent that group type changed
-                      if (onGroupTypeChange) {
-                        onGroupTypeChange(tab.groupType);
-                      }
-                    }}
-                    className={
-                      isActive
-                        ? "bg-[#d546ab] hover:bg-[#c03d9f] text-white whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                        : "border-[#e5d9f2] text-[#4a4260] whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                    }
-                  >
-                    {tab.label} ({formatCurrency(tabTotal)})
-                  </Button>
-                );
-              })
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {hotelTabs.map((tab, index) => {
+                  const isActive = tab.groupType === activeGroupType;
+                  const tabTotal = getGroupTotal(tab.groupType);
+                  const recommendationLabels = [
+                    "Recommended #1",
+                    "Recommended #2", 
+                    "Recommended #3",
+                    "Recommended #4"
+                  ];
+                  return (
+                    <button
+                      key={tab.groupType}
+                      disabled={loadingRowKey !== null}
+                      onClick={() => {
+                        setActiveGroupType(tab.groupType);
+                        setLoadingRowKey("tab-switch");
+                        setExpandedRowKey(null);
+                        setRoomDetails([]);
+                        // Small delay to show loader and simulate tab switch
+                        setTimeout(() => {
+                          setLoadingRowKey(null);
+                          // Notify parent that group type changed
+                          if (onGroupTypeChange) {
+                            onGroupTypeChange(tab.groupType);
+                          }
+                        }, 500);
+                      }}
+                      className={`px-4 py-3 rounded-lg font-medium text-center transition-all disabled:opacity-50 disabled:cursor-not-allowed border-2 ${
+                        isActive
+                          ? "bg-[#7c3aed] border-[#7c3aed] text-white"
+                          : "bg-white border-[#e5d9f2] text-[#4a4260] hover:border-[#7c3aed]"
+                      }`}
+                    >
+                      <p className={`text-sm font-bold ${isActive ? "text-white" : "text-[#4a4260]"}`}>
+                        {recommendationLabels[index] || `Option ${index + 1}`} ({formatCurrency(tabTotal)})
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
-              <span className="text-sm text-gray-500">No hotel groups</span>
+              <span className="text-sm text-gray-500">No hotel groups available</span>
             )}
           </div>
         )}
@@ -983,19 +981,26 @@ export const HotelList: React.FC<HotelListProps> = ({
                             </div>
                           ) : (
                             <>
-                              {/* Sync Button */}
-                              <div className="flex justify-end mb-3">
+                              {/* Search Box + Sync Button */}
+                              <div className="flex justify-between items-center mb-4 gap-3">
+                                <input
+                                  type="text"
+                                  placeholder="Search Hotel..."
+                                  value={hotelSearchQuery}
+                                  onChange={(e) => setHotelSearchQuery(e.target.value)}
+                                  className="flex-1 px-3 py-2 border border-[#e5d9f2] rounded-lg text-sm focus:outline-none focus:border-[#7c3aed]"
+                                />
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleSyncRoute(Number(hotel.itineraryRouteId))}
                                   disabled={isSyncing}
-                                  className="border-[#7c3aed] text-[#7c3aed] hover:bg-[#f3e8ff] disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="border-[#7c3aed] text-[#7c3aed] hover:bg-[#f3e8ff] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                 >
                                   {isSyncing ? (
                                     <>
                                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      Syncing from TBO...
+                                      Syncing...
                                     </>
                                   ) : (
                                     <>🔄 Sync Fresh Hotels</>
@@ -1003,8 +1008,12 @@ export const HotelList: React.FC<HotelListProps> = ({
                                 </Button>
                               </div>
                               
-                              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                              {roomDetails.map((hotel) => {
+                              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 lg:grid-cols-4">
+                              {roomDetails
+                                .filter(h => 
+                                  h.hotelName?.toLowerCase().includes(hotelSearchQuery.toLowerCase())
+                                )
+                                .map((hotel) => {
                                 const roomKey = `hotel-${hotel.hotelId}`;
 
                                 return (

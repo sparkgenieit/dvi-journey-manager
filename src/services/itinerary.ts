@@ -310,6 +310,39 @@ export const ItineraryService = {
         phoneNo?: string;
       }>;
     }>;
+    // ✅ NEW: Multi-provider hotel bookings (TBO, ResAvenue, HOBSE, etc.)
+    hotel_bookings?: Array<{
+      routeId: number;
+      provider: string; // "TBO" | "ResAvenue" | "HOBSE"
+      hotelCode: string;
+      bookingCode: string;
+      roomType: string;
+      checkInDate: string;
+      checkOutDate: string;
+      numberOfRooms: number;
+      guestNationality: string;
+      netAmount: number;
+      passengers: Array<{
+        title: string;
+        firstName: string;
+        lastName: string;
+        email?: string;
+        paxType: number;
+        leadPassenger: boolean;
+        age: number;
+        passportNo?: string;
+        passportIssueDate?: string;
+        passportExpDate?: string;
+        phoneNo?: string;
+      }>;
+    }>;
+    // ✅ NEW: Primary guest fallback (used by backend if lead passenger missing)
+    primaryGuest?: {
+      salutation: string;
+      name: string;
+      phone: string;
+      email?: string;
+    };
     endUserIp?: string;
   }) {
     return api("itineraries/confirm-quotation", {
