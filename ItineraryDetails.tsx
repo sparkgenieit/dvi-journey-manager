@@ -1,0 +1,4298 @@
+// FILE: src/pages/itineraries/ItineraryDetails.tsx
+
+import React, { useEffect, useState, useRef, useLayoutEffect, useCallback, useMemo } from "react";
+import { useParams, Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2, RefreshCw, Edit } from "lucide-react";
+import { ItineraryService } from "@/services/itinerary";
+import { api } from "@/lib/api";
+import { VehicleList } from "./VehicleList";
+import { HotelList } from "./HotelList";
+import { VoucherDetailsModal } from "./VoucherDetailsModal";
+import { PluckCardModal } from "./PluckCardModal";
+import { InvoiceModal } from "./InvoiceModal";
+import { IncidentalExpensesModal } from "./IncidentalExpensesModal";
+import { HotelSearchModal } from "@/components/hotels/HotelSearchModal";
+import { HotelRoomSelectionModal } from "@/components/hotels/HotelRoomSelectionModal";
+import { CancelItineraryModal } from "@/components/modals/CancelItineraryModal";
+import { HotelVoucherModal } from "@/components/modals/HotelVoucherModal";
+import { HotelSearchResult } from "@/hooks/useHotelSearch";
+import { toast } from "sonner";
+
+// --------- Types aligned with CURRENT API RESPONSE ---------
+
+type StartSegment = {
+  type: "start";
+  title: string;
+  timeRange: string; // "12:00 AM - 12:00 AM"
+};
+
+type TravelSegment = {
+  type: "travel";
+  from: string;
+  to: string;
+  timeRange: string; // "06:30 AM - 06:45 AM"
+  distance: string;
+  duration: string; // "15 Min"
+  note?: string | null;
+  isConflict?: boolean;
+  conflictReason?: string | null;
+};
+
+type BreakSegment = {
+  type: "break";
+  location: string;
+  duration: string; // "1 Hour 30 Min"
+  timeRange: string; // "12:00 PM - 01:30 PM"
+};
+
+type Activity = {
+  id: number;
+  activityId: number;
+  title: string;
+  description: string;
+  amount: number;
+  startTime: string | null;
+  endTime: string | null;
+  duration: string | null;
+  image: string | null;
+};
+
+type AttractionSegment = {
+  type: "attraction";
+  name: string;
+  description: string;
+  visitTime: string; // "06:45 AM - 08:45 AM"
+  duration: string; // "2 Hours"
+  amount: number | null; // Entry cost
+  timings?: string;
+  image: string | null;
+  videoUrl?: string | null;
+  planOwnWay?: boolean;
+  activities?: Activity[];
+  hotspotId?: number;
+  routeHotspotId?: number;
+  locationId?: number | null;
+  isConflict?: boolean;
+  conflictReason?: string | null;
+  isManual?: boolean;
+};
+
+type HotspotSegment = {
+  type: "hotspot";
+  text: string;
+  locationId?: number;
+};
+
+type CheckinSegment = {
+  type: "checkin";
+  hotelName: string;
+  hotelAddress: string;
+  time: string | null; // "06:00 PM"
+};
+
+type ReturnSegment = {
+  type: "return";
+  time: string; // "08:00 PM"
+  note?: string | null;
+};
+
+type ItinerarySegment =
+  | StartSegment
+  | TravelSegment
+  | BreakSegment
+  | AttractionSegment
+  | HotspotSegment
+  | CheckinSegment
+  | ReturnSegment;
+
+type ViaRouteItem = {
+  id: number;
+  name: string;
+};
+
+type ItineraryDay = {
+  id: number;
+  dayNumber: number;
+  date: string; // ISO
+  departure: string | null;
+  arrival: string | null;
+  distance: string;
+  startTime: string; // "12:00 PM"
+  endTime: string; // "08:00 PM"
+  viaRoutes?: ViaRouteItem[];
+  segments: ItinerarySegment[];
+};
+
+// --------- HOTELS (matches backend DTO) ---------
+
+export type ItineraryHotelRow = {
+  groupType: number;
+  itineraryRouteId: number;
+  day: string;
+  destination: string;
+  hotelId: number;
+  hotelName: string;
+  category: number | string;
+  roomType: string;
+  mealPlan: string;
+  totalHotelCost: number;
+  totalHotelTaxAmount: number;
+  provider?: string; // Provider source (tbo, resavenue, hobse)
+  voucherCancelled?: boolean; // Whether voucher is cancelled
+  itineraryPlanHotelDetailsId?: number;
+  date?: string;
+  // ✅ HOBSE-specific fields (optional, used if provider === "HOBSE")
+  hotelCode?: string; // HOBSE hotel code
+  bookingCode?: string; // HOBSE booking code
+  checkInDate?: string; // YYYY-MM-DD format
+  checkOutDate?: string; // YYYY-MM-DD format
+};
+
+export type ItineraryHotelTab = {
+  groupType: number;
+  label: string;
+  totalAmount: number;
+};
+
+// --------- VEHICLES ---------
+
+type VehicleCostBreakdownItem = {
+  label: string;
+  amount: string | number;
+};
+
+export type ItineraryVehicleRow = {
+  vendorName: string | null;
+  branchName: string | null;
+  vehicleOrigin: string | null;
+  totalQty: string;
+  totalAmount: string;
+
+  // vehicle type information
+  vendorEligibleId?: number;
+  vehicleTypeId?: number;
+  vehicleTypeName?: string;
+  isAssigned?: boolean;
+
+  // per-vehicle charges (optional; fill from API)
+  rentalCharges?: number | string;
+  tollCharges?: number | string;
+  parkingCharges?: number | string;
+  driverCharges?: number | string;
+  permitCharges?: number | string;
+  before6amDriver?: number | string;
+  before6amVendor?: number | string;
+  after8pmDriver?: number | string;
+  after8pmVendor?: number | string;
+  breakdown?: VehicleCostBreakdownItem[];
+
+  // UI fields for the image + distance row
+  dayLabel?: string; // "Day-1 | 28 Nov 2025 | Outstation"
+  fromLabel?: string; // "CHENNAI INTERNATIONAL AIRPORT"
+  toLabel?: string; // "CHENNAI"
+  packageLabel?: string; // "Outstation - 250KM"
+  col1Distance?: string; // "30.22 KM"
+  col1Duration?: string; // "0 Min"
+  col2Distance?: string; // "0.00 KM"
+  col2Duration?: string; // "0 Min"
+  col3Distance?: string; // "30.22 KM"
+  col3Duration?: string; // "0 Min"
+  imageUrl?: string | null; // vehicle image if you ever have it
+};
+
+type PackageIncludes = {
+  description: string | null;
+  houseBoatNote: string | null;
+  rateNote: string | null;
+};
+
+type CostBreakdown = {
+  // Hotel costs
+  totalRoomCost?: number | null;
+  roomCostPerPerson?: number | null;
+  hotelPaxCount?: number | null;
+  totalAmenitiesCost?: number | null;
+  extraBedCost?: number | null;
+  childWithBedCost?: number | null;
+  childWithoutBedCost?: number | null;
+  totalHotelAmount?: number | null;
+  
+  // Vehicle costs
+  totalVehicleCost: number | null;
+  totalVehicleAmount: number | null;
+  totalVehicleQty?: number | null;
+  
+  // Activity/Guide costs
+  totalGuideCost?: number | null;
+  totalHotspotCost?: number | null;
+  totalActivityCost?: number | null;
+  
+  // Final calculations
+  additionalMargin: number | null;
+  totalAmount: number | null;
+  couponDiscount: number | null;
+  agentMargin: number | null;
+  totalRoundOff: number | null;
+  netPayable: number | null;
+  companyName: string | null;
+};
+
+// ----------------- Main API response types -----------------
+
+type ItineraryDetailsResponse = {
+  // planId for routing back to create-itinerary
+  planId?: number;
+  isConfirmed?: boolean;
+  quoteId: string;
+  dateRange: string;
+  roomCount: number;
+  extraBed: number;
+  childWithBed: number;
+  childWithoutBed: number;
+  adults: number;
+  children: number;
+  infants: number;
+  overallCost: string | number; // API is giving "15000.00"
+
+  days: ItineraryDay[];
+
+  // VEHICLES
+  vehicles: ItineraryVehicleRow[];
+
+  packageIncludes: PackageIncludes;
+  costBreakdown: CostBreakdown;
+};
+
+// response shape from /itineraries/hotel_details/:quoteId
+type ItineraryHotelDetailsResponse = {
+  hotelRatesVisible: boolean;
+  hotelTabs: ItineraryHotelTab[];
+  hotels: ItineraryHotelRow[];
+};
+
+// ----------------- Helper functions -----------------
+
+const formatHeaderDate = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const parseDisplayTimeToHms = (displayTime: string): string => {
+  if (!displayTime) return "09:00:00";
+  const parts = displayTime.split(' ');
+  if (parts.length < 2) return "09:00:00";
+  const [time, ampm] = parts;
+  const timeParts = time.split(':');
+  if (timeParts.length < 2) return "09:00:00";
+  let [hours, minutes] = timeParts.map(Number);
+  
+  if (ampm === 'PM' && hours < 12) hours += 12;
+  if (ampm === 'AM' && hours === 12) hours = 0;
+  
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+};
+
+const TimePickerPopover: React.FC<{
+  value: string;
+  onSave: (newValue: string) => Promise<void>;
+  label: string;
+}> = ({ value, onSave, label }) => {
+  const parts = value.split(' ');
+  const [localTime, setLocalTime] = useState(parts[0] || "09:00");
+  const [localAmPm, setLocalAmPm] = useState(parts[1] || "AM");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const timeParts = localTime.split(':');
+  const hours = Number(timeParts[0] || 9);
+  const minutes = Number(timeParts[1] || 0);
+  
+  const handleHourChange = (delta: number) => {
+    let newHour = hours + delta;
+    
+    // Toggle AM/PM when crossing 11 <-> 12 boundary
+    if (hours === 11 && delta === 1) {
+      toggleAmPm();
+    } else if (hours === 12 && delta === -1) {
+      toggleAmPm();
+    }
+
+    if (newHour > 12) newHour = 1;
+    if (newHour < 1) newHour = 12;
+    setLocalTime(`${String(newHour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`);
+  };
+  
+  const handleMinuteChange = (delta: number) => {
+    let newMinute = minutes + delta;
+    if (newMinute >= 60) newMinute = 0;
+    if (newMinute < 0) newMinute = 55;
+    setLocalTime(`${String(hours).padStart(2, '0')}:${String(newMinute).padStart(2, '0')}`);
+  };
+  
+  const toggleAmPm = () => {
+    setLocalAmPm(prev => prev === 'AM' ? 'PM' : 'AM');
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await onSave(`${localTime} ${localAmPm}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center p-4 bg-white rounded-lg shadow-xl border border-[#e5d9f2] min-w-[220px]">
+      <span className="text-[10px] font-bold text-[#6c6c6c] uppercase mb-3 tracking-wider">{label}</span>
+      <div className="flex items-center gap-4">
+        <div className="flex flex-col items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(1)} disabled={isSaving}>
+            <ChevronUp className="h-5 w-5" />
+          </Button>
+          <div className="bg-[#f8f5fc] border border-[#e5d9f2] rounded-md w-12 h-12 flex items-center justify-center text-xl font-bold text-[#4a4260]">
+            {String(hours).padStart(2, '0')}
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleHourChange(-1)} disabled={isSaving}>
+            <ChevronDown className="h-5 w-5" />
+          </Button>
+        </div>
+        
+        <span className="text-2xl font-bold text-[#4a4260] mt-2">:</span>
+        
+        <div className="flex flex-col items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(5)} disabled={isSaving}>
+            <ChevronUp className="h-5 w-5" />
+          </Button>
+          <div className="bg-[#f8f5fc] border border-[#e5d9f2] rounded-md w-12 h-12 flex items-center justify-center text-xl font-bold text-[#4a4260]">
+            {String(minutes).padStart(2, '0')}
+          </div>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#d546ab]" onClick={() => handleMinuteChange(-5)} disabled={isSaving}>
+            <ChevronDown className="h-5 w-5" />
+          </Button>
+        </div>
+        
+        <div className="flex flex-col items-center justify-center h-full pt-8">
+          <Button 
+            variant="outline" 
+            className={`h-12 w-12 font-bold border-2 ${localAmPm === 'AM' ? 'border-[#d546ab] text-[#d546ab] bg-[#fdf2f8]' : 'border-[#4a4260] text-[#4a4260]'}`}
+            onClick={toggleAmPm}
+            disabled={isSaving}
+          >
+            {localAmPm}
+          </Button>
+        </div>
+      </div>
+
+      <Button 
+        className="w-full mt-4 bg-[#d546ab] hover:bg-[#c4359a] text-white shadow-md"
+        onClick={handleSave}
+        disabled={isSaving}
+      >
+        {isSaving ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Updating...
+          </>
+        ) : (
+          "Update Time"
+        )}
+      </Button>
+    </div>
+  );
+};
+
+// ----------------- Main Component -----------------
+
+interface ItineraryDetailsProps {
+  readOnly?: boolean; // If true, component is read-only (confirmed itinerary view)
+}
+
+export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = false }) => {
+  const { id: quoteId } = useParams();
+  console.log('🔵 ItineraryDetails component MOUNTED with quoteId:', quoteId, 'readOnly:', readOnly);
+  
+  const [itinerary, setItinerary] = useState<ItineraryDetailsResponse | null>(
+    null
+  );
+  const [hotelDetails, setHotelDetails] =
+    useState<ItineraryHotelDetailsResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Delete hotspot modal state
+  const [deleteHotspotModal, setDeleteHotspotModal] = useState<{
+    open: boolean;
+    planId: number | null;
+    routeId: number | null;
+    hotspotId: number | null;
+    hotspotName: string;
+  }>({
+    open: false,
+    planId: null,
+    routeId: null,
+    hotspotId: null,
+    hotspotName: "",
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [routeNeedsRebuild, setRouteNeedsRebuild] = useState<number | null>(null);
+  const [isRebuilding, setIsRebuilding] = useState(false);
+  const [excludedHotspotIds, setExcludedHotspotIds] = useState<number[]>([]);
+
+  // Add activity modal state
+  type AvailableActivity = {
+    id: number;
+    title: string;
+    description: string;
+    costAdult: number;
+    costChild: number;
+    costForeignAdult: number;
+    costForeignChild: number;
+    duration: string | null;
+  };
+
+  const [addActivityModal, setAddActivityModal] = useState<{
+    open: boolean;
+    planId: number | null;
+    routeId: number | null;
+    routeHotspotId: number | null;
+    hotspotId: number | null;
+    hotspotName: string;
+  }>({
+    open: false,
+    planId: null,
+    routeId: null,
+    routeHotspotId: null,
+    hotspotId: null,
+    hotspotName: "",
+  });
+  const [availableActivities, setAvailableActivities] = useState<AvailableActivity[]>([]);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [isAddingActivity, setIsAddingActivity] = useState(false);
+
+  // Delete activity modal state
+  const [deleteActivityModal, setDeleteActivityModal] = useState<{
+    open: boolean;
+    planId: number | null;
+    routeId: number | null;
+    activityId: number | null;
+    activityName: string;
+  }>({
+    open: false,
+    planId: null,
+    routeId: null,
+    activityId: null,
+    activityName: "",
+  });
+  const [isDeletingActivity, setIsDeletingActivity] = useState(false);
+
+  // Add hotspot modal state
+  type AvailableHotspot = {
+    id: number;
+    name: string;
+    amount: number;
+    description: string;
+    timeSpend: number;
+    locationMap: string | null;
+    timings?: string;
+    visitAgain?: boolean;
+  };
+
+  const [addHotspotModal, setAddHotspotModal] = useState<{
+    open: boolean;
+    planId: number | null;
+    routeId: number | null;
+    locationId: number | null;
+    locationName: string;
+  }>({
+    open: false,
+    planId: null,
+    routeId: null,
+    locationId: null,
+    locationName: "",
+  });
+
+  // Inline Add Hotspot state
+  const [expandedAddHotspotDayId, setExpandedAddHotspotDayId] = useState<number | null>(null);
+  const [loadingHotspots, setLoadingHotspots] = useState(false);
+  const [isAddingHotspot, setIsAddingHotspot] = useState(false);
+  const [hotspotSearchQuery, setHotspotSearchQuery] = useState("");
+  const [availableHotspots, setAvailableHotspots] = useState<AvailableHotspot[]>([]);
+  const [previewTimeline, setPreviewTimeline] = useState<any[] | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [selectedHotspotId, setSelectedHotspotId] = useState<number | null>(null);
+
+  // Refs for scrolling
+  const hotspotListRef = useRef<HTMLDivElement>(null);
+  const timelinePreviewRef = useRef<HTMLDivElement>(null);
+
+  // Scroll management for Add Hotspot Modal
+  // Unified scroll handler - execute after DOM is fully rendered
+  useLayoutEffect(() => {
+    if (!addHotspotModal.open) return;
+    if (!selectedHotspotId) return;
+    if (!previewTimeline || previewTimeline.length === 0) return;
+
+    // Declare in outer scope for cleanup function
+    let raf1: number;
+    let raf2: number;
+    let raf3: number;
+
+    // Wait for next paint cycle to ensure all elements are rendered
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        raf3 = requestAnimationFrame(() => {
+          // Scroll left hotspot list
+          if (hotspotListRef.current) {
+            const card = hotspotListRef.current.querySelector(
+              `[data-hotspot-id="${selectedHotspotId}"]`
+            ) as HTMLElement | null;
+            
+            if (card && hotspotListRef.current) {
+              // Get container and card positions
+              const container = hotspotListRef.current;
+              const containerRect = container.getBoundingClientRect();
+              const cardRect = card.getBoundingClientRect();
+              
+              // Calculate relative position of card within container
+              const cardTopRelativeToContainer = card.offsetTop;
+              const cardHeightWithPadding = card.offsetHeight;
+              const containerHeight = container.clientHeight;
+              
+              // Scroll to position card more centered with larger offset
+              const scrollOffset = 150; // pixels from top - centers the card
+              const targetScrollTop = Math.max(0, cardTopRelativeToContainer - scrollOffset);
+              
+              container.scrollTo({
+                top: targetScrollTop,
+                behavior: "auto"
+              });
+              
+              // Debug logging
+              console.log('[Hotspot Scroll] Card found:', {
+                cardId: selectedHotspotId,
+                cardTop: cardTopRelativeToContainer,
+                containerHeight,
+                targetScrollTop,
+                containerScrollHeight: container.scrollHeight,
+                containerScrollTop: container.scrollTop
+              });
+            } else {
+              console.warn('[Hotspot Scroll] Card not found for ID:', selectedHotspotId);
+            }
+          } else {
+            console.warn('[Hotspot Scroll] Container ref not available');
+          }
+
+          // Scroll right timeline to show selected item
+          if (timelinePreviewRef.current) {
+            // Find the selected timeline item
+            const selectedItem = timelinePreviewRef.current.querySelector(
+              '[data-selected="true"]'
+            ) as HTMLElement | null;
+            
+            if (selectedItem) {
+              // Scroll to the selected item (the newly added hotspot)
+              const selectedItemTop = selectedItem.offsetTop;
+              const scrollOffset = 200; // pixels from top - larger offset for better visibility
+              const targetScroll = Math.max(0, selectedItemTop - scrollOffset);
+              
+              timelinePreviewRef.current.scrollTo({
+                top: targetScroll,
+                behavior: "auto"
+              });
+              
+              console.log('[Timeline Scroll] Found selected item, scrolled to:', {
+                selectedItemTop,
+                targetScroll,
+                containerScrollHeight: timelinePreviewRef.current.scrollHeight
+              });
+            } else {
+              // Fallback: scroll to top if no selected item
+              timelinePreviewRef.current.scrollTo({
+                top: 0,
+                behavior: "auto"
+              });
+              
+              console.log('[Timeline Scroll] No selected item, scrolled to top');
+            }
+          }
+        });
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      cancelAnimationFrame(raf3);
+    };
+  }, [addHotspotModal.open, selectedHotspotId, previewTimeline]);
+
+  // Scroll list to top when search query changes
+  useEffect(() => {
+    if (hotspotListRef.current && addHotspotModal.open) {
+      hotspotListRef.current.scrollTop = 0;
+    }
+  }, [hotspotSearchQuery, addHotspotModal.open]);
+
+  // Filter hotspots based on search query and sort: non-visitAgain first, visitAgain at bottom
+  const filteredHotspots = availableHotspots
+    .filter(
+      (h) =>
+        h.name.toLowerCase().includes(hotspotSearchQuery.toLowerCase()) ||
+        h.description.toLowerCase().includes(hotspotSearchQuery.toLowerCase())
+    )
+    .sort((a, b) => {
+      // Sort by visitAgain: false first, true at bottom
+      if (a.visitAgain === b.visitAgain) return 0;
+      return a.visitAgain ? 1 : -1;
+    });
+
+  // Hotel selection modal state
+  type AvailableHotel = {
+    id: number;
+    name: string;
+    address: string;
+    category: string;
+    checkIn: string;
+    checkOut: string;
+    distance: string;
+  };
+
+  const [hotelSelectionModal, setHotelSelectionModal] = useState<{
+    open: boolean;
+    planId: number | null;
+    routeId: number | null;
+    routeDate: string;
+    cityCode?: string;
+    cityName?: string;
+    checkInDate?: string;
+    checkOutDate?: string;
+  }>({
+    open: false,
+    planId: null,
+    routeId: null,
+    routeDate: "",
+  });
+  
+  const [roomSelectionModal, setRoomSelectionModal] = useState<{
+    open: boolean;
+    itinerary_plan_hotel_details_ID: number;
+    itinerary_plan_id: number;
+    itinerary_route_id: number;
+    hotel_id: number;
+    group_type: number;
+    hotel_name: string;
+  } | null>(null);
+
+  const [availableHotels, setAvailableHotels] = useState<AvailableHotel[]>([]);
+  const [loadingHotels, setLoadingHotels] = useState(false);
+  const [isSelectingHotel, setIsSelectingHotel] = useState(false);
+  const [hotelSearchQuery, setHotelSearchQuery] = useState("");
+  const [selectedMealPlan, setSelectedMealPlan] = useState({
+    all: false,
+    breakfast: false,
+    lunch: false,
+    dinner: false,
+  });
+
+  // Filter hotels based on search query
+  const filteredHotels = availableHotels.filter(
+    (h) =>
+      h.name.toLowerCase().includes(hotelSearchQuery.toLowerCase()) ||
+      h.address.toLowerCase().includes(hotelSearchQuery.toLowerCase())
+  );
+
+  // Gallery modal state
+  const [galleryModal, setGalleryModal] = useState<{
+    open: boolean;
+    images: string[];
+    title: string;
+  }>({
+    open: false,
+    images: [],
+    title: "",
+  });
+
+  // Video modal state
+  const [videoModal, setVideoModal] = useState<{
+    open: boolean;
+    videoUrl: string;
+    title: string;
+  }>({
+    open: false,
+    videoUrl: "",
+    title: "",
+  });
+
+  // Clipboard/Share modal state
+  const [clipboardModal, setClipboardModal] = useState(false);
+  const [shareModal, setShareModal] = useState(false);
+  const [clipboardType, setClipboardType] = useState<'recommended' | 'highlights' | 'para'>('recommended');
+  
+  // Hotel Selection State (Multi-Provider)
+  // Structure: { [routeId]: { provider, hotelCode, bookingCode, roomType, netAmount, hotelName, checkInDate, checkOutDate, groupType } }
+  const [selectedHotelBookings, setSelectedHotelBookings] = useState<{[routeId: number]: {
+    provider: string;
+    hotelCode: string;
+    bookingCode: string;
+    roomType: string;
+    netAmount: number;
+    hotelName: string;
+    checkInDate: string;
+    checkOutDate: string;
+    groupType?: number; // ✅ NEW: group type for selected hotel
+  }}>({});;
+  
+  const [selectedHotels, setSelectedHotels] = useState<{[key: string]: boolean}>({});
+
+  // ✅ For "Para" modal: show ONLY 4 options (Recommended #1 - #4)
+const paraRecommendations = useMemo(() => {
+  if (!hotelDetails?.hotels?.length) return [];
+
+  // Keep unique items (avoid duplicates), then take first 4
+  const seen = new Set<string>();
+  const unique = [];
+
+  for (const h of hotelDetails.hotels) {
+    const key = `${h.day}|${h.hotelName}|${h.destination}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(h);
+    if (unique.length === 4) break;
+  }
+
+  return unique;
+}, [hotelDetails]);
+
+  // Confirm Quotation modal state
+  const [confirmQuotationModal, setConfirmQuotationModal] = useState(false);
+  const [voucherModal, setVoucherModal] = useState(false);
+  const [pluckCardModal, setPluckCardModal] = useState(false);
+  const [invoiceModal, setInvoiceModal] = useState(false);
+  const [invoiceType, setInvoiceType] = useState<'tax' | 'proforma'>('tax');
+  const [incidentalModal, setIncidentalModal] = useState(false);
+  const [isConfirmingQuotation, setIsConfirmingQuotation] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<string>('');
+  
+  // ✅ Reference to hotel save function
+  const hotelSaveFunctionRef = React.useRef<(() => Promise<boolean>) | null>(null);
+  
+  // ✅ Track if component is mounted to prevent state updates after unmount
+  const isMountedRef = useRef(true);
+  
+  // ✅ Track which quoteId we're currently fetching to prevent duplicate fetches
+  const currentFetchRef = useRef<string | null>(null);
+  
+  const [agentInfo, setAgentInfo] = useState<{
+    quotation_no: string;
+    agent_name: string;
+    agent_id?: number;
+  } | null>(null);
+  const [guestDetails, setGuestDetails] = useState({
+    salutation: 'Mr',
+    name: '',
+    contactNo: '',
+    age: '',
+    alternativeContactNo: '',
+    emailId: '',
+    arrivalDateTime: '',
+    arrivalPlace: '',
+    arrivalFlightDetails: '',
+    departureDateTime: '',
+    departurePlace: '',
+    departureFlightDetails: '',
+  });
+  const [additionalAdults, setAdditionalAdults] = useState<Array<{ name: string; age: string }>>([]);
+  const [additionalChildren, setAdditionalChildren] = useState<Array<{ name: string; age: string }>>([]);
+  const [additionalInfants, setAdditionalInfants] = useState<Array<{ name: string; age: string }>>([]);
+
+  // Cancellation modal state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+
+  // Hotel voucher modal state
+  const [hotelVoucherModalOpen, setHotelVoucherModalOpen] = useState(false);
+  const [selectedHotelForVoucher, setSelectedHotelForVoucher] = useState<{
+    routeId: number;
+    hotelId: number;
+    hotelName: string;
+    hotelEmail: string;
+    hotelStateCity: string;
+    routeDates: string[];
+    dayNumbers: number[];
+    hotelDetailsIds: number[];
+  } | null>(null);
+
+  // Refresh hotel data after hotel update
+  const refreshHotelData = useCallback(async () => {
+    if (!quoteId) return;
+    
+    try {
+      console.log("🔄 [ItineraryDetails] Starting hotel data refresh for quoteId:", quoteId);
+      const [detailsRes, hotelRes] = await Promise.all([
+        ItineraryService.getDetails(quoteId),
+        ItineraryService.getHotelDetails(quoteId),
+      ]);
+      console.log("✅ [ItineraryDetails] Hotel data received:", { detailsRes, hotelRes });
+      setItinerary(detailsRes as ItineraryDetailsResponse);
+      setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      console.log("✅ [ItineraryDetails] State updated with new hotel data");
+    } catch (e: any) {
+      console.error("❌ [ItineraryDetails] Failed to refresh hotel data", e);
+    }
+  }, [quoteId]);
+
+  const refreshVehicleData = useCallback(async () => {
+    if (!quoteId) return;
+    
+    try {
+      const detailsRes = await ItineraryService.getDetails(quoteId);
+      setItinerary(detailsRes as ItineraryDetailsResponse);
+    } catch (e: any) {
+      console.error("Failed to refresh vehicle data", e);
+    }
+  }, [quoteId]);
+
+  const handleHotelGroupTypeChange = useCallback(async (groupType: number) => {
+    if (!quoteId) return;
+    
+    console.log("Hotel group type changed to:", groupType);
+    
+    try {
+      // Only refetch itinerary details with the selected group type to update costs
+      // Hotel data (hotels, hotelTabs) does NOT change by group type, only cost breakdown
+      const detailsRes = await ItineraryService.getDetails(quoteId, groupType);
+      setItinerary(detailsRes as ItineraryDetailsResponse);
+    } catch (e: any) {
+      console.error("Failed to update data for group type change", e);
+    }
+  }, [quoteId]);
+
+  const handleGetSaveFunction = useCallback((saveFn: () => Promise<boolean>) => {
+    hotelSaveFunctionRef.current = saveFn;
+  }, []);
+
+  const handleCreateVoucher = useCallback((hotelData: {
+    routeId: number;
+    hotelId: number;
+    hotelName: string;
+    hotelEmail: string;
+    hotelStateCity: string;
+    routeDates: string[];
+    dayNumbers: number[];
+    hotelDetailsIds: number[];
+  }) => {
+    setSelectedHotelForVoucher(hotelData);
+    setHotelVoucherModalOpen(true);
+  }, []);
+
+  const handleHotelSelectionsChange = useCallback((selections: Record<number, {
+    provider: string;
+    hotelCode: string;
+    bookingCode: string;
+    roomType: string;
+    netAmount: number;
+    hotelName: string;
+    checkInDate: string;
+    checkOutDate: string;
+    groupType: number;
+  }>) => {
+    // Update selectedHotelBookings when user selects hotels in HotelList
+    setSelectedHotelBookings(selections);
+    console.log('🏨 Hotel selections updated from HotelList:', selections);
+  }, []);
+
+  useEffect(() => {
+    if (!quoteId) {
+      setError("Missing quote id in URL");
+      setLoading(false);
+      return;
+    }
+
+    // If we're already fetching this quoteId, skip duplicate fetch
+    if (currentFetchRef.current === quoteId) {
+      console.log("🔄 [ItineraryDetails] Already fetching quoteId:", quoteId, "- skipping duplicate");
+      return;
+    }
+
+    // Mark that we're fetching this quoteId
+    currentFetchRef.current = quoteId;
+    isMountedRef.current = true;
+
+    const fetchDetails = async () => {
+      try {
+        console.log("🌐 [ItineraryDetails] FETCHING initial details for quoteId:", quoteId);
+        setLoading(true);
+        setError(null);
+
+        // Fetch both details and hotel data in parallel
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+
+        // Only update state if component is still mounted
+        if (!isMountedRef.current) {
+          console.log("🔄 [ItineraryDetails] Component unmounted, skipping state update");
+          return;
+        }
+
+        console.log("✅ [ItineraryDetails] Initial fetch completed successfully");
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      } catch (e: any) {
+        // Only update state if component is still mounted
+        if (!isMountedRef.current) return;
+        
+        console.error("❌ [ItineraryDetails] Failed to load itinerary details", e);
+        setError(e?.message || "Failed to load itinerary details");
+        setItinerary(null);
+        setHotelDetails(null);
+      } finally {
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchDetails();
+
+    // Cleanup: Mark component as unmounted
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [quoteId]);
+
+  /**
+   * ⚡ Lazy-load hotel details when needed (e.g., when user opens hotel selection)
+   * This prevents the initial page load from making the unnecessary second API call
+   */
+  const ensureHotelDetailsLoaded = async () => {
+    if (hotelDetails) {
+      // Already loaded
+      return hotelDetails;
+    }
+
+    if (!quoteId) return null;
+
+    try {
+      let hotelRes;
+      
+      // If confirmed itinerary is available, fetch from confirmed endpoint
+      if (itinerary?.confirmed_itinerary_plan_ID) {
+        hotelRes = await ItineraryService.getConfirmedItinerary(itinerary.confirmed_itinerary_plan_ID);
+      } else {
+        // Fallback to hotel details endpoint
+        hotelRes = await ItineraryService.getHotelDetails(quoteId);
+      }
+      
+      setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      return hotelRes;
+    } catch (error: any) {
+      console.error("Failed to load hotel details", error);
+      toast.error("Failed to load hotel details");
+      return null;
+    }
+  };
+
+  const handleDeleteHotspot = async () => {
+    if (!deleteHotspotModal.planId || !deleteHotspotModal.routeId || !deleteHotspotModal.hotspotId) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await ItineraryService.deleteHotspot(
+        deleteHotspotModal.planId,
+        deleteHotspotModal.routeId,
+        deleteHotspotModal.hotspotId
+      );
+      
+      toast.success("Hotspot deleted successfully");
+      
+      // Close modal
+      setDeleteHotspotModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        hotspotId: null,
+        hotspotName: "",
+      });
+      
+      // Show rebuild button by setting route ID with pending rebuild
+      setRouteNeedsRebuild(deleteHotspotModal.routeId);
+      
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to delete hotspot", e);
+      toast.error(e?.message || "Failed to delete hotspot");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleRebuildRoute = async (planId: number, routeId: number) => {
+    setIsRebuilding(true);
+    try {
+      await ItineraryService.rebuildRoute(planId, routeId);
+      toast.success("Route rebuilt successfully");
+      
+      // Clear rebuild flag
+      setRouteNeedsRebuild(null);
+      
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to rebuild route", e);
+      toast.error(e?.message || "Failed to rebuild route");
+    } finally {
+      setIsRebuilding(false);
+    }
+  };
+
+  const handleUpdateRouteTimesDirect = async (
+    planId: number,
+    routeId: number,
+    dayNumber: number,
+    startTimeDisplay: string,
+    endTimeDisplay: string
+  ) => {
+    const startTimeHms = parseDisplayTimeToHms(startTimeDisplay);
+    const endTimeHms = parseDisplayTimeToHms(endTimeDisplay);
+
+    console.log(`Updating route times: planId=${planId}, routeId=${routeId}, day=${dayNumber}, start=${startTimeHms}, end=${endTimeHms}`);
+
+    try {
+      await ItineraryService.updateRouteTimes(
+        planId,
+        routeId,
+        startTimeHms,
+        endTimeHms
+      );
+
+      toast.success(`Day ${dayNumber} times updated`);
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to update route times", e);
+      toast.error(e?.message || "Failed to update route times");
+    }
+  };
+
+  const openDeleteHotspotModal = (
+    planId: number,
+    routeId: number,
+    hotspotId: number,
+    hotspotName: string
+  ) => {
+    setDeleteHotspotModal({
+      open: true,
+      planId,
+      routeId,
+      hotspotId,
+      hotspotName,
+    });
+  };
+
+  const openAddActivityModal = async (
+    planId: number,
+    routeId: number,
+    routeHotspotId: number,
+    hotspotId: number,
+    hotspotName: string
+  ) => {
+    setAddActivityModal({
+      open: true,
+      planId,
+      routeId,
+      routeHotspotId,
+      hotspotId,
+      hotspotName,
+    });
+
+    // Fetch available activities
+    setLoadingActivities(true);
+    try {
+      const activities = await ItineraryService.getAvailableActivities(hotspotId);
+      setAvailableActivities(activities as AvailableActivity[]);
+    } catch (e: any) {
+      console.error("Failed to load activities", e);
+      toast.error(e?.message || "Failed to load activities");
+      setAvailableActivities([]);
+    } finally {
+      setLoadingActivities(false);
+    }
+  };
+
+  const handleAddActivity = async (activityId: number, amount: number) => {
+    if (!addActivityModal.planId || !addActivityModal.routeId || !addActivityModal.routeHotspotId || !addActivityModal.hotspotId) {
+      return;
+    }
+
+    setIsAddingActivity(true);
+    try {
+      await ItineraryService.addActivity({
+        planId: addActivityModal.planId,
+        routeId: addActivityModal.routeId,
+        routeHotspotId: addActivityModal.routeHotspotId,
+        hotspotId: addActivityModal.hotspotId,
+        activityId,
+        amount,
+      });
+
+      toast.success("Activity added successfully");
+
+      // Close modal
+      setAddActivityModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        routeHotspotId: null,
+        hotspotId: null,
+        hotspotName: "",
+      });
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to add activity", e);
+      toast.error(e?.message || "Failed to add activity");
+    } finally {
+      setIsAddingActivity(false);
+    }
+  };
+
+  const handleDeleteActivity = async () => {
+    if (!deleteActivityModal.planId || !deleteActivityModal.routeId || !deleteActivityModal.activityId) {
+      return;
+    }
+
+    setIsDeletingActivity(true);
+    try {
+      await ItineraryService.deleteActivity(
+        deleteActivityModal.planId,
+        deleteActivityModal.routeId,
+        deleteActivityModal.activityId
+      );
+
+      toast.success("Activity deleted successfully");
+
+      // Close modal
+      setDeleteActivityModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        activityId: null,
+        activityName: "",
+      });
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to delete activity", e);
+      toast.error(e?.message || "Failed to delete activity");
+    } finally {
+      setIsDeletingActivity(false);
+    }
+  };
+
+  const openDeleteActivityModal = (
+    planId: number,
+    routeId: number,
+    activityId: number,
+    activityName: string
+  ) => {
+    setDeleteActivityModal({
+      open: true,
+      planId,
+      routeId,
+      activityId,
+      activityName,
+    });
+  };
+
+  const toggleInlineAddHotspot = async (
+    dayId: number,
+    locationId: number,
+    locationName: string
+  ) => {
+    if (readOnly) {
+      console.log('Cannot add hotspots in read-only mode');
+      return;
+    }
+
+    if (expandedAddHotspotDayId === dayId) {
+      setExpandedAddHotspotDayId(null);
+      return;
+    }
+
+    setExpandedAddHotspotDayId(dayId);
+    setAddHotspotModal({
+      open: false,
+      planId: itinerary?.planId || null,
+      routeId: dayId,
+      locationId,
+      locationName,
+    });
+    
+    setLoadingHotspots(true);
+    try {
+      const hotspots = await ItineraryService.getAvailableHotspots(dayId);
+      setAvailableHotspots(hotspots as AvailableHotspot[]);
+      
+      // Get excluded hotspot IDs for this route
+      const currentRoute = itinerary?.days.find(d => d.id === dayId);
+      if (currentRoute) {
+        setExcludedHotspotIds((currentRoute as any).excluded_hotspot_ids || []);
+      }
+    } catch (e: any) {
+      console.error("Failed to fetch available hotspots", e);
+      toast.error(e?.message || "Failed to load available hotspots");
+    } finally {
+      setLoadingHotspots(false);
+    }
+  };
+
+  const openAddHotspotModal = async (
+    planId: number,
+    routeId: number,
+    locationId: number,
+    locationName: string
+  ) => {
+    setAddHotspotModal({
+      open: true,
+      planId,
+      routeId,
+      locationId,
+      locationName,
+    });
+    setPreviewTimeline(null);
+    setSelectedHotspotId(null);
+
+    // Fetch available hotspots for this location
+    setLoadingHotspots(true);
+    try {
+      const hotspots = await ItineraryService.getAvailableHotspots(routeId);
+      setAvailableHotspots(hotspots as AvailableHotspot[]);
+    } catch (e: any) {
+      console.error("Failed to fetch available hotspots", e);
+      toast.error(e?.message || "Failed to load available hotspots");
+    } finally {
+      setLoadingHotspots(false);
+    }
+  };
+
+  const handlePreviewHotspot = async (hotspotId: number, planId?: number, routeId?: number) => {
+    const pId = planId || addHotspotModal.planId;
+    const rId = routeId || addHotspotModal.routeId;
+    if (!pId || !rId) return;
+
+    setSelectedHotspotId(hotspotId);
+    setIsPreviewing(true);
+    setPreviewTimeline(null);
+    
+    // Don't force scroll list to top here, let the user stay where they clicked
+    if (timelinePreviewRef.current) {
+      timelinePreviewRef.current.scrollTop = 0;
+    }
+
+    try {
+      const preview = await ItineraryService.previewAddHotspot(
+        pId,
+        rId,
+        hotspotId
+      );
+      // The backend returns { newHotspot, otherConflicts, fullTimeline }
+      setPreviewTimeline(preview.fullTimeline || []);
+    } catch (e: any) {
+      console.error("Failed to preview hotspot", e);
+      toast.error(e?.message || "Failed to preview hotspot");
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
+  const handleAddHotspot = async (hotspotId: number) => {
+    if (readOnly) {
+      console.log('Cannot add hotspot in read-only mode');
+      return;
+    }
+
+    if (!addHotspotModal.planId || !addHotspotModal.routeId) {
+      return;
+    }
+
+    // Check for conflicts in preview
+    const hasConflicts = previewTimeline?.some(seg => seg.isConflict);
+    if (hasConflicts) {
+      const confirm = window.confirm("This addition will cause timing conflicts (some places may be closed). Do you want to continue?");
+      if (!confirm) return;
+    }
+
+    setIsAddingHotspot(true);
+    try {
+      await ItineraryService.addManualHotspot(
+        addHotspotModal.planId,
+        addHotspotModal.routeId,
+        hotspotId
+      );
+
+      toast.success("Hotspot added successfully");
+
+      // Close modal and inline
+      setAddHotspotModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        locationId: null,
+        locationName: "",
+      });
+      setExpandedAddHotspotDayId(null);
+      setHotspotSearchQuery("");
+      setPreviewTimeline(null);
+      setSelectedHotspotId(null);
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to add hotspot", e);
+      toast.error(e?.message || "Failed to add hotspot");
+    } finally {
+      setIsAddingHotspot(false);
+    }
+  };
+
+  const openGalleryModal = (images: string[], title: string) => {
+    setGalleryModal({
+      open: true,
+      images: images.filter(img => img && img.trim() !== ''),
+      title,
+    });
+  };
+
+  const openHotelSelectionModal = (
+    planId: number,
+    routeId: number,
+    routeDate: string,
+    cityCode: string,
+    cityName: string
+  ) => {
+    // ⚡ Lazy-load hotel details when modal opens (not on initial page load)
+    ensureHotelDetailsLoaded();
+
+    setHotelSelectionModal({
+      open: true,
+      planId,
+      routeId,
+      routeDate,
+      cityCode,
+      cityName,
+      checkInDate: routeDate,
+      checkOutDate: routeDate, // This will be set properly by calculating next day
+    });
+  };
+
+  const handleSelectHotel = async (hotelId: number, roomTypeId: number = 1) => {
+    if (readOnly) {
+      console.log('Cannot select hotel in read-only mode');
+      return;
+    }
+
+    if (!hotelSelectionModal.planId || !hotelSelectionModal.routeId) {
+      return;
+    }
+
+    setIsSelectingHotel(true);
+    try {
+      await ItineraryService.selectHotel(
+        hotelSelectionModal.planId,
+        hotelSelectionModal.routeId,
+        hotelId,
+        roomTypeId,
+        selectedMealPlan
+      );
+
+      toast.success("Hotel selected successfully");
+
+      // Close modal
+      setHotelSelectionModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        routeDate: "",
+      });
+      setHotelSearchQuery("");
+      setSelectedMealPlan({ all: false, breakfast: false, lunch: false, dinner: false });
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to select hotel", e);
+      toast.error(e?.message || "Failed to select hotel");
+    } finally {
+      setIsSelectingHotel(false);
+    }
+  };
+
+  // Handle hotel selection from HotelSearchModal
+  const handleSelectHotelFromSearch = async (
+    hotel: HotelSearchResult,
+    mealPlan?: any
+  ) => {
+    if (readOnly) {
+      console.log('Cannot select hotel in read-only mode');
+      return;
+    }
+
+    if (!hotelSelectionModal.planId || !hotelSelectionModal.routeId) {
+      return;
+    }
+
+    setIsSelectingHotel(true);
+    try {
+      // For now, use hotelCode as hotelId. If backend expects different format, adjust here
+      const hotelId = parseInt(hotel.hotelCode) || 0;
+      const roomTypeId = hotel.roomTypes?.[0]?.roomCode ? parseInt(hotel.roomTypes[0].roomCode) : 1;
+
+      // Store hotel details for TBO confirmation (ALL hotel selections)
+      // Calculate checkout date (next day after check-in)
+      const checkInDate = new Date(hotelSelectionModal.routeDate);
+      const checkOutDate = new Date(checkInDate);
+      checkOutDate.setDate(checkOutDate.getDate() + 1);
+      
+      // Format dates to YYYY-MM-DD
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      // Store ALL selected hotels with provider info (multi-provider support)
+      setSelectedHotelBookings(prev => ({
+        ...prev,
+        [hotelSelectionModal.routeId]: {
+          provider: hotel.provider || 'tbo', // Get provider from search result
+          hotelCode: hotel.hotelCode,
+          // bookingCode should come from hotel.bookingCode (mapped from search data)
+          // Only fallback to hotelCode if bookingCode is not available
+          bookingCode: hotel.bookingCode || hotel.hotelCode,
+          roomType: hotel.roomTypes?.[0]?.roomName || 'Standard',
+          netAmount: hotel.totalCost || hotel.totalRoomCost || hotel.price || 0,
+          hotelName: hotel.hotelName,
+          checkInDate: formatDate(checkInDate),
+          checkOutDate: formatDate(checkOutDate),
+        }
+      }));
+      
+      console.log('DEBUG: Hotel selected and stored', {
+        routeId: hotelSelectionModal.routeId,
+        hotelCode: hotel.hotelCode,
+        hotelName: hotel.hotelName,
+      });
+
+      await ItineraryService.selectHotel(
+        hotelSelectionModal.planId,
+        hotelSelectionModal.routeId,
+        hotelId,
+        roomTypeId,
+        mealPlan || selectedMealPlan
+      );
+
+      toast.success("Hotel selected successfully");
+
+      // Close modal
+      setHotelSelectionModal({
+        open: false,
+        planId: null,
+        routeId: null,
+        routeDate: "",
+      });
+      setHotelSearchQuery("");
+      setSelectedMealPlan({ all: false, breakfast: false, lunch: false, dinner: false });
+
+      // Reload itinerary data
+      if (quoteId) {
+        const [detailsRes, hotelRes] = await Promise.all([
+          ItineraryService.getDetails(quoteId),
+          ItineraryService.getHotelDetails(quoteId),
+        ]);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+        setHotelDetails(hotelRes as ItineraryHotelDetailsResponse);
+      }
+    } catch (e: any) {
+      console.error("Failed to select hotel", e);
+      toast.error(e?.message || "Failed to select hotel");
+      throw e; // Re-throw for modal to handle
+    } finally {
+      setIsSelectingHotel(false);
+    }
+  };
+
+  const openVideoModal = (videoUrl: string, title: string) => {
+    setVideoModal({
+      open: true,
+      videoUrl,
+      title,
+    });
+  };
+
+  const openConfirmQuotationModal = async () => {
+    if (!itinerary?.planId) {
+      toast.error('Plan ID not found');
+      return;
+    }
+
+    setConfirmQuotationModal(true);
+
+    try {
+      // Fetch customer info form data
+      const customerInfo = await ItineraryService.getCustomerInfoForm(itinerary.planId);
+      setWalletBalance(customerInfo.wallet_balance);
+
+      // Check wallet balance and get plan details
+      const planDetails = await api(`itineraries/edit/${itinerary.planId}`, { method: 'GET' });
+      
+      // ✅ FIX: Set agent_id from planDetails - try multiple possible field names
+      let agentId = planDetails?.plan?.agent_ID 
+                 || planDetails?.plan?.agent_id 
+                 || planDetails?.agent_ID 
+                 || planDetails?.agent_id
+                 || customerInfo?.agent_id;
+      
+      console.log('🔍 [openConfirmQuotationModal] planDetails:', planDetails);
+      console.log('🔍 [openConfirmQuotationModal] customerInfo:', customerInfo);
+      console.log('🔍 [openConfirmQuotationModal] agentId resolved to:', agentId);
+      
+      if (agentId) {
+        try {
+          const walletData = await ItineraryService.checkWalletBalance(agentId);
+          setWalletBalance(walletData.formatted_balance);
+        } catch (e) {
+          console.warn('⚠️ Failed to fetch wallet balance:', e);
+        }
+      }
+
+      // Set agentInfo with correct agent_id (only if we have valid agentId)
+      if (agentId) {
+        setAgentInfo({
+          quotation_no: customerInfo.quotation_no,
+          agent_name: customerInfo.agent_name,
+          agent_id: agentId, // Use actual agent ID from plan
+        });
+        console.log('✅ [openConfirmQuotationModal] agentInfo set with agent_id:', agentId);
+      } else {
+        console.error('❌ [openConfirmQuotationModal] Failed to get agent_id. Available data:', { planDetails, customerInfo });
+        toast.error('Failed to load agent information. Please try again.');
+        setConfirmQuotationModal(false);
+        return;
+      }
+
+      // Prefill arrival and departure details from plan
+      if (planDetails?.plan) {
+        const plan = planDetails.plan;
+        const formatDateTime = (dateTime: string) => {
+          if (!dateTime) return '';
+          const date = new Date(dateTime);
+          const day = String(date.getDate()).padStart(2, '0');
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const year = date.getFullYear();
+          const hours = date.getHours();
+          const minutes = String(date.getMinutes()).padStart(2, '0');
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          const displayHours = hours % 12 || 12;
+          return `${day}-${month}-${year} ${displayHours}:${minutes} ${ampm}`;
+        };
+
+        setGuestDetails(prev => ({
+          ...prev,
+          arrivalDateTime: plan.trip_start_date_and_time ? formatDateTime(plan.trip_start_date_and_time) : '',
+          arrivalPlace: plan.arrival_location || '',
+          departureDateTime: plan.trip_end_date_and_time ? formatDateTime(plan.trip_end_date_and_time) : '',
+          departurePlace: plan.departure_location || '',
+        }));
+      }
+    } catch (e: any) {
+      console.error('Failed to load customer info', e);
+      toast.error(e?.message || 'Failed to load customer information');
+    }
+  };
+
+  const handleConfirmQuotation = async () => {
+    if (!itinerary?.planId || !agentInfo?.agent_id) {
+      toast.error('Missing required information');
+      return;
+    }
+
+    // Validate required fields - only name and contact number are mandatory
+    if (!guestDetails.name || !guestDetails.contactNo) {
+      toast.error('Please fill in guest name and contact number');
+      return;
+    }
+
+    setIsConfirmingQuotation(true);
+
+    try {
+      // ℹ️ NOTE: Hotel selections are sent in the confirm-quotation payload
+      // No need to save them separately via hotels/select
+
+      // ✅ AUTO-SELECT: If user hasn't selected a hotel for a route, auto-select first hotel from Budget tier (groupType 1)
+      let autoSelectedHotels = { ...selectedHotelBookings };
+      
+      if (hotelDetails?.hotels && hotelDetails.hotels.length > 0) {
+        // Get all routes that have hotels available
+        const routesWithHotels = new Set(hotelDetails.hotels.map((h: any) => h.itineraryRouteId));
+        
+        // For each route with hotels, check if user has already selected
+        routesWithHotels.forEach((routeId: number) => {
+          if (!autoSelectedHotels[routeId]) {
+            // Find first hotel from this route (should be Budget/groupType 1)
+            const firstHotelForRoute = hotelDetails.hotels.find(
+              (h: any) => h.itineraryRouteId === routeId && h.groupType === 1
+            );
+            
+            if (firstHotelForRoute) {
+              // Calculate check-in and check-out dates
+              const routeDay = itinerary?.days?.find(d => d.id === routeId);
+              const checkInDate = routeDay?.date || '';
+              const checkOutDate = routeDay 
+                ? new Date(new Date(routeDay.date).getTime() + 24*60*60*1000).toISOString().split('T')[0] 
+                : '';
+              
+              // Auto-select this hotel
+              autoSelectedHotels[routeId] = {
+                provider: firstHotelForRoute.provider || 'tbo', // Get provider from hotel data
+                hotelCode: String(firstHotelForRoute.hotelCode || firstHotelForRoute.hotelId),
+                bookingCode: firstHotelForRoute.bookingCode || String(firstHotelForRoute.hotelId),
+                roomType: firstHotelForRoute.roomType || 'Standard',
+                netAmount: firstHotelForRoute.totalHotelCost || 0,
+                hotelName: firstHotelForRoute.hotelName,
+                checkInDate,
+                checkOutDate,
+              };
+              
+              console.log(`ℹ️ Auto-selected for Route ${routeId}: ${firstHotelForRoute.hotelName} (Budget Tier)`);
+            }
+          }
+        });
+      }
+      
+      console.log('DEBUG: Auto-selected hotels (merged):', autoSelectedHotels);
+
+      // Build passengers array for hotel booking (works for all providers: TBO, ResAvenue, HOBSE)
+      const passengers = [
+        {
+          title: guestDetails.salutation,
+          firstName: guestDetails.name.split(' ')[0],
+          lastName: guestDetails.name.split(' ').slice(1).join(' ') || guestDetails.name,
+          email: guestDetails.emailId || undefined,
+          paxType: 1, // 1 = Adult
+          leadPassenger: true, // ✅ IMPORTANT: Lead passenger for HOBSE/backend
+          age: parseInt(guestDetails.age) || 0,
+          passportNo: undefined,
+          passportIssueDate: undefined,
+          passportExpDate: undefined,
+          phoneNo: guestDetails.contactNo,
+        },
+        // Additional adults
+        ...additionalAdults.map((adult, idx) => ({
+          title: 'Mr',
+          firstName: adult.name.split(' ')[0],
+          lastName: adult.name.split(' ').slice(1).join(' ') || adult.name,
+          email: undefined,
+          paxType: 1, // 1 = Adult
+          leadPassenger: false,
+          age: parseInt(adult.age) || 0,
+          passportNo: undefined,
+          phoneNo: guestDetails.contactNo,
+        })),
+        // Children
+        ...additionalChildren.map((child, idx) => ({
+          title: 'Mr',
+          firstName: child.name.split(' ')[0],
+          lastName: child.name.split(' ').slice(1).join(' ') || child.name,
+          email: undefined,
+          paxType: 2, // 2 = Child
+          leadPassenger: false,
+          age: parseInt(child.age) || 0,
+          passportNo: undefined,
+          phoneNo: guestDetails.contactNo,
+        })),
+        // Infants
+        ...additionalInfants.map((infant, idx) => ({
+          title: 'Mr',
+          firstName: infant.name.split(' ')[0],
+          lastName: infant.name.split(' ').slice(1).join(' ') || infant.name,
+          email: undefined,
+          paxType: 3, // 3 = Infant
+          leadPassenger: false,
+          age: parseInt(infant.age) || 0,
+          passportNo: undefined,
+          phoneNo: guestDetails.contactNo,
+        })),
+      ];
+
+      // Build hotel_bookings array with provider field - using auto-selected hotels if user didn't manually select
+      // ✅ FIX: Only book hotels that were selected (manually or auto-selected)
+      console.log('DEBUG: autoSelectedHotels state:', autoSelectedHotels);
+      
+      const hotelBookings: any[] = Object.entries(autoSelectedHotels).map(([routeId, hotelData]) => ({
+        provider: hotelData.provider, // Provider from hotel selection (tbo, ResAvenue, etc.)
+        routeId: parseInt(routeId),
+        hotelCode: hotelData.hotelCode,
+        bookingCode: hotelData.bookingCode,
+        roomType: hotelData.roomType,
+        checkInDate: hotelData.checkInDate,
+        checkOutDate: hotelData.checkOutDate,
+        numberOfRooms: 1,
+        guestNationality: 'IN',
+        netAmount: hotelData.netAmount,
+        passengers: passengers.filter(p => p.paxType !== 3 || passengers.length === 1),
+      }));
+      
+      console.log('DEBUG: Final hotel_bookings array (with auto-selected):', hotelBookings);
+
+      // Get client IP
+      const clientIp = await fetch('https://api.ipify.org?format=json')
+        .then(res => res.json())
+        .then(data => data.ip)
+        .catch(() => '192.168.1.1');
+
+      // Extract hotel_group_type from selected hotels (all selections should have same groupType)
+      const groupTypeValue = Object.values(selectedHotelBookings)[0]?.groupType ?? 1;
+      const selectedGroupType = String(groupTypeValue);
+
+      // ✅ Build primaryGuest object as fallback for HOBSE/backend
+      const primaryGuest = {
+        salutation: guestDetails.salutation,
+        name: guestDetails.name,
+        phone: guestDetails.contactNo,
+        email: guestDetails.emailId,
+      };
+
+      await ItineraryService.confirmQuotation({
+        itinerary_plan_ID: itinerary.planId,
+        agent: agentInfo.agent_id,
+        primary_guest_salutation: guestDetails.salutation,
+        primary_guest_name: guestDetails.name,
+        primary_guest_contact_no: guestDetails.contactNo,
+        primary_guest_age: guestDetails.age,
+        primary_guest_alternative_contact_no: guestDetails.alternativeContactNo,
+        primary_guest_email_id: guestDetails.emailId,
+        adult_name: additionalAdults.map(a => a.name),
+        adult_age: additionalAdults.map(a => a.age),
+        child_name: additionalChildren.map(c => c.name),
+        child_age: additionalChildren.map(c => c.age),
+        infant_name: additionalInfants.map(i => i.name),
+        infant_age: additionalInfants.map(i => i.age),
+        arrival_date_time: guestDetails.arrivalDateTime,
+        arrival_place: guestDetails.arrivalPlace,
+        arrival_flight_details: guestDetails.arrivalFlightDetails,
+        departure_date_time: guestDetails.departureDateTime,
+        departure_place: guestDetails.departurePlace,
+        departure_flight_details: guestDetails.departureFlightDetails,
+        price_confirmation_type: 'old',
+        hotel_group_type: selectedGroupType,
+        // ✅ Multi-provider hotel bookings (TBO, ResAvenue, HOBSE, etc.)
+        hotel_bookings: hotelBookings.length > 0 ? hotelBookings : undefined,
+        // ✅ NEW: Primary guest fallback for HOBSE/backend if lead passenger missing
+        primaryGuest,
+        endUserIp: clientIp,
+      });
+
+      toast.success('Quotation confirmed successfully!');
+      setConfirmQuotationModal(false);
+
+      // Refresh data to show confirmed status and links
+      if (quoteId) {
+        const detailsRes = await ItineraryService.getDetails(quoteId);
+        setItinerary(detailsRes as ItineraryDetailsResponse);
+      }
+
+      // Reset form and selected hotels
+      setGuestDetails({
+        salutation: 'Mr',
+        name: '',
+        contactNo: '',
+        age: '',
+        alternativeContactNo: '',
+        emailId: '',
+        arrivalDateTime: '',
+        arrivalPlace: '',
+        arrivalFlightDetails: '',
+        departureDateTime: '',
+        departurePlace: '',
+        departureFlightDetails: '',
+      });
+      setAdditionalAdults([]);
+      setAdditionalChildren([]);
+      setAdditionalInfants([]);
+      setSelectedHotelBookings({});
+    } catch (e: any) {
+      console.error('Failed to confirm quotation', e);
+      toast.error(e?.message || 'Failed to confirm quotation');
+    } finally {
+      setIsConfirmingQuotation(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-full flex justify-center items-center py-16">
+        <p className="text-sm text-[#6c6c6c]">Loading itinerary details…</p>
+      </div>
+    );
+  }
+
+  if (error || !itinerary) {
+    return (
+      <div className="w-full max-w-full flex flex-col items-center py-16 gap-4">
+        <p className="text-sm text-red-600">
+          {error || "Itinerary details not found"}
+        </p>
+        {itinerary?.planId && (
+          <Link to={`/create-itinerary?id=${itinerary.planId}`}>
+            <Button
+              variant="outline"
+              className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Route List
+            </Button>
+          </Link>
+        )}
+      </div>
+    );
+  }
+
+  const backToListHref = itinerary.planId
+    ? `/create-itinerary?id=${itinerary.planId}`
+    : "#";
+  const modifyItineraryHref = backToListHref;
+  return (
+    <div className="w-full max-w-full space-y-1 pb-8">
+      {/* Header Card */}
+      <Card className="border-none shadow-none bg-white">
+        <CardContent className="pt-4 pb-0">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+            <h1 className="text-xl font-semibold text-[#4a4260]">
+              Tour Itinerary Plan
+            </h1>
+            <div className="flex flex-wrap gap-2">
+              <Link to={backToListHref}>
+                <Button
+                  variant="outline"
+                  className="border-[#d546ab] text-[#d546ab] hover:bg-[#fdf6ff]"
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back to List
+                </Button>
+              </Link>
+
+              {itinerary.isConfirmed && (
+                <>
+                  <Button 
+                    variant="outline"
+                    className="border-[#6f42c1] text-[#6f42c1] hover:bg-[#6f42c1] hover:text-white"
+                    onClick={() => setPluckCardModal(true)}
+                  >
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Download Pluck Card
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="border-[#28a745] text-[#28a745] hover:bg-[#28a745] hover:text-white"
+                    onClick={() => setVoucherModal(true)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Voucher Details
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="border-[#fd7e14] text-[#fd7e14] hover:bg-[#fd7e14] hover:text-white"
+                    onClick={() => setIncidentalModal(true)}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Incidental Expenses
+                  </Button>
+                  <Link to={modifyItineraryHref}>
+                    <Button 
+                      variant="outline"
+                      className="border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545] hover:text-white"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Modify Itinerary
+                    </Button>
+                  </Link>
+                  <Button 
+                    variant="outline"
+                    className="border-[#17a2b8] text-[#17a2b8] hover:bg-[#17a2b8] hover:text-white"
+                    onClick={() => { setInvoiceType('tax'); setInvoiceModal(true); }}
+                  >
+                    <Receipt className="mr-2 h-4 w-4" />
+                    Invoice Tax
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    className="border-[#fd7e14] text-[#fd7e14] hover:bg-[#fd7e14] hover:text-white"
+                    onClick={() => { setInvoiceType('proforma'); setInvoiceModal(true); }}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Invoice Performa
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Quote Info */}
+          <div className="flex flex-col lg:flex-row justify-between gap-4 mb-1">
+            <div className="flex flex-wrap items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[#6c6c6c]" />
+                <span className="font-medium text-[#4a4260]">
+                  {itinerary.quoteId}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-[#6c6c6c]" />
+                <span className="text-[#6c6c6c]">{itinerary.dateRange}</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-[#6c6c6c]">Overall Trip Cost :</p>
+              <p className="text-2xl font-bold text-[#d546ab]">
+                ₹ {itinerary.overallCost}
+              </p>
+            </div>
+          </div>
+
+          {/* Trip Details */}
+          <div className="flex flex-wrap gap-4 text-sm text-[#6c6c6c]">
+            <span>Room Count: {itinerary.roomCount}</span>
+            <span>Extra Bed: {itinerary.extraBed}</span>
+            <span>Child with bed: {itinerary.childWithBed}</span>
+            <span>Child without bed: {itinerary.childWithoutBed}</span>
+            <div className="ml-auto flex gap-4">
+              <span>Adults: {itinerary.adults}</span>
+              <span>Child: {itinerary.children}</span>
+              <span>Infants: {itinerary.infants}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Daily Itinerary */}
+      {itinerary.days.map((day) => (
+        <Card key={day.id} className="border border-[#e5d9f2] bg-white">
+          <CardContent className="pt-2">
+            {/* Day Header */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-3 p-3 bg-[#f8f5fc] rounded-lg border border-[#e5d9f2]">
+              <div className="flex items-center gap-3">
+                <Calendar className="h-5 w-5 text-[#d546ab]" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-[#4a4260]">
+                      DAY {day.dayNumber} - {formatHeaderDate(day.date)}
+                    </h3>
+                    {/* Show rebuild button if this route needs rebuild */}
+                    {routeNeedsRebuild === day.id && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRebuildRoute(itinerary.planId, day.id)}
+                        disabled={isRebuilding}
+                        className="bg-yellow-50 border-yellow-300 hover:bg-yellow-100"
+                      >
+                        {isRebuilding ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Rebuilding...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Rebuild Route
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-[#6c6c6c] flex-wrap">
+                    <span className="font-medium">{day.departure}</span>
+                    {day.viaRoutes && day.viaRoutes.length > 0 && (
+                      <>
+                        <ArrowRight className="h-4 w-4 text-[#d546ab] mx-1" />
+                        <span className="text-[#4a4260]" title={day.viaRoutes.map(v => v.name).join(', ')}>
+                          {day.viaRoutes.map(v => v.name).join(', ')}
+                        </span>
+                      </>
+                    )}
+                    <MapPin className="h-3 w-3 mx-1" />
+                    <span className="font-medium">{day.arrival}</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="bg-[#d546ab] text-white px-3 py-1 rounded-full">
+                  {day.distance}
+                </span>
+              </div>
+            </div>
+
+            {/* Time Range */}
+            <div className="flex items-center justify-between mb-4 ml-2">
+              <div className="flex items-center gap-2 bg-white border border-[#e5d9f2] rounded-lg p-1 shadow-sm">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div className="px-3 py-1.5 text-sm font-medium text-[#4a4260] cursor-pointer hover:bg-[#f8f5fc] rounded transition-colors border border-transparent hover:border-[#d546ab]">
+                      {day.startTime}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <TimePickerPopover 
+                      value={day.startTime} 
+                      label="Start Time"
+                      onSave={async (newTime) => {
+                        await handleUpdateRouteTimesDirect(itinerary.planId || 0, day.id, day.dayNumber, newTime, day.endTime);
+                        // Close popover by clicking outside or using state if we had it
+                        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+                
+                <ArrowRight className="h-4 w-4 text-[#d546ab]" />
+                
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div className="px-3 py-1.5 text-sm font-medium text-[#4a4260] cursor-pointer hover:bg-[#f8f5fc] rounded transition-colors border border-transparent hover:border-[#d546ab]">
+                      {day.endTime}
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <TimePickerPopover 
+                      value={day.endTime} 
+                      label="End Time"
+                      onSave={async (newTime) => {
+                        await handleUpdateRouteTimesDirect(itinerary.planId || 0, day.id, day.dayNumber, day.startTime, newTime);
+                        // Close popover
+                        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-[#d546ab] text-[#d546ab] hover:bg-[#f3e8ff] rounded-full px-4"
+                onClick={() => {
+                  // TODO: Implement Add Guide
+                  toast.info("Add Guide feature coming soon");
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Guide
+              </Button>
+            </div>
+
+            {/* Segments */}
+            <div className="space-y-4">
+              {day.segments.map((segment, idx) => (
+                <div key={idx} className="ml-8">
+                  {segment.type === "start" && (
+                    <div className="flex items-center gap-3 mb-4">
+                      <Car className="h-5 w-5 text-[#6c6c6c]" />
+                      <div>
+                        <p className="font-medium text-[#4a4260]">
+                          {segment.title}
+                        </p>
+                        <p className="text-sm text-[#6c6c6c]">
+                          <Clock className="inline h-3 w-3 mr-1" />
+                          {segment.timeRange}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {segment.type === "travel" && (
+                    <div className={`rounded-lg p-3 mb-3 border-2 ${segment.isConflict ? 'bg-red-50 border-red-400 shadow-sm' : 'bg-[#e8f9fd] border-transparent'}`}>
+                      {segment.isConflict && (
+                        <div className="flex items-center gap-2 text-red-700 text-[11px] font-bold mb-2 bg-red-100 px-2 py-1 rounded">
+                          <AlertTriangle className="h-3 w-3" />
+                          TIMING CONFLICT: {segment.conflictReason}
+                        </div>
+                      )}
+                      <div className="flex items-start gap-3">
+                        <Car className="h-5 w-5 text-[#4ba3c3] mt-1" />
+                        <div className="flex-1">
+                          <p className="text-sm text-[#4a4260]">
+                            <span className="font-medium">Travelling from</span>{" "}
+                            <span className="text-[#d546ab]">
+                              {segment.from}
+                            </span>{" "}
+                            <span className="font-medium">to</span>{" "}
+                            <span className="text-[#d546ab]">{segment.to}</span>
+                          </p>
+                          <div className="flex flex-wrap gap-4 mt-2 text-xs text-[#6c6c6c]">
+                            <span>
+                              <Clock className="inline h-3 w-3 mr-1" />
+                              {segment.timeRange}
+                            </span>
+                            <span>
+                              <MapPin className="inline h-3 w-3 mr-1" />
+                              {segment.distance}
+                            </span>
+                            <span>⏱ {segment.duration}</span>
+                          </div>
+                          {segment.note && (
+                            <p className="text-xs text-[#6c6c6c] mt-2">
+                              <Clock className="inline h-3 w-3 mr-1" />
+                              {segment.note}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {segment.type === "attraction" && (
+                    <>
+                      <div className={`bg-gradient-to-r from-[#faf5ff] to-[#f3e8ff] rounded-lg p-4 mb-3 border-2 ${segment.isConflict ? 'border-red-500 bg-red-50 shadow-md' : 'border-[#e5d9f2]'}`}>
+                        {segment.isConflict && (
+                          <div className="flex items-center gap-2 bg-red-600 text-white px-3 py-2 rounded-md text-xs font-bold mb-3 animate-pulse">
+                            <AlertTriangle className="h-4 w-4" />
+                            <span>WARNING: {segment.conflictReason}</span>
+                          </div>
+                        )}
+                        <div className="flex flex-col sm:flex-row gap-4">
+                          <div className="flex flex-col gap-2 w-full sm:w-32 shrink-0">
+                            <img
+                              src={
+                                segment.image ||
+                                "https://placehold.co/120x120/e9d5f7/4a4260?text=Spot"
+                              }
+                              alt={segment.name}
+                              className="w-full h-32 object-cover rounded-lg shadow-sm"
+                            />
+                            <div className="flex flex-col gap-1.5 p-2 bg-white/60 rounded-md border border-[#e5d9f2] text-[10px] font-medium text-[#4a4260]">
+                              {segment.amount && segment.amount > 0 && (
+                                <div className="flex items-center gap-1.5">
+                                  <Ticket className="h-3 w-3 text-[#d546ab]" />
+                                  <span>₹{segment.amount.toFixed(0)}</span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="h-3 w-3 text-[#d546ab]" />
+                                <span>{segment.duration?.split(':').slice(0,2).join(':')} hrs</span>
+                              </div>
+                              {segment.timings && (
+                                <div className="flex items-center gap-1.5">
+                                  <Timer className="h-3 w-3 text-[#d546ab]" />
+                                  <span className="truncate" title={segment.timings}>{segment.timings}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between">
+                              <h4 className="font-semibold text-[#4a4260] mb-2">
+                                {segment.name}
+                              </h4>
+                              <button
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title="Delete Hotspot"
+                                onClick={() =>
+                                  openDeleteHotspotModal(
+                                    itinerary.planId || 0,
+                                    day.id,
+                                    segment.routeHotspotId || 0,
+                                    segment.name
+                                  )
+                                }
+                              >
+                                <Trash2 className="h-5 w-5" />
+                              </button>
+                            </div>
+                            <p className="text-sm text-[#6c6c6c] mb-3 line-clamp-3">
+                              {segment.description}
+                            </p>
+                            <div className="flex flex-wrap gap-4 text-xs text-[#6c6c6c]">
+                              <span className="flex items-center font-bold text-[#d546ab] bg-[#fdf6ff] px-2 py-1 rounded border border-[#f3e8ff]">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {segment.visitTime}
+                              </span>
+                              <button 
+                                className="text-[#d546ab] hover:underline flex items-center font-medium"
+                                onClick={() =>
+                                  openAddActivityModal(
+                                    itinerary.planId || 0,
+                                    day.id,
+                                    segment.routeHotspotId || 0,
+                                    segment.hotspotId || 0,
+                                    segment.name
+                                  )
+                                }
+                              >
+                                <Plus className="h-3 w-3 mr-1" />
+                                Add Activity
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-2 sm:ml-auto">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              title="View Gallery"
+                              onClick={() =>
+                                openGalleryModal(
+                                  segment.image ? [segment.image] : [],
+                                  segment.name
+                                )
+                              }
+                            >
+                              📷
+                            </Button>
+                            {segment.videoUrl && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8"
+                                title="View Video"
+                                onClick={() =>
+                                  openVideoModal(segment.videoUrl || "", segment.name)
+                                }
+                              >
+                                🎥
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Plan Own Way Alert */}
+                      {segment.planOwnWay && (
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="bg-red-500 rounded-full p-2">
+                            <Bell className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="bg-red-500 text-white px-4 py-2 rounded-lg flex-1">
+                            <p className="text-sm font-medium m-0">
+                              Manual Addition: This place was added manually. Timing may vary from our optimized route.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Activities List */}
+                      {segment.activities && segment.activities.length > 0 && (
+                        <div className="ml-8 mt-2 border-t border-[#e5d9f2] pt-4">
+                          <h5 className="font-semibold text-[#4a4260] mb-3">Activity</h5>
+                          <div className="space-y-3">
+                            {segment.activities.map((activity) => (
+                              <div
+                                key={activity.id}
+                                className="border-l-2 border-dashed border-[#d546ab] pl-4"
+                              >
+                                <div className="bg-white rounded-lg p-4 shadow-sm border border-[#e5d9f2]">
+                                  <div className="flex flex-col sm:flex-row gap-4">
+                                    <img
+                                      src={
+                                        activity.image ||
+                                        "https://placehold.co/140x100/e9d5f7/4a4260?text=Activity"
+                                      }
+                                      alt={activity.title}
+                                      className="w-full sm:w-36 h-24 object-cover rounded-lg"
+                                    />
+                                    <div className="flex-1">
+                                      <div className="flex items-start justify-between">
+                                        <h6 className="font-semibold text-[#4a4260] mb-2">
+                                          {activity.title}
+                                        </h6>
+                                        <button
+                                          className="text-red-500 hover:text-red-700 p-1"
+                                          title="Delete Activity"
+                                          onClick={() =>
+                                            openDeleteActivityModal(
+                                              itinerary.planId || 0,
+                                              day.id,
+                                              activity.id,
+                                              activity.title
+                                            )
+                                          }
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                      <p className="text-sm text-[#6c6c6c] mb-3">
+                                        {activity.description}
+                                      </p>
+                                      <div className="flex flex-wrap gap-4 text-xs text-[#6c6c6c]">
+                                        {activity.amount > 0 && (
+                                          <span className="flex items-center">
+                                            <Ticket className="h-3 w-3 mr-1" />
+                                            ₹ {activity.amount.toFixed(2)}
+                                          </span>
+                                        )}
+                                        {activity.duration && (
+                                          <span className="flex items-center">
+                                            <Clock className="h-3 w-3 mr-1" />
+                                            {activity.duration}
+                                          </span>
+                                        )}
+                                        {activity.startTime && activity.endTime && (
+                                          <span className="flex items-center">
+                                            <Clock className="h-3 w-3 mr-1" />
+                                            {activity.startTime} - {activity.endTime}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-8 w-8"
+                                        title="View Activity Gallery"
+                                        onClick={() =>
+                                          openGalleryModal(
+                                            activity.image ? [activity.image] : [],
+                                            activity.title
+                                          )
+                                        }
+                                      >
+                                        📷
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {segment.type === "break" && (
+                    <div className="bg-[#fff3cd] rounded-lg p-3 mb-3 border border-[#ffc107]">
+                      <div className="flex items-center gap-3">
+                        <Clock className="h-5 w-5 text-[#856404]" />
+                        <div className="flex-1">
+                          <p className="text-sm text-[#4a4260]">
+                            <span className="font-medium">Expect a waiting time of approximately</span>{" "}
+                            <span className="text-[#d546ab] font-semibold">{segment.duration}</span>{" "}
+                            <span className="font-medium">at this location</span>{" "}
+                            <span className="text-[#d546ab] font-semibold">({segment.location})</span>
+                          </p>
+                          <div className="flex flex-wrap gap-4 mt-2 text-xs text-[#6c6c6c]">
+                            <span>
+                              <Clock className="inline h-3 w-3 mr-1" />
+                              {segment.timeRange}
+                            </span>
+                            <span>⏱ {segment.duration}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {segment.type === "checkin" && !readOnly && (
+                    <div className="bg-[#e8f9fd] rounded-lg p-3 mb-3 border border-[#4ba3c3]">
+                      <div className="flex items-center gap-3">
+                        <Building2 className="h-6 w-6 text-[#4ba3c3]" />
+                        <div 
+                          className="flex-1 cursor-pointer hover:bg-white/50 rounded-lg p-2 -m-2 transition-colors"
+                          onClick={() => {
+                            // Get city code from hotel details if available, otherwise use default
+                            let cityCode = "1"; // Default city code
+                            const hotelForDay = hotelDetails?.hotels?.find(h => 
+                              h.itineraryRouteId === day.id
+                            );
+                            if (hotelForDay?.destination) {
+                              // Try to map destination to code or use as-is
+                              const cityMap: { [key: string]: string } = {
+                                'Delhi': '1',
+                                'Agra': '2',
+                                'Jaipur': '3',
+                                'New Delhi': '1',
+                                'Mumbai': '4',
+                                'Bangalore': '5',
+                              };
+                              cityCode = cityMap[hotelForDay.destination] || "1";
+                            }
+                            
+                            openHotelSelectionModal(
+                              itinerary.planId || 0,
+                              day.id,
+                              day.date,
+                              cityCode,
+                              day.arrival || "Hotel"
+                            );
+                          }}
+                        >
+                          <p className="text-sm font-semibold text-[#4a4260] mb-1">
+                            Check-in to {segment.hotelName}
+                          </p>
+                          {segment.hotelAddress && (
+                            <p className="text-xs text-[#6c6c6c] mb-2">
+                              {segment.hotelAddress}
+                            </p>
+                          )}
+                          {segment.time && (
+                            <p className="text-xs text-[#6c6c6c]">
+                              <Clock className="inline h-3 w-3 mr-1" />
+                              {segment.time}
+                            </p>
+                          )}
+                          <p className="text-xs text-[#d546ab] mt-2">
+                            Click to change hotel
+                          </p>
+                        </div>
+                        
+                        {/* Room Category Selection Button */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 rounded-full bg-[#d546ab]/10 hover:bg-[#d546ab]/20 text-[#d546ab] shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // For confirmed itineraries, only show hotels that are actually confirmed (itineraryPlanHotelDetailsId > 0)
+                            const confirmedHotels = hotelDetails?.hotels?.filter(h => 
+                              itinerary?.isConfirmed ? h.itineraryPlanHotelDetailsId > 0 : true
+                            );
+                            const hotelForDay = confirmedHotels?.find(h => 
+                              h.itineraryRouteId === day.id
+                            );
+                            
+                            if (hotelForDay) {
+                              setRoomSelectionModal({
+                                open: true,
+                                itinerary_plan_hotel_details_ID: hotelForDay.itineraryPlanHotelDetailsId,
+                                itinerary_plan_id: itinerary.planId || 0,
+                                itinerary_route_id: day.id,
+                                hotel_id: hotelForDay.hotelId,
+                                group_type: hotelForDay.groupType,
+                                hotel_name: hotelForDay.hotelName || segment.hotelName,
+                              });
+                            } else {
+                              toast.error('Hotel information not available');
+                            }
+                          }}
+                          title="Select room categories"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {segment.type === "hotspot" && !readOnly && (
+                    <div className="flex flex-col gap-2 mb-3">
+                      <div className="flex items-center gap-2 text-[#d546ab]">
+                        <Plus className="h-4 w-4" />
+                        <button 
+                          className="text-sm hover:underline font-medium"
+                          onClick={() =>
+                            toggleInlineAddHotspot(
+                              day.id,
+                              segment.locationId || 0,
+                              day.arrival || "Location"
+                            )
+                          }
+                        >
+                          {segment.text}
+                        </button>
+                      </div>
+
+                      {expandedAddHotspotDayId === day.id && !readOnly && (
+                        <div className="ml-6 mt-2 p-4 bg-white rounded-xl border-2 border-dashed border-[#e5d9f2] animate-in fade-in slide-in-from-top-2 duration-300">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-sm font-bold text-[#4a4260]">Available Places in {day.arrival || "this location"}</h4>
+                            <div className="relative w-48">
+                              <input
+                                type="text"
+                                placeholder="Search places..."
+                                className="w-full text-xs p-2 pl-8 border rounded-md focus:outline-none focus:ring-1 focus:ring-[#d546ab]"
+                                value={hotspotSearchQuery}
+                                onChange={(e) => setHotspotSearchQuery(e.target.value)}
+                              />
+                              <MapPin className="absolute left-2 top-2 h-3 w-3 text-[#6c6c6c]" />
+                            </div>
+                          </div>
+
+                          {loadingHotspots ? (
+                            <div className="flex items-center justify-center py-8">
+                              <Loader2 className="h-6 w-6 animate-spin text-[#d546ab]" />
+                            </div>
+                          ) : filteredHotspots.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {filteredHotspots.map((h) => (
+                                <div 
+                                  key={h.id} 
+                                  className="group flex items-start gap-3 p-3 rounded-lg border border-[#e5d9f2] hover:border-[#d546ab] hover:bg-[#fdf6ff] transition-all cursor-pointer"
+                                  onClick={() => {
+                                    const pId = itinerary.planId || 0;
+                                    const rId = day.id;
+                                    setAddHotspotModal({
+                                      open: true,
+                                      planId: pId,
+                                      routeId: rId,
+                                      locationId: 0,
+                                      locationName: day.arrival || "this location",
+                                    });
+                                    handlePreviewHotspot(h.id, pId, rId);
+                                  }}
+                                >
+                                  <div className="w-12 h-12 rounded-md bg-[#f3e8ff] flex items-center justify-center flex-shrink-0 group-hover:bg-[#d546ab] transition-colors">
+                                    <MapPin className="h-6 w-6 text-[#d546ab] group-hover:text-white" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-sm font-bold text-[#4a4260] truncate">{h.name}</p>
+                                      <span className="text-[10px] font-bold text-[#d546ab] bg-[#fdf2f8] px-1.5 py-0.5 rounded">
+                                        {h.timeSpend}h
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-[#6c6c6c] line-clamp-2 mt-0.5">{h.description}</p>
+                                    <div className="flex items-center justify-between mt-2">
+                                      <span className="text-[10px] font-bold text-[#4ba3c3]">₹ {h.amount.toFixed(0)}</span>
+                                      <span className="text-[10px] font-bold text-[#d546ab] opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
+                                        Add to Plan <ArrowRight className="ml-1 h-2 w-2" />
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 text-[#6c6c6c]">
+                              <p className="text-sm">No places found matching your search.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {segment.type === "return" && (
+                    <div className="flex items-center gap-3 text-sm text-[#6c6c6c]">
+                      <Car className="h-5 w-5" />
+                      <div>
+                        <p className="font-medium text-[#4a4260]">
+                          Return to Origin and Relax
+                        </p>
+                        <p>
+                          <Clock className="inline h-3 w-3 mr-1" />
+                          {segment.time}
+                          {segment.note && (
+                            <span className="ml-2">🔘 {segment.note}</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Add Guide Button */}
+              <div className="flex justify-end mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[#d546ab] border-[#d546ab] hover:bg-[#fdf6ff]"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Guide
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Hotel List (separate component) */}
+      {hotelDetails && (
+        <HotelList
+          hotels={hotelDetails.hotels}
+          hotelTabs={hotelDetails.hotelTabs}
+          hotelRatesVisible={hotelDetails.hotelRatesVisible}
+          quoteId={quoteId!}
+          planId={itinerary.planId}
+          onRefresh={refreshHotelData}
+          onGroupTypeChange={handleHotelGroupTypeChange}
+          onGetSaveFunction={handleGetSaveFunction}
+          readOnly={readOnly}
+          onCreateVoucher={handleCreateVoucher}
+          onHotelSelectionsChange={handleHotelSelectionsChange}
+        />
+      )}
+
+      {/* Vehicle List (grouped by vehicle type) */}
+      {itinerary.vehicles && itinerary.vehicles.length > 0 && (() => {
+        // Group vehicles by vehicleTypeId
+        const vehiclesByType = new Map<number, typeof itinerary.vehicles>();
+        const typeOrder: number[] = [];
+        
+        for (const vehicle of itinerary.vehicles) {
+          const typeId = vehicle.vehicleTypeId || 0;
+          if (!vehiclesByType.has(typeId)) {
+            vehiclesByType.set(typeId, []);
+            typeOrder.push(typeId);
+          }
+          vehiclesByType.get(typeId)?.push(vehicle);
+        }
+
+        // Prepare date range and routes for day-wise breakdown
+        const dateRange = itinerary.dateRange || "";
+        const routes = itinerary.days?.map((day) => ({
+          date: day.date,
+          destination: day.departure || "",
+          label: `Day ${day.dayNumber} - ${day.date ? new Date(day.date).toLocaleDateString('en-GB', { month: 'short', day: '2-digit' }) : ""}`,
+        })) || [];
+        
+        return (
+          <>
+            {typeOrder.map((typeId) => {
+              const vehiclesForType = vehiclesByType.get(typeId) || [];
+              const firstVehicle = vehiclesForType[0];
+              const vehicleTypeLabel = firstVehicle?.vehicleTypeName || `Vehicle Type ${typeId}`;
+              
+              return (
+                <VehicleList
+                  key={typeId}
+                  vehicleTypeLabel={vehicleTypeLabel}
+                  vehicles={vehiclesForType}
+                  itineraryPlanId={itinerary.planId}
+                  onRefresh={refreshVehicleData}
+                  dateRange={dateRange}
+                  routes={routes}
+                />
+              );
+            })}
+          </>
+        );
+      })()}
+
+      {/* Package Includes & Overall Cost */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Package Includes */}
+        <Card className="border-none shadow-none bg-white">
+          <CardContent className="pt-2">
+            <h2 className="text-lg font-semibold text-[#4a4260] mb-4">
+              Package Includes
+            </h2>
+            <div className="space-y-3 text-sm text-[#6c6c6c]">
+              <div>
+                <p className="font-medium text-[#4a4260] mb-1">
+                  Package Includes: (Inclusion)
+                </p>
+                <p>{itinerary.packageIncludes.description}</p>
+              </div>
+              <div>
+                <p className="font-medium text-[#4a4260] mb-1">
+                  If staying in the House boat At Alleppey/Kumarakom
+                </p>
+                <p className="whitespace-pre-line">
+                  {itinerary.packageIncludes.houseBoatNote}
+                </p>
+              </div>
+              <div>
+                <p className="font-medium text-[#4a4260]">
+                  {itinerary.packageIncludes.rateNote}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Overall Cost */}
+        <Card className="border-none shadow-none bg-gradient-to-br from-[#faf5ff] to-white">
+          <CardContent className="pt-2">
+            <h2 className="text-lg font-semibold text-[#4a4260] mb-4">
+              OVERALL COST
+            </h2>
+            <div className="space-y-2 text-sm">
+              {/* Hotel Costs - Itemized */}
+              {itinerary.costBreakdown.totalRoomCost !== undefined && itinerary.costBreakdown.totalRoomCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">
+                    Total Room Cost ({itinerary.costBreakdown.hotelPaxCount || 0} pax * ₹{itinerary.costBreakdown.roomCostPerPerson?.toFixed(2) || "0.00"})
+                  </span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.totalRoomCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.totalAmenitiesCost !== undefined && itinerary.costBreakdown.totalAmenitiesCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Total Amenities Cost</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.totalAmenitiesCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.extraBedCost !== undefined && itinerary.costBreakdown.extraBedCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Extra Bed Cost ({itinerary.extraBed || 0})</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.extraBedCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.childWithBedCost !== undefined && itinerary.costBreakdown.childWithBedCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Child With Bed Cost ({itinerary.childWithBed || 0})</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.childWithBedCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.childWithoutBedCost !== undefined && itinerary.costBreakdown.childWithoutBedCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Child Without Bed Cost ({itinerary.childWithoutBed || 0})</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.childWithoutBedCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.totalHotelAmount !== undefined && itinerary.costBreakdown.totalHotelAmount > 0 && (
+                <div className="flex justify-between font-semibold">
+                  <span className="text-[#4a4260]">Total Hotel Amount</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.totalHotelAmount.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              
+              {/* Vehicle Costs */}
+              <div className="flex justify-between">
+                <span className="text-[#6c6c6c]">Total Vehicle cost (₹)</span>
+                <span className="text-[#4a4260]">
+                  ₹ {itinerary.costBreakdown.totalVehicleCost?.toFixed(2) ?? "0.00"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#6c6c6c]">Total Vehicle Amount</span>
+                <span className="text-[#4a4260]">
+                  ₹ {itinerary.costBreakdown.totalVehicleAmount?.toFixed(2) ?? "0.00"}
+                </span>
+              </div>
+              {itinerary.costBreakdown.totalVehicleQty !== undefined && itinerary.costBreakdown.totalVehicleQty > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Total Vehicle Quantity</span>
+                  <span className="text-[#4a4260]">
+                    {itinerary.costBreakdown.totalVehicleQty}
+                  </span>
+                </div>
+              )}
+              
+              {/* Guide/Activity Costs */}
+              {itinerary.costBreakdown.totalGuideCost !== undefined && itinerary.costBreakdown.totalGuideCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Total Guide Cost</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.totalGuideCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.totalHotspotCost !== undefined && itinerary.costBreakdown.totalHotspotCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Total Hotspot Cost</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.totalHotspotCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {itinerary.costBreakdown.totalActivityCost !== undefined && itinerary.costBreakdown.totalActivityCost > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-[#6c6c6c]">Total Activity Cost</span>
+                  <span className="text-[#4a4260]">
+                    ₹ {itinerary.costBreakdown.totalActivityCost.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              
+              {/* Final Calculations */}
+              <div className="flex justify-between">
+                <span className="text-[#6c6c6c]">
+                  Total Additional Margin (10%)
+                </span>
+                <span className="text-[#4a4260]">
+                  ₹ {itinerary.costBreakdown.additionalMargin?.toFixed(2) ?? "0.00"}
+                </span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span className="text-[#4a4260]">Total Amount</span>
+                <span className="text-[#4a4260]">
+                  ₹ {itinerary.costBreakdown.totalAmount?.toFixed(2) ?? "0.00"}
+                </span>
+              </div>
+              <div className="flex justify-between text-[#d546ab]">
+                <span>Coupon Discount</span>
+                <span>- ₹ {itinerary.costBreakdown.couponDiscount?.toFixed(2) ?? "0.00"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-[#6c6c6c]">Agent Margin</span>
+                <span className="text-[#4a4260]">
+                  ₹ {itinerary.costBreakdown.agentMargin?.toFixed(2) ?? "0.00"}
+                </span>
+              </div>
+              
+              {/* Agent Profit Input (for user level 4) */}
+              <div className="flex justify-between items-center bg-[#faf5ff] p-2 rounded">
+                <label htmlFor="agentProfit" className="text-[#6c6c6c] font-medium">
+                  Agent Profit:
+                </label>
+                <input
+                  type="number"
+                  id="agentProfit"
+                  placeholder="0.00"
+                  className="w-32 px-2 py-1 text-sm border border-[#e5d9f2] rounded text-right"
+                  defaultValue={0}
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+              
+              <div className="flex justify-between">
+                <span className="text-[#6c6c6c]">Total Round Off</span>
+                <span className="text-[#4a4260]">
+                  {itinerary.costBreakdown.totalRoundOff && itinerary.costBreakdown.totalRoundOff > 0 ? "+" : ""}
+                  ₹ {itinerary.costBreakdown.totalRoundOff?.toFixed(2) ?? "0.00"}
+                </span>
+              </div>
+              <div className="border-t-2 border-[#d546ab] pt-2 mt-2">
+                <div className="flex justify-between text-lg font-bold">
+                  <span className="text-[#4a4260]">
+                    Net Payable to {itinerary.costBreakdown.companyName || "Doview Holidays India Pvt ltd"}
+                  </span>
+                  <span className="text-[#d546ab]">
+                    ₹ {itinerary.costBreakdown.netPayable?.toFixed(2) ?? "0.00"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-3 justify-center">
+        {/* Clipboard Dropdown */}
+        <div className="relative group">
+          <Button className="bg-[#8b43d1] hover:bg-[#7c37c1]">
+            Clipboard ▼
+          </Button>
+          <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+              onClick={() => {
+                setClipboardType('recommended');
+                setClipboardModal(true);
+              }}
+            >
+              <span>📋</span> Copy Recommended
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+              onClick={() => {
+                setClipboardType('highlights');
+                setClipboardModal(true);
+              }}
+            >
+              <span>✨</span> Copy to Highlights
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2 rounded-b-lg"
+              onClick={() => {
+                setClipboardType('para');
+                setClipboardModal(true);
+              }}
+            >
+              <span>📝</span> Copy to Para
+            </button>
+          </div>
+        </div>
+
+        <Link to="/create-itinerary">
+          <Button className="bg-[#28a745] hover:bg-[#218838]">
+            Create Itinerary
+          </Button>
+        </Link>
+        
+        <Button
+          variant="outline"
+          className="border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545] hover:text-white"
+          onClick={() => setCancelModalOpen(true)}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Modify Itinerary
+        </Button>
+        
+        <Button 
+          className="bg-[#d546ab] hover:bg-[#c03d9f]"
+          onClick={openConfirmQuotationModal}
+        >
+          <Bell className="mr-2 h-4 w-4" />
+          Confirm Quotation
+        </Button>
+
+        {/* Share Dropdown */}
+        <div className="relative group">
+          <Button className="bg-[#17a2b8] hover:bg-[#138496]">
+            Share ▼
+          </Button>
+          <div className="absolute left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+              onClick={() => {
+                const url = window.location.href;
+                navigator.clipboard.writeText(url);
+                toast.success("Link copied to clipboard!");
+              }}
+            >
+              <span>🔗</span> Copy Link
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2"
+              onClick={() => {
+                const url = window.location.href;
+                const message = `Check out this itinerary: ${url}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+              }}
+            >
+              <span>💬</span> Share on WhatsApp
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 hover:bg-[#f8f5fc] text-[#4a4260] flex items-center gap-2 rounded-b-lg"
+              onClick={() => setShareModal(true)}
+            >
+              <span>✉️</span> Share via Email
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Delete Hotspot Modal */}
+      <Dialog
+        open={deleteHotspotModal.open}
+        onOpenChange={(open) =>
+          setDeleteHotspotModal({ ...deleteHotspotModal, open })
+        }
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Hotspot</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deleteHotspotModal.hotspotName}"? 
+              This will also remove all associated activities.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                setDeleteHotspotModal({
+                  open: false,
+                  planId: null,
+                  routeId: null,
+                  hotspotId: null,
+                  hotspotName: "",
+                })
+              }
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteHotspot}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Activity Modal */}
+      <Dialog
+        open={addActivityModal.open}
+        onOpenChange={(open) =>
+          setAddActivityModal({ ...addActivityModal, open })
+        }
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Activity to {addActivityModal.hotspotName}</DialogTitle>
+            <DialogDescription>
+              Select an activity to add to this hotspot
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            {loadingActivities && (
+              <p className="text-sm text-[#6c6c6c] text-center py-8">
+                Loading activities...
+              </p>
+            )}
+
+            {!loadingActivities && availableActivities.length === 0 && (
+              <p className="text-sm text-[#6c6c6c] text-center py-8">
+                No activities available for this hotspot
+              </p>
+            )}
+
+            {!loadingActivities && availableActivities.length > 0 && (
+              <div className="grid gap-3">
+                {availableActivities.map((activity) => (
+                  <Card key={activity.id} className="border border-[#e5d9f2]">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-[#4a4260] mb-1">
+                            {activity.title}
+                          </h4>
+                          <p className="text-sm text-[#6c6c6c] mb-2">
+                            {activity.description}
+                          </p>
+                          <div className="flex flex-wrap gap-3 text-xs text-[#6c6c6c]">
+                            {activity.costAdult > 0 && (
+                              <span>Adult: ₹{activity.costAdult.toFixed(2)}</span>
+                            )}
+                            {activity.costChild > 0 && (
+                              <span>Child: ₹{activity.costChild.toFixed(2)}</span>
+                            )}
+                            {activity.duration && (
+                              <span>Duration: {activity.duration}</span>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="bg-[#d546ab] hover:bg-[#c03d9f]"
+                          onClick={() => handleAddActivity(activity.id, activity.costAdult)}
+                          disabled={isAddingActivity}
+                        >
+                          {isAddingActivity ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Adding...
+                            </>
+                          ) : (
+                            "Add"
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setAddActivityModal({
+                  open: false,
+                  planId: null,
+                  routeId: null,
+                  routeHotspotId: null,
+                  hotspotId: null,
+                  hotspotName: "",
+                })
+              }
+              disabled={isAddingActivity}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Activity Modal */}
+      <Dialog
+        open={deleteActivityModal.open}
+        onOpenChange={(open) =>
+          setDeleteActivityModal({ ...deleteActivityModal, open })
+        }
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Activity</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{deleteActivityModal.activityName}"?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                setDeleteActivityModal({
+                  open: false,
+                  planId: null,
+                  routeId: null,
+                  activityId: null,
+                  activityName: "",
+                })
+              }
+              disabled={isDeletingActivity}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteActivity}
+              disabled={isDeletingActivity}
+            >
+              {isDeletingActivity ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Hotspot Modal */}
+      <Dialog
+        open={addHotspotModal.open}
+        onOpenChange={(open) =>
+          setAddHotspotModal({ ...addHotspotModal, open })
+        }
+      >
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <DialogTitle>Hotspot List</DialogTitle>
+                <DialogDescription>
+                  Select a hotspot to add to your itinerary
+                </DialogDescription>
+              </div>
+              <input
+                type="text"
+                placeholder="Search Hotspot..."
+                className="px-3 py-2 border border-gray-300 rounded-md text-sm w-64"
+                value={hotspotSearchQuery}
+                onChange={(e) => setHotspotSearchQuery(e.target.value)}
+              />
+            </div>
+          </DialogHeader>
+          <div className="py-4 flex-1 overflow-hidden flex min-h-0">
+            <div className="flex gap-4 w-full min-h-0">
+              {/* Left Column: Hotspot List */}
+              <div ref={hotspotListRef} className={`${selectedHotspotId ? 'w-1/2' : 'w-full'} overflow-y-auto min-h-0`}>
+                {loadingHotspots ? (
+                  <p className="text-sm text-[#6c6c6c] text-center py-8">
+                    Loading available hotspots...
+                  </p>
+                ) : filteredHotspots.length === 0 ? (
+                  <p className="text-sm text-[#6c6c6c] text-center py-8">
+                    {hotspotSearchQuery ? "No hotspots match your search" : "No hotspots available for this location"}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4">
+                    {filteredHotspots.map((hotspot) => (
+                      <div
+                        key={hotspot.id}
+                        data-hotspot-id={hotspot.id}
+                        className={`border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white ${selectedHotspotId === hotspot.id ? 'ring-2 ring-[#d546ab]' : ''}`}
+                      >
+                        <div className="p-4">
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-semibold text-base text-[#4a4260] flex items-center gap-2">
+                              {hotspot.name}
+                              {hotspot.visitAgain && (
+                                <span className="text-[9px] font-bold text-white bg-blue-500 px-2 py-0.5 rounded whitespace-nowrap">
+                                  Visit Again
+                                </span>
+                              )}
+                              {excludedHotspotIds.includes(hotspot.id) && (
+                                <span className="text-[9px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded whitespace-nowrap">
+                                  Deleted from timeline
+                                </span>
+                              )}
+                              {selectedHotspotId === hotspot.id && (
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold ${
+                                  previewTimeline?.some(seg => seg.isConflict && Number(seg.locationId) === hotspot.id) 
+                                    ? 'bg-red-100 text-red-700' 
+                                    : 'bg-green-100 text-green-700'
+                                }`}>
+                                  {previewTimeline?.some(seg => seg.isConflict && Number(seg.locationId) === hotspot.id) ? 'Conflict' : 'Selected'}
+                                </span>
+                              )}
+                            </h4>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant={selectedHotspotId === hotspot.id ? "outline" : "default"}
+                                className={selectedHotspotId === hotspot.id ? "border-gray-300" : "bg-[#d546ab] hover:bg-[#b93a8f] text-white"}
+                                onClick={() => handlePreviewHotspot(hotspot.id)}
+                                disabled={isPreviewing && selectedHotspotId === hotspot.id}
+                              >
+                                {isPreviewing && selectedHotspotId === hotspot.id ? (
+                                  <>
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    Previewing...
+                                  </>
+                                ) : selectedHotspotId === hotspot.id ? (
+                                  "Refresh Preview"
+                                ) : (
+                                  "Preview"
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                          <p className="text-sm text-[#6c6c6c] mb-3 line-clamp-2">
+                            {hotspot.description}
+                          </p>
+                          <div className="flex flex-wrap gap-3 text-xs text-[#6c6c6c]">
+                            {hotspot.amount > 0 && (
+                              <span className="flex items-center">
+                                <Ticket className="h-3 w-3 mr-1" />
+                                ₹ {hotspot.amount.toFixed(2)}
+                              </span>
+                            )}
+                            {hotspot.timeSpend > 0 && (
+                              <span className="flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {hotspot.timeSpend} hrs
+                              </span>
+                            )}
+                            {hotspot.timings && (
+                              <span className="flex items-center">
+                                <Timer className="h-3 w-3 mr-1" />
+                                {hotspot.timings}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Preview */}
+              {selectedHotspotId && (
+                <div className="w-1/2 border-l pl-4 flex flex-col overflow-hidden min-h-0">
+                  <h3 className="font-semibold text-[#4a4260] mb-4 flex items-center gap-2 flex-shrink-0">
+                    <Clock className="h-4 w-4" />
+                    Proposed Timeline
+                  </h3>
+                  <div ref={timelinePreviewRef} className="flex-1 space-y-3 overflow-y-auto min-h-0">
+                    {isPreviewing ? (
+                      <div className="flex flex-col items-center justify-center h-32 text-[#6c6c6c]">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#d546ab] mb-2"></div>
+                        <p className="text-sm">Calculating best slot...</p>
+                      </div>
+                    ) : previewTimeline ? (
+                      <>
+                        {previewTimeline.map((seg, idx) => {
+                          const isSelected = seg.type === 'attraction' && Number(seg.locationId) === Number(selectedHotspotId);
+                          return (
+                            <div 
+                              key={idx} 
+                              data-selected={isSelected ? "true" : "false"}
+                              className={`p-3 rounded-lg border-2 transition-all ${
+                                seg.isConflict 
+                                  ? 'bg-red-50 border-red-300 shadow-sm' 
+                                  : isSelected
+                                    ? 'bg-green-50 border-green-500 ring-2 ring-green-200 shadow-md scale-[1.02]'
+                                    : 'bg-gray-50 border-gray-200 opacity-80'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                    seg.type === 'travel' ? 'bg-blue-100 text-blue-700' : 
+                                    seg.type === 'hotspot' ? 'bg-purple-100 text-purple-700' : 
+                                    'bg-gray-200 text-gray-700'
+                                  }`}>
+                                    {seg.type}
+                                  </span>
+                                  <span className="text-xs font-bold text-[#4a4260]">
+                                    {seg.timeRange}
+                                  </span>
+                                </div>
+                                {seg.isConflict ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 uppercase bg-red-100 px-2 py-0.5 rounded">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    Conflict
+                                  </span>
+                                ) : isSelected ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-bold text-green-600 uppercase bg-green-100 px-2 py-0.5 rounded animate-pulse">
+                                    <Plus className="h-3 w-3" />
+                                    New
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className={`text-sm font-bold ${isSelected ? 'text-green-800' : 'text-[#4a4260]'}`}>
+                                {seg.text}
+                              </p>
+                              {seg.isConflict && (
+                                <div className="mt-2 p-2 bg-white/50 rounded border border-red-100">
+                                  <p className="text-xs text-red-600 font-medium leading-tight">
+                                    {seg.conflictReason}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <div className="pt-4 sticky bottom-0 bg-white">
+                          <Button 
+                            className="w-full bg-green-600 hover:bg-green-700 text-white shadow-lg"
+                            onClick={() => handleAddHotspot(selectedHotspotId)}
+                            disabled={isAddingHotspot}
+                          >
+                            {isAddingHotspot ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Adding...
+                              </>
+                            ) : (
+                              "Confirm Add to Itinerary"
+                            )}
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-32 text-[#6c6c6c] border-2 border-dashed rounded-lg">
+                        <p className="text-sm">Select a hotspot to see the preview</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setAddHotspotModal({
+                  open: false,
+                  planId: null,
+                  routeId: null,
+                  locationId: null,
+                  locationName: "",
+                })
+              }
+              disabled={isAddingHotspot}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hotel Search Modal - NEW Real-Time Search */}
+      <HotelSearchModal
+        open={hotelSelectionModal.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHotelSelectionModal({
+              open: false,
+              planId: null,
+              routeId: null,
+              routeDate: "",
+            });
+          }
+        }}
+        cityCode={hotelSelectionModal.cityCode || ""}
+        cityName={hotelSelectionModal.cityName || ""}
+        checkInDate={hotelSelectionModal.checkInDate || hotelSelectionModal.routeDate}
+        checkOutDate={hotelSelectionModal.checkOutDate || hotelSelectionModal.routeDate}
+        onSelectHotel={handleSelectHotelFromSearch}
+        isSelectingHotel={isSelectingHotel}
+      />
+
+      {/* Hotel Room Selection Modal */}
+      {roomSelectionModal && (
+        <HotelRoomSelectionModal
+          open={roomSelectionModal.open}
+          onOpenChange={(open) => {
+            if (!open) {
+              setRoomSelectionModal(null);
+            }
+          }}
+          itinerary_plan_hotel_details_ID={roomSelectionModal.itinerary_plan_hotel_details_ID}
+          itinerary_plan_id={roomSelectionModal.itinerary_plan_id}
+          itinerary_route_id={roomSelectionModal.itinerary_route_id}
+          hotel_id={roomSelectionModal.hotel_id}
+          group_type={roomSelectionModal.group_type}
+          hotel_name={roomSelectionModal.hotel_name}
+          onSuccess={() => {
+            toast.success('Room categories updated successfully');
+            // Note: Room selection is saved to DB but doesn't affect the hotel list display
+          }}
+        />
+      )}
+
+      {/* Gallery Modal */}
+      <Dialog
+        open={galleryModal.open}
+        onOpenChange={(open) => setGalleryModal({ ...galleryModal, open })}
+      >
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{galleryModal.title} - Gallery</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {galleryModal.images.length === 0 ? (
+              <p className="text-sm text-[#6c6c6c] text-center py-8">
+                No images available
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {galleryModal.images.map((img, idx) => (
+                  <img
+                    key={idx}
+                    src={img}
+                    alt={`${galleryModal.title} ${idx + 1}`}
+                    className="w-full h-auto rounded-lg object-cover"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setGalleryModal({ open: false, images: [], title: "" })
+              }
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Video Modal */}
+      <Dialog
+        open={videoModal.open}
+        onOpenChange={(open) => setVideoModal({ ...videoModal, open })}
+      >
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{videoModal.title} - Video</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {videoModal.videoUrl ? (
+              <div className="aspect-video">
+                <iframe
+                  src={videoModal.videoUrl}
+                  className="w-full h-full rounded-lg"
+                  allowFullScreen
+                  title={videoModal.title}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-[#6c6c6c] text-center py-8">
+                No video available
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setVideoModal({ open: false, videoUrl: "", title: "" })
+              }
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clipboard Modal */}
+      <Dialog open={clipboardModal} onOpenChange={setClipboardModal}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {clipboardType === 'recommended' && 'Copy Recommended Hotels'}
+              {clipboardType === 'highlights' && 'Copy to Highlights'}
+              {clipboardType === 'para' && 'Recommended Hotel for Para'}
+            </DialogTitle>
+            <DialogDescription>
+              {clipboardType === 'recommended' && 'Select recommended hotels to include in clipboard'}
+              {clipboardType === 'highlights' && 'Hotel information will be copied in highlight/bullet format'}
+              {clipboardType === 'para' && 'Select from 4 recommended hotels for paragraph format'}
+            </DialogDescription>
+          </DialogHeader>
+         <div className="py-4 space-y-3">
+  {!hotelDetails?.hotels?.length ? (
+    <p className="text-sm text-[#6c6c6c] text-center py-8">
+      No hotel information available
+    </p>
+  ) : clipboardType === "para" ? (
+    <div className="space-y-3">
+      {paraRecommendations.map((_, idx) => {
+        const key = `para-${idx}`;
+        return (
+          <div key={key} className="flex items-center gap-3">
+            <input
+              type="checkbox"
+              id={`para-${key}`}
+              className="h-4 w-4 cursor-pointer"
+              checked={selectedHotels[key] || false}
+              onChange={(e) =>
+                setSelectedHotels({ ...selectedHotels, [key]: e.target.checked })
+              }
+            />
+            <label htmlFor={`para-${key}`} className="text-sm cursor-pointer">
+              Recommended #{idx + 1}
+            </label>
+          </div>
+        );
+      })}
+    </div>
+  ) : (
+    hotelDetails.hotelTabs.map((tab) => (
+      <div key={tab.groupType} className="border border-[#e5d9f2] rounded-lg p-3">
+        <h4 className="font-semibold text-[#4a4260] mb-2">{tab.label}</h4>
+
+        {hotelDetails.hotels
+          .filter((h) => h.groupType === tab.groupType)
+          .map((hotel, idx) => {
+            const hotelKey = `${tab.groupType}-${idx}`;
+            return (
+              <div key={idx} className="flex items-center gap-3 py-2">
+                <input
+                  type="checkbox"
+                  id={`hotel-${hotelKey}`}
+                  className="h-4 w-4 cursor-pointer"
+                  checked={selectedHotels[hotelKey] || false}
+                  onChange={(e) =>
+                    setSelectedHotels({ ...selectedHotels, [hotelKey]: e.target.checked })
+                  }
+                />
+                <label htmlFor={`hotel-${hotelKey}`} className="text-sm flex-1 cursor-pointer">
+                  {hotel.hotelName} - {hotel.destination}
+                </label>
+              </div>
+            );
+          })}
+      </div>
+    ))
+  )}
+</div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => {
+              setClipboardModal(false);
+              setSelectedHotels({});
+            }}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#8b43d1] hover:bg-[#7c37c1]"
+            onClick={() => {
+  let clipboardText = "";
+
+  const selectedCount = Object.values(selectedHotels).filter(Boolean).length;
+  if (selectedCount === 0) {
+    toast.error("Please select at least one hotel");
+    return;
+  }
+
+  if (!hotelDetails) return;
+
+  // ✅ Para uses ONLY the 4 "Recommended #1-#4" options
+  if (clipboardType === "para") {
+    paraRecommendations.forEach((hotel, idx) => {
+      const key = `para-${idx}`;
+      if (selectedHotels[key]) {
+        clipboardText += `On ${hotel.day}, accommodation at ${hotel.hotelName} in ${hotel.destination}. `;
+      }
+    });
+
+    navigator.clipboard.writeText(clipboardText.trim());
+    toast.success("Copied to clipboard!");
+    setClipboardModal(false);
+    setSelectedHotels({});
+    return;
+  }
+
+  // ✅ Keep existing behavior for recommended/highlights
+  hotelDetails.hotelTabs.forEach((tab) => {
+    const tabHotels = hotelDetails.hotels.filter((h) => h.groupType === tab.groupType);
+
+    tabHotels.forEach((hotel, idx) => {
+      const hotelKey = `${tab.groupType}-${idx}`;
+      if (!selectedHotels[hotelKey]) return;
+
+      if (clipboardType === "highlights") {
+        clipboardText += `• ${hotel.day} - ${hotel.hotelName}, ${hotel.destination}\n`;
+      } else {
+        clipboardText += `${tab.label}: ${hotel.hotelName} - ${hotel.destination}\n`;
+      }
+    });
+  });
+
+  navigator.clipboard.writeText(clipboardText);
+  toast.success("Copied to clipboard!");
+  setClipboardModal(false);
+  setSelectedHotels({});
+}}
+      
+           >
+              Copy Selected
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share via Email Modal */}
+      <Dialog open={shareModal} onOpenChange={setShareModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share via Email</DialogTitle>
+            <DialogDescription>
+              Send itinerary details via email
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium text-[#4a4260] mb-2 block">
+                Recipient Email
+              </label>
+              <input
+                type="email"
+                className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                placeholder="email@example.com"
+                id="share-email-input"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-[#4a4260] mb-2 block">
+                Message (Optional)
+              </label>
+              <textarea
+                className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                rows={4}
+                placeholder="Add a personal message..."
+                id="share-email-message"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShareModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#17a2b8] hover:bg-[#138496]"
+              onClick={() => {
+                const emailInput = document.getElementById('share-email-input') as HTMLInputElement;
+                const messageInput = document.getElementById('share-email-message') as HTMLTextAreaElement;
+                
+                if (!emailInput?.value) {
+                  toast.error('Please enter recipient email');
+                  return;
+                }
+
+                const subject = encodeURIComponent(`Itinerary Details - ${quoteId}`);
+                const body = encodeURIComponent(
+                  `${messageInput?.value || 'Please find the itinerary details below:'}\n\n` +
+                  `Itinerary Link: ${window.location.href}`
+                );
+                
+                window.open(`mailto:${emailInput.value}?subject=${subject}&body=${body}`, '_blank');
+                toast.success('Email client opened!');
+                setShareModal(false);
+              }}
+            >
+              Send Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Quotation Modal */}
+      <Dialog open={confirmQuotationModal} onOpenChange={setConfirmQuotationModal}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add Guest Details</DialogTitle>
+            <DialogDescription>
+              Enter primary guest information and travel details
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Quotation Details */}
+            {agentInfo && (
+              <div className="bg-[#f8f9fa] p-4 rounded-lg space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6c6c6c]">Quotation No:</span>
+                  <span className="font-medium text-[#4a4260]">{agentInfo.quotation_no}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6c6c6c]">Agent Name:</span>
+                  <span className="font-medium text-[#4a4260]">{agentInfo.agent_name}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#6c6c6c]">Wallet Balance:</span>
+                  <span className={`font-medium ${walletBalance.includes('-') ? 'text-red-600' : 'text-green-600'}`}>
+                    {walletBalance}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Primary Guest Details */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-[#4a4260]">Primary Guest Details - Adult 1</h3>
+              
+              <div className="grid grid-cols-4 gap-3">
+                <div className="col-span-1">
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Salutation
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    value={guestDetails.salutation}
+                    onChange={(e) => setGuestDetails({...guestDetails, salutation: e.target.value})}
+                  >
+                    <option value="Mr">Mr</option>
+                    <option value="Ms">Ms</option>
+                    <option value="Mrs">Mrs</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Name"
+                    value={guestDetails.name}
+                    onChange={(e) => setGuestDetails({...guestDetails, name: e.target.value})}
+                  />
+                </div>
+
+                <div className="col-span-1">
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Age
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Age"
+                    value={guestDetails.age}
+                    onChange={(e) => setGuestDetails({...guestDetails, age: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Primary Contact No. <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Contact No"
+                    value={guestDetails.contactNo}
+                    onChange={(e) => setGuestDetails({...guestDetails, contactNo: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Alternative Contact No.
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Enter the Alternative Contact No"
+                    value={guestDetails.alternativeContactNo}
+                    onChange={(e) => setGuestDetails({...guestDetails, alternativeContactNo: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                  Email ID
+                </label>
+                <input
+                  type="email"
+                  className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                  placeholder="Enter the Email ID"
+                  value={guestDetails.emailId}
+                  onChange={(e) => setGuestDetails({...guestDetails, emailId: e.target.value})}
+                />
+              </div>
+
+              {/* Additional Adults */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-[#4a4260]">Additional Adults</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdditionalAdults([...additionalAdults, { name: '', age: '' }])}
+                    className="h-8 px-2 text-xs border-[#e5d9f2] text-[#8b43d1] hover:bg-[#f8f4ff]"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Adult
+                  </Button>
+                </div>
+                {additionalAdults.map((adult, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-7">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Adult {index + 2} Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Name"
+                        value={adult.name}
+                        onChange={(e) => {
+                          const newAdults = [...additionalAdults];
+                          newAdults[index].name = e.target.value;
+                          setAdditionalAdults(newAdults);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Age
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Age"
+                        value={adult.age}
+                        onChange={(e) => {
+                          const newAdults = [...additionalAdults];
+                          newAdults[index].age = e.target.value;
+                          setAdditionalAdults(newAdults);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAdditionalAdults(additionalAdults.filter((_, i) => i !== index))}
+                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Additional Children */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-[#4a4260]">Children (5-12 years)</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdditionalChildren([...additionalChildren, { name: '', age: '' }])}
+                    className="h-8 px-2 text-xs border-[#e5d9f2] text-[#8b43d1] hover:bg-[#f8f4ff]"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Child
+                  </Button>
+                </div>
+                {additionalChildren.map((child, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-7">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Child {index + 1} Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Name"
+                        value={child.name}
+                        onChange={(e) => {
+                          const newChildren = [...additionalChildren];
+                          newChildren[index].name = e.target.value;
+                          setAdditionalChildren(newChildren);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Age
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Age"
+                        value={child.age}
+                        onChange={(e) => {
+                          const newChildren = [...additionalChildren];
+                          newChildren[index].age = e.target.value;
+                          setAdditionalChildren(newChildren);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAdditionalChildren(additionalChildren.filter((_, i) => i !== index))}
+                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Additional Infants */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-[#4a4260]">Infants (Below 5 years)</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdditionalInfants([...additionalInfants, { name: '', age: '' }])}
+                    className="h-8 px-2 text-xs border-[#e5d9f2] text-[#8b43d1] hover:bg-[#f8f4ff]"
+                  >
+                    <Plus className="w-3 h-3 mr-1" /> Add Infant
+                  </Button>
+                </div>
+                {additionalInfants.map((infant, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-7">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Infant {index + 1} Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Name"
+                        value={infant.name}
+                        onChange={(e) => {
+                          const newInfants = [...additionalInfants];
+                          newInfants[index].name = e.target.value;
+                          setAdditionalInfants(newInfants);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <label className="text-[10px] font-medium text-[#4a4260] mb-1 block">
+                        Age
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-2 py-1.5 text-sm border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                        placeholder="Age"
+                        value={infant.age}
+                        onChange={(e) => {
+                          const newInfants = [...additionalInfants];
+                          newInfants[index].age = e.target.value;
+                          setAdditionalInfants(newInfants);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setAdditionalInfants(additionalInfants.filter((_, i) => i !== index))}
+                        className="h-9 w-full text-red-500 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Arrival Details */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-[#4a4260]">Arrival Details</h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Date & Time
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="12-12-2025 9:00 AM"
+                    value={guestDetails.arrivalDateTime}
+                    onChange={(e) => setGuestDetails({...guestDetails, arrivalDateTime: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Arrival Place
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Chennai International Airport"
+                    value={guestDetails.arrivalPlace}
+                    onChange={(e) => setGuestDetails({...guestDetails, arrivalPlace: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                  Flight Details
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                  rows={2}
+                  placeholder="Enter the Flight Details"
+                  value={guestDetails.arrivalFlightDetails}
+                  onChange={(e) => setGuestDetails({...guestDetails, arrivalFlightDetails: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Departure Details */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-[#4a4260]">Departure Details</h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Date & Time
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="19-12-2025 4:00 PM"
+                    value={guestDetails.departureDateTime}
+                    onChange={(e) => setGuestDetails({...guestDetails, departureDateTime: e.target.value})}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                    Departure Place
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                    placeholder="Trivandrum, Domestic Airport"
+                    value={guestDetails.departurePlace}
+                    onChange={(e) => setGuestDetails({...guestDetails, departurePlace: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-[#4a4260] mb-1 block">
+                  Flight Details
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-[#e5d9f2] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+                  rows={2}
+                  placeholder="Enter the Flight Details"
+                  value={guestDetails.departureFlightDetails}
+                  onChange={(e) => setGuestDetails({...guestDetails, departureFlightDetails: e.target.value})}
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setConfirmQuotationModal(false);
+                setGuestDetails({
+                  salutation: 'Mr',
+                  name: '',
+                  contactNo: '',
+                  age: '',
+                  alternativeContactNo: '',
+                  emailId: '',
+                  arrivalDateTime: '',
+                  arrivalPlace: '',
+                  arrivalFlightDetails: '',
+                  departureDateTime: '',
+                  departurePlace: '',
+                  departureFlightDetails: '',
+                });
+                setAdditionalAdults([]);
+                setAdditionalChildren([]);
+                setAdditionalInfants([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#8b43d1] hover:bg-[#7c37c1]"
+              onClick={handleConfirmQuotation}
+              disabled={isConfirmingQuotation}
+            >
+              {isConfirmingQuotation ? 'Submitting...' : 'Submit'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {itinerary?.planId && (
+        <>
+          <VoucherDetailsModal 
+            isOpen={voucherModal} 
+            onClose={() => setVoucherModal(false)} 
+            itineraryPlanId={itinerary.planId} 
+          />
+          <PluckCardModal 
+            isOpen={pluckCardModal} 
+            onClose={() => setPluckCardModal(false)} 
+            itineraryPlanId={itinerary.planId} 
+          />
+          <InvoiceModal 
+            isOpen={invoiceModal} 
+            onClose={() => setInvoiceModal(false)} 
+            itineraryPlanId={itinerary.planId} 
+            type={invoiceType}
+          />
+          <IncidentalExpensesModal
+            isOpen={incidentalModal}
+            onClose={() => setIncidentalModal(false)}
+            itineraryPlanId={itinerary.planId}
+          />
+          <CancelItineraryModal
+            open={cancelModalOpen}
+            onOpenChange={setCancelModalOpen}
+            itineraryPlanId={itinerary.planId ?? null}
+            onSuccess={() => {
+              toast.success('Itinerary data will be refreshed');
+              window.location.reload();
+            }}
+          />
+          {selectedHotelForVoucher && (
+            <HotelVoucherModal
+              open={hotelVoucherModalOpen}
+              onOpenChange={setHotelVoucherModalOpen}
+              itineraryPlanId={itinerary.planId}
+              routeId={selectedHotelForVoucher.routeId}
+              hotelId={selectedHotelForVoucher.hotelId}
+              hotelName={selectedHotelForVoucher.hotelName}
+              hotelEmail={selectedHotelForVoucher.hotelEmail}
+              hotelStateCity={selectedHotelForVoucher.hotelStateCity}
+              routeDates={selectedHotelForVoucher.routeDates}
+              dayNumbers={selectedHotelForVoucher.dayNumbers}
+              hotelDetailsIds={selectedHotelForVoucher.hotelDetailsIds}
+              onSuccess={() => {
+                toast.success('Hotel voucher created successfully');
+                refreshHotelData();
+              }}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+};
