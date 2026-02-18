@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import  startMswOnce  from "@/services/mock/startMswOnce";
 import {
   Popover,
   PopoverContent,
@@ -654,6 +655,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       hotspotListRef.current.scrollTop = 0;
     }
   }, [hotspotSearchQuery, addHotspotModal.open]);
+  startMswOnce();
 
   // Filter hotspots based on search query and sort: non-visitAgain first, visitAgain at bottom
   const filteredHotspots = availableHotspots
@@ -923,6 +925,7 @@ const paraRecommendations = useMemo(() => {
   }, []);
 
   useEffect(() => {
+    startMswOnce();
     if (!quoteId) {
       setError("Missing quote id in URL");
       setLoading(false);
