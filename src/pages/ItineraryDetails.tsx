@@ -429,7 +429,7 @@ const TimePickerPopover: React.FC<{
 interface ItineraryDetailsProps {
   readOnly?: boolean; // If true, component is read-only (confirmed itinerary view)
 }
-//added by bharathisakthivel
+
 export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = false }) => {
  type SelectedDay = {
   dayId: string;      // e.g., "DAY_1"
@@ -2204,7 +2204,6 @@ const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
                   </PopoverContent>
                 </Popover>
               </div>
-{/* added by bharathisakthivel */}
 
  <Button
   type="button"
@@ -2452,7 +2451,7 @@ const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
   </DialogContent>
 </Dialog>
 
-
+</div>
             {/* Segments */}
             <div className="space-y-4">
               {day.segments.map((segment, idx) => (
@@ -2953,7 +2952,7 @@ const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
                 </div>
               ))}
 
-              Add Guide Button
+              {/* Add Guide Button */}
               <div className="flex justify-end mt-4">
                 <Button
                   variant="outline"
