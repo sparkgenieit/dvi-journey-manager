@@ -11,7 +11,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+ } from "@/components/ui/dialog";
+ import { startMswOnce } from "@/mocks/startMsw";
+
 import {
   Popover,
   PopoverContent,
@@ -429,6 +431,72 @@ interface ItineraryDetailsProps {
 }
 //added by bharathisakthivel
 export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = false }) => {
+ type SelectedDay = {
+  dayId: string;      // e.g., "DAY_1"
+  dayNumber: number;  // e.g., 1
+  date: string;       // e.g., "2026-05-29"
+};
+
+type GuideSlotOption = { id: string; label: string; value: string };
+
+type AddGuideOptionsResponse = {
+  itineraryId: string;
+  dayId: string;
+  dayNumber: number;
+  date: string;
+  availableLanguages: Array<{
+    code: "en" | "ta" | "hi";
+    label: "English" | "Tamil" | "Hindi";
+    isAvailable: boolean;
+    costAvailable: boolean;
+    reason?: string;
+  }>;
+  availableSlots: Array<{
+    slotId: string;
+    start: string;
+    end: string;
+    available: boolean;
+  }>;
+};
+
+const [showAddGuide, setShowAddGuide] = useState(false);
+const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null);
+
+const [guideSlots, setGuideSlots] = useState<GuideSlotOption[]>([]);
+const [slotsLoading, setSlotsLoading] = useState(false);
+
+// Warning popup state
+const [showHindiWarning, setShowHindiWarning] = useState(false);
+const [hindiWarningMessage, setHindiWarningMessage] = useState(
+  "Sorry, Guide Cost Not Available. So Unable to Add"
+);
+
+async function fetchAddGuideOptions(itineraryId: string, dayId: string) {
+  const res = await fetch(`/mock-api/itineraries/${itineraryId}/days/${dayId}/add-guide-options`);
+  if (!res.ok) throw new Error("Failed to load Add Guide options");
+  return (await res.json()) as AddGuideOptionsResponse;
+}
+
+function formatSlotLabel(startISO: string, endISO: string) {
+  const start = new Date(startISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const end = new Date(endISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${start} - ${end}`;
+}
+const [selectedLanguage, setSelectedLanguage] = useState<"" | "en" | "ta" | "hi">("");
+const [selectedSlotId, setSelectedSlotId] = useState<string>("");
+const [addGuideOptions, setAddGuideOptions] = useState<AddGuideOptionsResponse | null>(null);
+
+
+type SavedGuide = {
+  dayId: string;
+  languageLabel: string;
+  slotLabel: string;
+  cost: number;
+};
+
+const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
+
+ //bharathisakthivel
   const { id: quoteId } = useParams();
   console.log('🔵 ItineraryDetails component MOUNTED with quoteId:', quoteId, 'readOnly:', readOnly);
   
@@ -2136,24 +2204,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                   </PopoverContent>
                 </Popover>
               </div>
-<<<<<<< Updated upstream
-              
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#d546ab] text-[#d546ab] hover:bg-[#f3e8ff] rounded-full px-4"
-                onClick={() => {
-                  // TODO: Implement Add Guide
-                  toast.info("Add Guide feature coming soon");
-                }}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add Guide
-              </Button>
-            </div>
-
-=======
 {/* added by bharathisakthivel */}
+
  <Button
   type="button"
   variant="outline"
@@ -2400,8 +2452,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   </DialogContent>
 </Dialog>
 
-</div> {/*  ended here- bharathi sakthivel */}
->>>>>>> Stashed changes
+
             {/* Segments */}
             <div className="space-y-4">
               {day.segments.map((segment, idx) => (
@@ -2730,7 +2781,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                             }
                             
                             openHotelSelectionModal(
-                              itinerary.planId || 0,
+                              itinerary.planId || 0,     
                               day.id,
                               day.date,
                               cityCode,
