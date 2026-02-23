@@ -422,7 +422,7 @@ export const ConfirmedItineraries: React.FC = () => {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
-                              <Link to={`/confirmed-itinerary/${itinerary.itinerary_plan_ID}`}>
+                              <Link to={`/confirmed-itinerary/${itinerary.booking_quote_id}`}>{/*changed by bharathisakthivel */}
                                 <Button
                                   size="sm"
                                   variant="ghost"
