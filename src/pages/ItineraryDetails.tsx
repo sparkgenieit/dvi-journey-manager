@@ -11,7 +11,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+ } from "@/components/ui/dialog";
+ import { startMswOnce } from "@/mocks/startMsw";
+
 import {
   Popover,
   PopoverContent,
@@ -429,6 +431,72 @@ interface ItineraryDetailsProps {
 }
 
 export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = false }) => {
+ type SelectedDay = {
+  dayId: string;      // e.g., "DAY_1"
+  dayNumber: number;  // e.g., 1
+  date: string;       // e.g., "2026-05-29"
+};
+
+type GuideSlotOption = { id: string; label: string; value: string };
+
+type AddGuideOptionsResponse = {
+  itineraryId: string;
+  dayId: string;
+  dayNumber: number;
+  date: string;
+  availableLanguages: Array<{
+    code: "en" | "ta" | "hi";
+    label: "English" | "Tamil" | "Hindi";
+    isAvailable: boolean;
+    costAvailable: boolean;
+    reason?: string;
+  }>;
+  availableSlots: Array<{
+    slotId: string;
+    start: string;
+    end: string;
+    available: boolean;
+  }>;
+};
+
+const [showAddGuide, setShowAddGuide] = useState(false);
+const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null);
+
+const [guideSlots, setGuideSlots] = useState<GuideSlotOption[]>([]);
+const [slotsLoading, setSlotsLoading] = useState(false);
+
+// Warning popup state
+const [showHindiWarning, setShowHindiWarning] = useState(false);
+const [hindiWarningMessage, setHindiWarningMessage] = useState(
+  "Sorry, Guide Cost Not Available. So Unable to Add"
+);
+
+async function fetchAddGuideOptions(itineraryId: string, dayId: string) {
+  const res = await fetch(`/mock-api/itineraries/${itineraryId}/days/${dayId}/add-guide-options`);
+  if (!res.ok) throw new Error("Failed to load Add Guide options");
+  return (await res.json()) as AddGuideOptionsResponse;
+}
+
+function formatSlotLabel(startISO: string, endISO: string) {
+  const start = new Date(startISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const end = new Date(endISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${start} - ${end}`;
+}
+const [selectedLanguage, setSelectedLanguage] = useState<"" | "en" | "ta" | "hi">("");
+const [selectedSlotId, setSelectedSlotId] = useState<string>("");
+const [addGuideOptions, setAddGuideOptions] = useState<AddGuideOptionsResponse | null>(null);
+
+
+type SavedGuide = {
+  dayId: string;
+  languageLabel: string;
+  slotLabel: string;
+  cost: number;
+};
+
+const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
+
+ //bharathisakthivel
   const { id: quoteId } = useParams();
   console.log('🔵 ItineraryDetails component MOUNTED with quoteId:', quoteId, 'readOnly:', readOnly);
   
@@ -2195,21 +2263,254 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                   </PopoverContent>
                 </Popover>
               </div>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-[#d546ab] text-[#d546ab] hover:bg-[#f3e8ff] rounded-full px-4"
-                onClick={() => {
-                  // TODO: Implement Add Guide
-                  toast.info("Add Guide feature coming soon");
-                }}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add Guide
-              </Button>
-            </div>
 
+ <Button
+  type="button"
+  variant="outline"
+  size="sm"
+  className="border-[#d546ab] text-[#d546ab] hover:bg-[#f3e8ff] rounded-full px-4"
+  onClick={async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const pickedDay: SelectedDay = {
+      dayId: `DAY_${day.dayNumber}`,
+      dayNumber: day.dayNumber,
+      date: day.date,
+    };
+
+    // reset dialog state
+    setSelectedDay(pickedDay);
+    setSelectedLanguage("");
+    setSelectedSlotId("");
+    setGuideSlots([]);
+    setAddGuideOptions(null);
+
+    // ✅ Open dialog first
+    setShowAddGuide(true);
+    setSlotsLoading(true);
+
+    try {
+      // ✅ Start MSW only when Add Guide is clicked
+      await startMswOnce();
+
+      const data = await fetchAddGuideOptions("ITI_1001", pickedDay.dayId);
+      setAddGuideOptions(data);
+
+      const formattedSlots: GuideSlotOption[] = (data.availableSlots || [])
+        .filter((s) => s.available)
+        .map((s) => ({
+          id: s.slotId,
+          value: s.slotId,
+          label: formatSlotLabel(s.start, s.end),
+        }));
+
+      setGuideSlots(formattedSlots);
+    } catch (err) {
+      setHindiWarningMessage("Failed to load guide options. Please try again.");
+      setShowHindiWarning(true);
+      setShowAddGuide(false);
+    } finally {
+      setSlotsLoading(false);
+    }
+  }}
+>
+  <Plus className="h-4 w-4 mr-1" />
+  Add Guide
+</Button>
+
+{/* ✅ SHOW SAVED GUIDE UNDER THIS DAY (CORRECT PLACE) */}
+{savedGuides
+  .filter((g) => g.dayId === `DAY_${day.dayNumber}`)
+  .map((g, idx) => (
+    <div
+      key={`${g.dayId}-${idx}`}
+      className="bg-[#fdecef] rounded-xl p-4 mt-3 flex justify-between items-center"
+    >
+      <div>
+        <div className="text-[#4a4260] font-semibold">
+          Guide Language - <span className="text-[#d546ab]">{g.languageLabel}</span>
+        </div>
+        <div className="text-[#4a4260]">
+          Slot Timing - <span className="text-[#d546ab]">{g.slotLabel}</span>
+        </div>
+      </div>
+
+      <div className="text-[#d546ab] font-semibold text-lg">
+        ₹ {g.cost.toFixed(2)}
+      </div>
+    </div>
+  ))}
+
+{/* ✅ Add Guide Dialog */}
+<Dialog
+  open={showAddGuide}
+  onOpenChange={(open) => {
+    setShowAddGuide(open);
+    if (!open) {
+      setSelectedDay(null);
+      setSelectedLanguage("");
+      setSelectedSlotId("");
+    }
+  }}
+>
+  <DialogContent className="sm:max-w-md bg-white rounded-xl shadow-xl">
+    <DialogHeader>
+      <DialogTitle className="text-[#4a4260] see text-lg font-semibold">
+        Add Guide for "Day {selectedDay?.dayNumber} - {selectedDay?.date}"
+      </DialogTitle>
+      <DialogDescription className="sr-only">
+        Add guide language and slot
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-4 mt-4">
+      {/* Language */}
+      <div>
+        <label className="text-sm font-medium text-[#4a4260]">
+          Language <span className="text-red-500">*</span>
+        </label>
+
+        <select
+          className="w-full mt-1 border border-[#e5d9f2] rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+          value={selectedLanguage}
+          onChange={(e) => {
+            const code = e.target.value as "" | "en" | "ta" | "hi";
+            setSelectedLanguage(code);
+
+            // ✅ Validate Hindi ONLY when user selects Hindi
+            if (code === "hi") {
+              const hindi = addGuideOptions?.availableLanguages?.find((l) => l.code === "hi");
+
+              if (!hindi || !hindi.isAvailable || !hindi.costAvailable) {
+                setHindiWarningMessage(
+                  hindi?.reason || "Sorry, Guide Cost Not Available. So Unable to Add"
+                );
+                setShowHindiWarning(true);
+                setSelectedLanguage(""); // revert selection
+              }
+            }
+          }}
+        >
+          <option value="">Choose Language</option>
+          <option value="en">English</option>
+          <option value="ta">Tamil</option>
+          <option value="hi">Hindi</option>
+        </select>
+      </div>
+
+      {/* Slot */}
+      <div>
+        <label className="text-sm font-medium text-[#4a4260]">
+          Slot <span className="text-red-500">*</span>
+        </label>
+
+        <select
+          className="w-full mt-1 border border-[#e5d9f2] rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#d546ab]"
+          value={selectedSlotId}
+          onChange={(e) => setSelectedSlotId(e.target.value)}
+          disabled={slotsLoading}
+        >
+          <option value="">
+            {slotsLoading ? "Loading slots..." : "Choose Slot"}
+          </option>
+
+          {!slotsLoading && guideSlots.length === 0 ? (
+            <option value="" disabled>
+              No slots available
+            </option>
+          ) : (
+            guideSlots.map((slot) => (
+              <option key={slot.id} value={slot.value}>
+                {slot.label}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+
+      {/* Cost (mock display) */}
+      <div className="text-right text-[#d546ab] font-semibold">₹ 345.00</div>
+    </div>
+
+    <div className="flex justify-center gap-4 mt-6">
+      <Button
+        type="button"
+        className="bg-[#d546ab] hover:bg-[#c03d9f] px-6"
+        onClick={() => {
+          if (!selectedDay) return;
+
+          if (!selectedLanguage) {
+            setHindiWarningMessage("Please choose a language");
+            setShowHindiWarning(true);
+            return;
+          }
+
+          if (!selectedSlotId) {
+            setHindiWarningMessage("Please choose a slot");
+            setShowHindiWarning(true);
+            return;
+          }
+
+          const slot = guideSlots.find((s) => s.value === selectedSlotId);
+
+          const langLabel =
+            selectedLanguage === "en"
+              ? "English"
+              : selectedLanguage === "ta"
+              ? "Tamil"
+              : "Hindi";
+
+          setSavedGuides((prev) => [
+            ...prev,
+            {
+              dayId: selectedDay.dayId,
+              languageLabel: langLabel,
+              slotLabel: slot?.label ?? selectedSlotId,
+              cost: 345,
+            },
+          ]);
+
+          setSelectedLanguage("");
+          setSelectedSlotId("");
+          setShowAddGuide(false);
+        }}
+      >
+        Save
+      </Button>
+
+      <Button type="button" variant="outline" onClick={() => setShowAddGuide(false)}>
+        Cancel
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+
+{/* ✅ Warning Dialog (ONLY warning content here — no saved guide UI inside) */}
+<Dialog open={showHindiWarning} onOpenChange={setShowHindiWarning}>
+  <DialogContent className="sm:max-w-sm bg-white rounded-xl shadow-xl">
+    <DialogHeader>
+      <DialogTitle className="text-[#4a4260] text-lg font-semibold">
+        Warning
+      </DialogTitle>
+      <DialogDescription className="text-sm text-[#4a4260]">
+        {hindiWarningMessage}
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="flex justify-center mt-4">
+      <Button
+        type="button"
+        className="bg-[#d546ab] hover:bg-[#c03d9f] px-6"
+        onClick={() => setShowHindiWarning(false)}
+      >
+        OK
+      </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+
+</div>
             {/* Segments */}
             <div className="space-y-4">
               {day.segments.map((segment, idx) => (
@@ -2538,7 +2839,7 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                             }
                             
                             openHotelSelectionModal(
-                              itinerary.planId || 0,
+                              itinerary.planId || 0,     
                               day.id,
                               day.date,
                               cityCode,
