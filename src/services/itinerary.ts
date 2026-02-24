@@ -157,6 +157,19 @@ export const ItineraryService = {
     });
   },
 
+  async previewActivityAddition(data: {
+    planId: number;
+    routeId: number;
+    routeHotspotId: number;
+    hotspotId: number;
+    activityId: number;
+  }) {
+    return api(`itineraries/activities/preview`, {
+      method: "POST",
+      body: data,
+    });
+  },
+
   async addActivity(data: {
     planId: number;
     routeId: number;
@@ -167,6 +180,7 @@ export const ItineraryService = {
     startTime?: string;
     endTime?: string;
     duration?: string;
+    skipConflictCheck?: boolean;
   }) {
     return api(`itineraries/activities/add`, {
       method: "POST",
