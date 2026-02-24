@@ -39,6 +39,9 @@ type RouteDetailsBlockProps = {
   setRouteDetails: React.Dispatch<React.SetStateAction<RouteDetailRow[]>>;
   locations: LocationOption[];
 
+  // ✅ NEW: nearest-first ordering helper from parent
+  getLocationsSortedByDistance?: (fromLocationKey: string) => LocationOption[];
+
   // optional hooks from parent
   onOpenViaRoutes?: (row: RouteDetailRow) => void;
   addDay?: () => void;
@@ -51,6 +54,7 @@ export const RouteDetailsBlock = ({
   routeDetails,
   setRouteDetails,
   locations,
+  getLocationsSortedByDistance, // ✅ NEW
   onOpenViaRoutes,
   addDay,
   validationErrors,
@@ -202,6 +206,50 @@ export const RouteDetailsBlock = ({
   const firstRouteSourceError = validationErrors?.firstRouteSource;
   const firstRouteNextError = validationErrors?.firstRouteNext;
 
+
+  const scrollSelectedNextDestinationIntoView = (rowIndex: number, value: string) => {
+  if (!value) return;
+
+  // Run after dropdown renders/updates
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const host = document.getElementById(`next-destination-${rowIndex}`);
+
+      // Try to find the open dropdown listbox:
+      // - First, within the host (if dropdown is not portalled)
+      // - Fallback: any visible listbox in the document (if dropdown is portalled to body)
+      const listbox =
+        (host?.querySelector('[role="listbox"]') as HTMLElement | null) ||
+        (Array.from(document.querySelectorAll('[role="listbox"]')) as HTMLElement[]).find(
+          (el) => el.offsetParent !== null
+        ) ||
+        null;
+
+      if (!listbox) return;
+
+      // Prefer a data-value match (if AutoSuggestSelect uses it)
+      const byDataValue = listbox.querySelector(
+        `[data-value="${CSS.escape(value)}"]`
+      ) as HTMLElement | null;
+
+      if (byDataValue) {
+        byDataValue.scrollIntoView({ block: "nearest" });
+        return;
+      }
+
+      // Fallback: match by text content
+      const candidates = Array.from(
+        listbox.querySelectorAll<HTMLElement>('[role="option"], button, div, li')
+      );
+
+      const byText = candidates.find(
+        (el) => (el.textContent || "").trim() === value
+      );
+
+      byText?.scrollIntoView({ block: "nearest" });
+    });
+  });
+};
   return (
     <Card className="border border-[#efdef8] rounded-lg bg-white shadow-none">
       <CardHeader className="pb-2">
@@ -230,16 +278,37 @@ export const RouteDetailsBlock = ({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {routeDetails.map((row, idx) => {
-              const rowSpecificOptions =
-                destinationOptionsMap[idx] &&
-                destinationOptionsMap[idx]!.length > 0
-                  ? destinationOptionsMap[idx]!
-                  : globalLocationOptions;
+           {routeDetails.map((row, idx) => {
+  const sourceLocationKey = row.source;
 
-              const isFirstRow = idx === 0;
+  // ✅ 1) full list sorted by distance from the row’s source
+  const sortedByDistance = getLocationsSortedByDistance
+    ? getLocationsSortedByDistance(sourceLocationKey)
+    : locations;
 
-              return (
+  const sortedByDistanceOptions: AutoSuggestOption[] = sortedByDistance.map((loc) => ({
+    value: loc.name,
+    label: loc.name,
+  }));
+
+  // ✅ 2) keep your existing "allowed destinations" filtering (if fetchLocations provided a subset),
+  // but reorder that subset using the distance-sorted list.
+  const fetchedSubset = destinationOptionsMap[idx] && destinationOptionsMap[idx]!.length > 0
+    ? destinationOptionsMap[idx]!
+    : null;
+
+  const rowSpecificOptions: AutoSuggestOption[] = fetchedSubset
+    ? (() => {
+        const allowed = new Set(fetchedSubset.map((o) => o.value));
+        const filteredByDistance = sortedByDistanceOptions.filter((o) => allowed.has(o.value));
+        // fallback if something mismatches
+        return filteredByDistance.length > 0 ? filteredByDistance : fetchedSubset;
+      })()
+    : sortedByDistanceOptions;
+
+  const isFirstRow = idx === 0;
+
+  return (
                 <TableRow key={idx}>
                   <TableCell>{`DAY ${row.day}`}</TableCell>
 
@@ -296,33 +365,35 @@ export const RouteDetailsBlock = ({
                           : ""
                       }
                     >
-                      <AutoSuggestSelect
-                        mode="single"
-                        value={row.next}
-                        onChange={(val) =>
-                          setRouteDetails((prev) => {
-                            const updated = [...prev];
-                            const chosen = (val as string) || "";
+                     
+ <AutoSuggestSelect
+  mode="single"
+  value={row.next}
+  onChange={(val) => {
+    const chosen = (val as string) || "";
 
-                            updated[idx] = {
-                              ...updated[idx],
-                              next: chosen,
-                            };
+    setRouteDetails((prev) => {
+      const updated = [...prev];
 
-                            // PHP behaviour: selected NEXT becomes SOURCE of next day
-                            if (idx + 1 < updated.length) {
-                              updated[idx + 1] = {
-                                ...updated[idx + 1],
-                                source: chosen,
-                              };
-                            }
+      updated[idx] = {
+        ...updated[idx],
+        next: chosen,
+      };
 
-                            return updated;
-                          })
-                        }
-                        options={rowSpecificOptions}
-                        placeholder="Next Destination"
-                      />
+      // PHP behaviour: selected NEXT becomes SOURCE of next day
+      if (idx + 1 < updated.length) {
+        updated[idx + 1] = {
+          ...updated[idx + 1],
+          source: chosen,
+        };
+      }
+
+      return updated;
+    });
+  }}
+  options={rowSpecificOptions}
+  placeholder="Next Destination"
+/>
                     </div>
                     {isFirstRow && firstRouteNextError && (
                       <p className="mt-1 text-xs text-red-500">
