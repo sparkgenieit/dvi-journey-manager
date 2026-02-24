@@ -61,18 +61,27 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
     );
   }, [options, query]);
 
-  // open → focus search input
-  useEffect(() => {
-    if (open) {
-      const id = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 0);
-      return () => clearTimeout(id);
-    } else {
-      setQuery("");
-      setHighlightIndex(0);
-    }
-  }, [open]);
+ // open → focus search input + auto-scroll to selected option
+useEffect(() => {
+  if (open) {
+    // ✅ When opening, highlight the selected value (so it scrolls into view)
+    const selected = selectedValues[0]; // single mode => first value; multi => first selected
+    const selectedIndex = selected
+      ? options.findIndex((o) => o.value === selected)
+      : -1;
+
+    setHighlightIndex(selectedIndex >= 0 ? selectedIndex : 0);
+
+    const id = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    return () => clearTimeout(id);
+  } else {
+    setQuery("");
+    setHighlightIndex(0);
+  }
+}, [open, options, selectedValues]);
 
   // Close when clicking outside
   useEffect(() => {

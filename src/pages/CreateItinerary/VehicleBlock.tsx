@@ -1,5 +1,5 @@
 // FILE: src/pages/CreateItinerary/VehicleBlock.tsx
-
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -61,8 +61,8 @@ export const VehicleBlock = ({
   if (!(pref === "vehicle" || pref === "both")) {
     return null;
   }
-
   const hasVehicleTypes = vehicleTypes && vehicleTypes.length > 0;
+  
 
   const internalAddVehicle = () => {
     setVehicles((prev) => [
@@ -163,11 +163,11 @@ export const VehicleBlock = ({
                     align="start"
                     className="max-h-56 overflow-y-auto"
                   >
-                    {vehicleTypes.map((item) => (
-                      <SelectItem key={item.id} value={String(item.id)}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
+                   {vehicleTypes.map((item) => (
+  <SelectItem key={item.id} value={String(item.id)}>
+    {item.label}
+  </SelectItem>
+))}
                   </SelectContent>
                 </Select>
 
