@@ -124,27 +124,27 @@ useEffect(() => {
 
   const openDropdown = () => setOpen(true);
   const closeDropdown = () => setOpen(false);
-
-  const handleSelect = (opt: AutoSuggestOption) => {
-    if (mode === "single") {
-      onChange(opt.value);
-    } else {
-      const current = Array.isArray(value) ? [...value] : [];
-      if (selectedSet.has(opt.value)) {
-        const next = current.filter((v) => v !== opt.value);
-        onChange(next);
-      } else {
-        if (maxSelected && current.length >= maxSelected) return;
-        current.push(opt.value);
-        onChange(current);
-      }
-    }
-    // always close after selection (required behaviour)
-    closeDropdown();
-    // move focus back to trigger so user can Tab further
+  
+const handleSelect = (opt: AutoSuggestOption) => {
+  if (mode === "single") {
+    onChange(opt.value);
+    closeDropdown(); // close only for single mode
     triggerRef.current?.focus();
-  };
+  } else {
+    const current = Array.isArray(value) ? [...value] : [];
 
+    if (selectedSet.has(opt.value)) {
+      const next = current.filter((v) => v !== opt.value);
+      onChange(next);
+    } else {
+      if (maxSelected && current.length >= maxSelected) return;
+      current.push(opt.value);
+      onChange(current);
+    }
+
+    // 🚫 DO NOT close dropdown in multi mode
+  }
+};
   const handleTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (
       e.key === "ArrowDown" ||
@@ -186,9 +186,17 @@ useEffect(() => {
       closeDropdown();
       triggerRef.current?.focus();
     } else if (e.key === "Tab") {
-      // close and allow focus to move to next field
-      closeDropdown();
-    }
+      const opt = filteredOptions[highlightIndex];
+  if (opt) {
+    handleSelect(opt); // triggers onChange + closes dropdown
+    // IMPORTANT: do NOT preventDefault on Tab
+    // letting Tab continue will move focus naturally to the next field
+    return;
+  }
+
+  // If nothing to select, just close and allow tabbing
+  closeDropdown();
+}
   };
 
   return (

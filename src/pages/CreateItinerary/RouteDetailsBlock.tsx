@@ -1,6 +1,6 @@
 // FILE: src/pages/CreateItinerary/RouteDetailsBlock.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -75,6 +75,39 @@ export const RouteDetailsBlock = ({
 
   // After adding a day: focus previous last day's "Next Destination"
   const [focusNextIdx, setFocusNextIdx] = useState<number | null>(null);
+  // Holds the DOM <tr> for each row so we can scroll to it
+const rowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
+
+// Which row index we want to scroll into view
+const [scrollToRowIdx, setScrollToRowIdx] = useState<number | null>(null);
+
+// Helper: check if a row is fully visible in the viewport
+const isRowVisibleInViewport = (el: HTMLElement) => {
+  const rect = el.getBoundingClientRect();
+  const viewportH = window.innerHeight || document.documentElement.clientHeight;
+  return rect.top >= 0 && rect.bottom <= viewportH;
+};
+
+// Scroll effect: runs after render when scrollToRowIdx changes
+useEffect(() => {
+  if (scrollToRowIdx === null) return;
+
+  requestAnimationFrame(() => {
+    const rowEl = rowRefs.current[scrollToRowIdx];
+    if (!rowEl) return;
+
+    // Scroll only if needed (prevents UI shift)
+    if (!isRowVisibleInViewport(rowEl)) {
+      rowEl.scrollIntoView({
+        behavior: "auto",   // no smooth animation
+        block: "nearest",   // minimal scroll
+        inline: "nearest",
+      });
+    }
+  });
+
+  setScrollToRowIdx(null);
+}, [scrollToRowIdx]);
 
   useEffect(() => {
     if (focusNextIdx === null) return;
@@ -308,8 +341,10 @@ export const RouteDetailsBlock = ({
 
   const isFirstRow = idx === 0;
 
-  return (
-                <TableRow key={idx}>
+              return (
+                <TableRow key={idx} ref={(el) => {
+    rowRefs.current[idx] = el;
+  }}>
                   <TableCell>{`DAY ${row.day}`}</TableCell>
 
                   {/* DATE – read-only from selected range */}
@@ -365,35 +400,39 @@ export const RouteDetailsBlock = ({
                           : ""
                       }
                     >
-                     
- <AutoSuggestSelect
-  mode="single"
-  value={row.next}
-  onChange={(val) => {
-    const chosen = (val as string) || "";
+                      <AutoSuggestSelect
+                        mode="single"
+                        value={row.next}
+                      onChange={(val) => {
+  const chosen = (val as string) || "";
 
-    setRouteDetails((prev) => {
-      const updated = [...prev];
+  setRouteDetails((prev) => {
+    const updated = [...prev];
 
-      updated[idx] = {
-        ...updated[idx],
-        next: chosen,
+    updated[idx] = {
+      ...updated[idx],
+      next: chosen,
+    };
+
+    // PHP behaviour: selected NEXT becomes SOURCE of next day
+    if (idx + 1 < updated.length) {
+      updated[idx + 1] = {
+        ...updated[idx + 1],
+        source: chosen,
       };
+    }
 
-      // PHP behaviour: selected NEXT becomes SOURCE of next day
-      if (idx + 1 < updated.length) {
-        updated[idx + 1] = {
-          ...updated[idx + 1],
-          source: chosen,
-        };
-      }
+    return updated;
+  });
 
-      return updated;
-    });
-  }}
-  options={rowSpecificOptions}
-  placeholder="Next Destination"
-/>
+  // After update, scroll just enough to show the affected next row
+  if (idx + 1 < routeDetails.length) {
+    setScrollToRowIdx(idx + 1);
+  }
+}}
+                        options={rowSpecificOptions}
+                        placeholder="Next Destination"
+                      />
                     </div>
                     {isFirstRow && firstRouteNextError && (
                       <p className="mt-1 text-xs text-red-500">

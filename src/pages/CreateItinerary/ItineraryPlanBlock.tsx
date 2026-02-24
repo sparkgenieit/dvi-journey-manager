@@ -493,7 +493,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <p className="mt-1 text-xs text-red-500">{validationErrors.hotelCategory}</p>
             )}
           </div>
-
+{/* 
           <div className="flex-1">
             <Label className="text-[12px] block mb-1">Hotel Facilities (Optional)</Label>
             <AutoSuggestSelect
@@ -503,7 +503,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               options={hotelFacilityAutoOptions}
               placeholder="Choose Hotel Facilities"
             />
-          </div>
+          </div> */}
         </div>
 
         {/* ROW 4 */}
@@ -669,7 +669,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
 
         {/* ROW 5 */}
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div
+          {/* <div
             className={validationErrors?.arrivalType ? "border border-red-500 rounded-md p-2" : ""}
             data-field="arrivalType"
           >
@@ -694,9 +694,9 @@ const handleHotelFacilityChange = (vals: string[]) => {
             {validationErrors?.arrivalType && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.arrivalType}</p>
             )}
-          </div>
+          </div> */}
 
-          <div
+          {/* <div
             className={validationErrors?.departureType ? "border border-red-500 rounded-md p-2" : ""}
             data-field="departureType"
           >
@@ -721,7 +721,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
             {validationErrors?.departureType && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.departureType}</p>
             )}
-          </div>
+          </div> */}
 
           <div>
   <Label className="text-sm block mb-1">Number of Nights</Label>
@@ -894,7 +894,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
 
         {/* ROW 7 */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div
+          {/* <div
             className={`md:w-[30%] ${
               validationErrors?.pickupDateTime ? "border border-red-500 rounded-md p-2" : ""
             }`}
@@ -988,7 +988,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
             {validationErrors?.pickupDateTime && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.pickupDateTime}</p>
             )}
-          </div>
+          </div> */}
 
           <div className="flex-1">
             <Label className="text-sm block mb-1">Special Instructions</Label>
