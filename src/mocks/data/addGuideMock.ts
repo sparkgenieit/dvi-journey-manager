@@ -8,8 +8,8 @@ export const addGuideOptionsDB: Record<
       dayNumber: number;
       date: string;
       availableLanguages: Array<{
-        code: "en" | "ta" | "hi";
-        label: "English" | "Tamil" | "Hindi";
+        code: "en" | "ta" | "ml" | "hi" | "fr";
+        label: "English" | "Tamil" | "Malayalam" | "Hindi" | "French";
         isAvailable: boolean;
         costAvailable: boolean;
         reason?: string;
@@ -65,8 +65,7 @@ export const addGuideOptionsDB: Record<
       availableLanguages: [
         { code: "en", label: "English", isAvailable: true, costAvailable: true },
         { code: "ta", label: "Tamil", isAvailable: true, costAvailable: true },
-        // Hindi AVAILABLE in Day 2
-        { code: "hi", label: "Hindi", isAvailable: true, costAvailable: true },
+        {code: "hi",label: "Hindi",isAvailable: false,costAvailable: false,reason: "Hindi is not available",},
       ],
       availableSlots: [
         {
@@ -83,5 +82,72 @@ export const addGuideOptionsDB: Record<
         },
       ],
     },
+     DAY_3: {
+  itineraryId: "ITI_1001",
+  dayId: "DAY_3",
+  dayNumber: 3,
+  date: "2026-05-31",
+  availableLanguages: [
+    { code: "en", label: "English", isAvailable: true, costAvailable: true },
+    { code: "ta", label: "Tamil", isAvailable: true, costAvailable: true },
+    { code: "ml", label: "Malayalam", isAvailable: true, costAvailable: true },
+    {
+      code: "hi",
+      label: "Hindi",
+      isAvailable: false,
+      costAvailable: false,
+      reason: "Hindi is not available",
+    },
+    {
+      code: "fr",
+      label: "French",
+      isAvailable: false,
+      costAvailable: false,
+      reason: "French is not available",
+    },
+  ],
+  availableSlots: [
+    {
+      slotId: "SLOT_005",
+      start: "2026-05-31T09:00:00+05:30",
+      end: "2026-05-31T13:00:00+05:30",
+      available: true,
+    },
+  ],
+},
+
+DAY_4: {
+  itineraryId: "ITI_1001",
+  dayId: "DAY_4",
+  dayNumber: 4,
+  date: "2026-06-01",
+  availableLanguages: [
+    { code: "en", label: "English", isAvailable: true, costAvailable: true },
+    { code: "ta", label: "Tamil", isAvailable: true, costAvailable: true },
+    { code: "ml", label: "Malayalam", isAvailable: true, costAvailable: true },
+    {
+      code: "hi",
+      label: "Hindi",
+      isAvailable: false,
+      costAvailable: false,
+      reason: "Hindi is not available",
+    },
+    {
+      code: "fr",
+      label: "French",
+      isAvailable: false,
+      costAvailable: false,
+      reason: "French is not available",
+    },
+  ],
+  availableSlots: [
+    {
+      slotId: "SLOT_006",
+      start: "2026-06-01T10:00:00+05:30",
+      end: "2026-06-01T14:00:00+05:30",
+      available: true,
+    },
+  ],
+},
   },
 };

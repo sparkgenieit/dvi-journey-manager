@@ -12,13 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import  startMswOnce  from "@/services/mock/startMswOnce";
+// import  startMswOnce  from "@/services/mock/startMswOnce";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2, RefreshCw, Edit } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Car, Calendar, Plus, Trash2, ArrowRight, Ticket, Bell, Building2, Timer, FileText, CreditCard, Receipt, AlertTriangle, ChevronUp, ChevronDown, Loader2, RefreshCw, Edit,Pencil} from "lucide-react";
 import { ItineraryService } from "@/services/itinerary";
 import { api } from "@/lib/api";
 import { VehicleList } from "./VehicleList";
@@ -444,8 +444,8 @@ type AddGuideOptionsResponse = {
   dayNumber: number;
   date: string;
   availableLanguages: Array<{
-    code: "en" | "ta" | "hi";
-    label: "English" | "Tamil" | "Hindi";
+   code: "en" | "ta" | "ml" | "hi" | "fr";
+label: "English" | "Tamil" | "Malayalam" | "Hindi" | "French";
     isAvailable: boolean;
     costAvailable: boolean;
     reason?: string;
@@ -471,8 +471,17 @@ const [hindiWarningMessage, setHindiWarningMessage] = useState(
 );
 
 async function fetchAddGuideOptions(itineraryId: string, dayId: string) {
-  const res = await fetch(`/mock-api/itineraries/${itineraryId}/days/${dayId}/add-guide-options`);
-  if (!res.ok) throw new Error("Failed to load Add Guide options");
+  // ✅ Backend is under /api/v1 (global prefix)
+  const res = await fetch(
+    `/api/v1/mock-api/itineraries/${itineraryId}/days/${dayId}/add-guide-options`
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    console.error("❌ Add Guide API failed:", err);
+    throw new Error("Failed to load Add Guide options");
+  }
+
   return (await res.json()) as AddGuideOptionsResponse;
 }
 
@@ -481,19 +490,50 @@ function formatSlotLabel(startISO: string, endISO: string) {
   const end = new Date(endISO).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return `${start} - ${end}`;
 }
-const [selectedLanguage, setSelectedLanguage] = useState<"" | "en" | "ta" | "hi">("");
+const [selectedLanguage, setSelectedLanguage] =
+  useState<"" | "en" | "ta" | "ml" | "hi" | "fr">("");
 const [selectedSlotId, setSelectedSlotId] = useState<string>("");
 const [addGuideOptions, setAddGuideOptions] = useState<AddGuideOptionsResponse | null>(null);
 
 
 type SavedGuide = {
   dayId: string;
+
+  languageCode: "en" | "ta" | "ml" | "hi" | "fr";
+  slotId: string;
+
   languageLabel: string;
   slotLabel: string;
+
   cost: number;
 };
 
 const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
+const [editingGuideIndex, setEditingGuideIndex] = useState<number | null>(null);
+
+function handleDeleteGuide(dayId: string, index: number) {
+  setSavedGuides((prev) =>
+    prev.filter((g, i) => !(g.dayId === dayId && i === index))
+  );
+}
+
+function handleEditGuide(dayId: string, index: number) {
+  const dayGuides = savedGuides.filter((g) => g.dayId === dayId);
+  const guide = dayGuides[index];
+  if (!guide) return;
+
+  setSelectedDay({
+    dayId,
+    dayNumber: Number(dayId.replace("DAY_", "")),
+    date: selectedDay?.date ?? "",
+  });
+
+  setSelectedLanguage(guide.languageCode);
+  setSelectedSlotId(guide.slotId);
+
+  setEditingGuideIndex(index);
+  setShowAddGuide(true);
+}
 
  //bharathisakthivel
   const { id: quoteId } = useParams();
@@ -721,7 +761,7 @@ const [savedGuides, setSavedGuides] = useState<SavedGuide[]>([]);
       hotspotListRef.current.scrollTop = 0;
     }
   }, [hotspotSearchQuery, addHotspotModal.open]);
-  startMswOnce();
+  // startMswOnce();
 
   // Filter hotspots based on search query and sort: non-visitAgain first, visitAgain at bottom
   const filteredHotspots = availableHotspots
@@ -991,7 +1031,7 @@ const paraRecommendations = useMemo(() => {
   }, []);
 
   useEffect(() => {
-    startMswOnce();
+    // startMswOnce();
     if (!quoteId) {
       setError("Missing quote id in URL");
       setLoading(false);
@@ -2251,12 +2291,13 @@ const paraRecommendations = useMemo(() => {
     setShowAddGuide(true);
     setSlotsLoading(true);
 
-    try {
-      // ✅ Start MSW only when Add Guide is clicked
-      await startMswOnce();
+   try {
+  if (!quoteId) {
+    throw new Error("Missing itinerary id in URL");
+  }
 
-      const data = await fetchAddGuideOptions("ITI_1001", pickedDay.dayId);
-      setAddGuideOptions(data);
+  const data = await fetchAddGuideOptions(quoteId, pickedDay.dayId);
+  setAddGuideOptions(data);
 
       const formattedSlots: GuideSlotOption[] = (data.availableSlots || [])
         .filter((s) => s.available)
@@ -2286,19 +2327,40 @@ const paraRecommendations = useMemo(() => {
   .map((g, idx) => (
     <div
       key={`${g.dayId}-${idx}`}
-      className="bg-[#fdecef] rounded-xl p-4 mt-3 flex justify-between items-center"
+      className="bg-[#fdecef] rounded-xl px-6 py-4 mt-3 flex items-center justify-between"
     >
-      <div>
+      {/* Left content */}
+      <div className="space-y-1">
         <div className="text-[#4a4260] font-semibold">
           Guide Language - <span className="text-[#d546ab]">{g.languageLabel}</span>
         </div>
+
         <div className="text-[#4a4260]">
           Slot Timing - <span className="text-[#d546ab]">{g.slotLabel}</span>
         </div>
       </div>
 
-      <div className="text-[#d546ab] font-semibold text-lg">
-        ₹ {g.cost.toFixed(2)}
+      {/* Right side (₹ + edit + delete) */}
+      <div className="flex items-center gap-4">
+        <div className="text-[#d546ab] font-semibold text-lg">
+          ₹ {g.cost.toFixed(2)}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => handleEditGuide(`DAY_${day.dayNumber}`, idx)}
+          className="text-[#4a4260] hover:text-[#d546ab]"
+        >
+          <Pencil className="h-5 w-5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleDeleteGuide(`DAY_${day.dayNumber}`, idx)}
+          className="text-[#4a4260] hover:text-red-500"
+        >
+          <Trash2 className="h-5 w-5" />
+        </button>
       </div>
     </div>
   ))}
@@ -2306,14 +2368,15 @@ const paraRecommendations = useMemo(() => {
 {/* ✅ Add Guide Dialog */}
 <Dialog
   open={showAddGuide}
-  onOpenChange={(open) => {
-    setShowAddGuide(open);
-    if (!open) {
-      setSelectedDay(null);
-      setSelectedLanguage("");
-      setSelectedSlotId("");
-    }
-  }}
+ onOpenChange={(open) => {
+  setShowAddGuide(open);
+  if (!open) {
+    setSelectedDay(null);
+    setSelectedLanguage("");
+    setSelectedSlotId("");
+    setEditingGuideIndex(null);
+  }
+}}
 >
   <DialogContent className="sm:max-w-md bg-white rounded-xl shadow-xl">
     <DialogHeader>
@@ -2354,9 +2417,11 @@ const paraRecommendations = useMemo(() => {
           }}
         >
           <option value="">Choose Language</option>
-          <option value="en">English</option>
-          <option value="ta">Tamil</option>
-          <option value="hi">Hindi</option>
+<option value="en">English</option>
+<option value="ta">Tamil</option>
+<option value="ml">Malayalam</option>
+<option value="hi">Hindi</option>
+<option value="fr">French</option>
         </select>
       </div>
 
@@ -2400,6 +2465,14 @@ const paraRecommendations = useMemo(() => {
         className="bg-[#d546ab] hover:bg-[#c03d9f] px-6"
         onClick={() => {
           if (!selectedDay) return;
+          // ✅ HARD BUSINESS RULE: NEVER allow these languages
+const blockedLanguages = new Set(["hi", "fr"]);
+
+if (selectedLanguage && blockedLanguages.has(selectedLanguage)) {
+  setHindiWarningMessage("Hindi is not available");
+  setShowHindiWarning(true);
+  return;
+}
 
           if (!selectedLanguage) {
             setHindiWarningMessage("Please choose a language");
@@ -2421,16 +2494,31 @@ const paraRecommendations = useMemo(() => {
               : selectedLanguage === "ta"
               ? "Tamil"
               : "Hindi";
+const newGuide: SavedGuide = {
+  dayId: selectedDay.dayId,
+  languageCode: selectedLanguage as "en" | "ta" | "hi",
+  slotId: selectedSlotId,
+  languageLabel: langLabel,
+  slotLabel: slot?.label ?? selectedSlotId,
+  cost: 345,
+};
 
-          setSavedGuides((prev) => [
-            ...prev,
-            {
-              dayId: selectedDay.dayId,
-              languageLabel: langLabel,
-              slotLabel: slot?.label ?? selectedSlotId,
-              cost: 345,
-            },
-          ]);
+setSavedGuides((prev) => {
+  const dayId = selectedDay.dayId;
+  const dayGuides = prev.filter((g) => g.dayId === dayId);
+  const otherGuides = prev.filter((g) => g.dayId !== dayId);
+
+  if (editingGuideIndex !== null) {
+    const updatedDayGuides = dayGuides.map((g, i) =>
+      i === editingGuideIndex ? newGuide : g
+    );
+    return [...otherGuides, ...updatedDayGuides];
+  }
+
+  return [...prev, newGuide];
+});
+
+setEditingGuideIndex(null);
 
           setSelectedLanguage("");
           setSelectedSlotId("");
@@ -2454,9 +2542,9 @@ const paraRecommendations = useMemo(() => {
       <DialogTitle className="text-[#4a4260] text-lg font-semibold">
         Warning
       </DialogTitle>
-      <DialogDescription className="text-sm text-[#4a4260]">
-        {hindiWarningMessage}
-      </DialogDescription>
+      <DialogDescription className="text-sm text-orange-600 font-medium">
+  {hindiWarningMessage}
+</DialogDescription>
     </DialogHeader>
 
     <div className="flex justify-center mt-4">
@@ -2973,7 +3061,7 @@ const paraRecommendations = useMemo(() => {
               ))}
 
               {/* Add Guide Button */}
-              <div className="flex justify-end mt-4">
+              {/* <div className="flex justify-end mt-4">
                 <Button
                   variant="outline"
                   size="sm"
@@ -2982,7 +3070,7 @@ const paraRecommendations = useMemo(() => {
                   <Plus className="h-4 w-4 mr-2" />
                   Add Guide
                 </Button>
-              </div>
+              </div> */}
             </div>
           </CardContent>
         </Card>
