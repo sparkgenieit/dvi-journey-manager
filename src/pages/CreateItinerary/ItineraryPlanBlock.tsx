@@ -1,4 +1,4 @@
-import { useEffect, useState, Dispatch, SetStateAction } from "react";
+import { useEffect, useState, Dispatch, SetStateAction, useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { differenceInCalendarDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
 import {
@@ -221,9 +222,35 @@ export const ItineraryPlanBlock = ({
   setSpecialInstructions,
   validationErrors,
 }: ItineraryPlanBlockProps) => {
-  const [isTripStartOpen, setIsTripStartOpen] = useState(false);
-  const [isTripEndOpen, setIsTripEndOpen] = useState(false);
+  const [isTripDatesOpen, setIsTripDatesOpen] = useState(false);
   const [isPickupOpen, setIsPickupOpen] = useState(false);
+// ✅ Parse dates FIRST (needed for preview calculations)
+const tripStartDateObj = parseDDMMYYYY(tripStartDate);
+const tripEndDateObj = parseDDMMYYYY(tripEndDate);
+
+// ✅ UI-only: hover preview for nights/days while picking range
+const [hoveredToDate, setHoveredToDate] = useState<Date | undefined>(undefined);
+
+const selectedRange = useMemo(
+  () => ({ from: tripStartDateObj, to: tripEndDateObj }),
+  [tripStartDateObj, tripEndDateObj]
+);
+
+const previewToDate = tripEndDateObj ?? hoveredToDate;
+
+const previewNoOfDays = useMemo(() => {
+  if (!tripStartDateObj) return 1;
+  if (!previewToDate) return 1;
+  return Math.max(
+    1,
+    differenceInCalendarDays(previewToDate, tripStartDateObj) + 1
+  );
+}, [tripStartDateObj, previewToDate]);
+
+const previewNoOfNights = useMemo(
+  () => Math.max(0, previewNoOfDays - 1),
+  [previewNoOfDays]
+);
 
   const hotelCategory: string[] = selectedHotelCategoryIds.map((id) => String(id));
   const handleHotelCategoryChange = (vals: string[]) => {
@@ -279,8 +306,8 @@ const handleHotelFacilityChange = (vals: string[]) => {
     label: item.label,
   }));
 
-  const tripStartDateObj = parseDDMMYYYY(tripStartDate);
-  const tripEndDateObj = parseDDMMYYYY(tripEndDate);
+  //const tripStartDateObj = parseDDMMYYYY(tripStartDate);
+  //const tripEndDateObj = parseDDMMYYYY(tripEndDate);
 
   // Itinerary Type default → "Customize"
   useEffect(() => {
@@ -466,7 +493,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
               <p className="mt-1 text-xs text-red-500">{validationErrors.hotelCategory}</p>
             )}
           </div>
-
+{/* 
           <div className="flex-1">
             <Label className="text-[12px] block mb-1">Hotel Facilities (Optional)</Label>
             <AutoSuggestSelect
@@ -476,159 +503,173 @@ const handleHotelFacilityChange = (vals: string[]) => {
               options={hotelFacilityAutoOptions}
               placeholder="Choose Hotel Facilities"
             />
-          </div>
+          </div> */}
         </div>
 
         {/* ROW 4 */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div
-            className={validationErrors?.tripStartDate ? "border border-red-500 rounded-md p-2" : ""}
-            data-field="tripStartDate"
-          >
-            <Label className="text-sm block mb-1">Trip Start Date *</Label>
-            <Popover open={isTripStartOpen} onOpenChange={setIsTripStartOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={`w-full justify-start h-9 text-left font-normal ${
-                    !tripStartDate ? "text-muted-foreground" : ""
-                  }`}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {tripStartDate || "DD/MM/YYYY"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={tripStartDateObj}
-                  onSelect={(date) => {
-                    if (date) {
-                      setTripStartDate(formatDDMMYYYY(date));
-                      // Clear Trip End Date if it's before the new Trip Start Date
-                      if (tripEndDateObj && date > tripEndDateObj) {
-                        setTripEndDate("");
-                      }
-                    }
-                    setIsTripStartOpen(false);
-                  }}
-                  disabled={disablePastAndToday}
-                  initialFocus
-                  classNames={{ day_today: "" }}
-                />
-              </PopoverContent>
-            </Popover>
-            {validationErrors?.tripStartDate && (
-              <p className="mt-1 text-xs text-red-500">{validationErrors.tripStartDate}</p>
-            )}
-          </div>
+<div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+  {/* ✅ Trip Dates (Range) */}
+  <div
+    className={
+      validationErrors?.tripStartDate || validationErrors?.tripEndDate
+        ? "border border-red-500 rounded-md p-2 md:col-span-2"
+        : "md:col-span-2"
+    }
+    data-field="tripDates"
+  >
+    <Label className="text-sm block mb-1">Trip Dates *</Label>
 
-          <div>
-            <Label className="text-sm block mb-1">Start Time *</Label>
-            <Input
-              type="time"
-              className="h-9 border-[#e5d7f6]"
-              value={startTime}
-              onChange={(e) => {
-                const newTime = e.target.value;
-                setStartTime(newTime);
-                if (!pickupTime) setPickupTime(newTime);
-              }}
-            />
-          </div>
+    <Popover open={isTripDatesOpen} onOpenChange={setIsTripDatesOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          className={`w-full justify-start h-9 text-left font-normal ${
+            !tripStartDate && !tripEndDate ? "text-muted-foreground" : ""
+          }`}
+        >
+          <CalendarIcon className="mr-2 h-4 w-4" />
+          {tripStartDate ? (
+            tripEndDate ? (
+              <>
+                {tripStartDate} - {tripEndDate}
+              </>
+            ) : (
+              <>{tripStartDate} - Select end date</>
+            )
+          ) : (
+            "DD/MM/YYYY"
+          )}
+        </Button>
+      </PopoverTrigger>
 
-          <div
-            className={validationErrors?.tripEndDate ? "border border-red-500 rounded-md p-2" : ""}
-            data-field="tripEndDate"
-          >
-            <Label className="text-sm block mb-1">Trip End Date *</Label>
-            <Popover open={isTripEndOpen} onOpenChange={setIsTripEndOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={`w-full justify-start h-9 text-left font-normal ${
-                    !tripEndDate ? "text-muted-foreground" : ""
-                  }`}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {tripEndDate || "DD/MM/YYYY"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={tripEndDateObj}
-                  onSelect={(date) => {
-                    if (date) setTripEndDate(formatDDMMYYYY(date));
-                    setIsTripEndOpen(false);
-                  }}
-                  disabled={(date) => {
-                    // Block past dates and today
-                    if (disablePastAndToday(date)) return true;
-                    // Block dates before Trip Start Date (same day allowed)
-                    if (tripStartDateObj) {
-                      const d = new Date(date);
-                      d.setHours(0, 0, 0, 0);
-                      const startD = new Date(tripStartDateObj);
-                      startD.setHours(0, 0, 0, 0);
-                      return d < startD;
-                    }
-                    return false;
-                  }}
-                  defaultMonth={tripEndDateObj || tripStartDateObj || undefined}
-                  initialFocus
-                  classNames={{ day_today: "" }}
-                />
-              </PopoverContent>
-            </Popover>
-            {validationErrors?.tripEndDate && (
-              <p className="mt-1 text-xs text-red-500">{validationErrors.tripEndDate}</p>
-            )}
-          </div>
+      <PopoverContent
+  align="start"
+  className="p-3 bg-white border shadow-lg rounded-xl w-[720px] max-w-[95vw]"
+>
+  <Calendar
+    mode="range"
+    numberOfMonths={2}
+    selected={selectedRange}
+    onSelect={(range) => {
+      const from = range?.from;
+      const to = range?.to;
 
-          <div>
-            <Label className="text-sm block mb-1">End Time *</Label>
-            <Input
-              type="time"
-              className="h-9 border-[#e5d7f6]"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-            />
-          </div>
+      if (from) setTripStartDate(formatDDMMYYYY(from));
+      else setTripStartDate("");
 
-          <div
-            className={
-              validationErrors?.itineraryTypeSelect ? "border border-red-500 rounded-md p-2" : ""
-            }
-            data-field="itineraryTypeSelect"
-          >
-            <Label className="text-sm block mb-1">Itinerary Type *</Label>
-            <Select value={itineraryTypeSelect} onValueChange={setItineraryTypeSelect}>
-              <SelectTrigger className="h-9 border-[#e5d7f6]">
-                <SelectValue placeholder="Customize" />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                side="bottom"
-                align="start"
-                className="max-h-56 overflow-y-auto"
-              >
-                {itineraryTypes.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {validationErrors?.itineraryTypeSelect && (
-              <p className="mt-1 text-xs text-red-500">{validationErrors.itineraryTypeSelect}</p>
-            )}
-          </div>
-        </div>
+      if (to) {
+        setTripEndDate(formatDDMMYYYY(to));
+        setIsTripDatesOpen(false); // close after end selected
+      } else {
+        setTripEndDate("");
+      }
+
+      setHoveredToDate(undefined);
+    }}
+    onDayMouseEnter={(day) => {
+      if (tripStartDateObj && !tripEndDateObj) setHoveredToDate(day);
+    }}
+    disabled={disablePastAndToday}
+    defaultMonth={tripStartDateObj || undefined}
+    initialFocus
+    className="bg-white"
+    classNames={{
+      // ✅ KEY FIX: force months side-by-side (prevents stacking)
+      months: "flex flex-row gap-8",
+
+      month: "space-y-4",
+      caption: "flex justify-between items-center px-2",
+      caption_label: "text-base font-semibold",
+      nav: "flex items-center gap-1",
+      nav_button: "h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+
+      table: "w-full border-collapse space-y-1",
+      head_row: "flex",
+      head_cell: "text-muted-foreground rounded-md w-10 font-normal text-[0.8rem]",
+      row: "flex w-full mt-2",
+      cell: "h-10 w-10 text-center text-sm p-0 relative",
+      day: "h-10 w-10 p-0 font-normal aria-selected:opacity-100",
+
+      day_today: "",
+      day_outside: "text-muted-foreground opacity-50",
+      day_disabled: "text-muted-foreground opacity-50",
+
+      // ✅ keep your selected styling (purple)
+      day_selected: "bg-[#5b2aa8] text-white hover:bg-[#5b2aa8] hover:text-white",
+      day_range_start:
+        "bg-[#5b2aa8] text-white hover:bg-[#5b2aa8] hover:text-white rounded-l-md",
+      day_range_end:
+        "bg-[#5b2aa8] text-white hover:bg-[#5b2aa8] hover:text-white rounded-r-md",
+      day_range_middle: "aria-selected:bg-[#ede7ff] aria-selected:text-black",
+    }}
+  />
+</PopoverContent>
+    </Popover>
+
+    {(validationErrors?.tripStartDate || validationErrors?.tripEndDate) && (
+      <p className="mt-1 text-xs text-red-500">
+        {validationErrors?.tripStartDate || validationErrors?.tripEndDate}
+      </p>
+    )}
+  </div>
+
+  <div>
+    <Label className="text-sm block mb-1">Start Time *</Label>
+    <Input
+      type="time"
+      className="h-9 border-[#e5d7f6]"
+      value={startTime}
+      onChange={(e) => {
+        const newTime = e.target.value;
+        setStartTime(newTime);
+        if (!pickupTime) setPickupTime(newTime);
+      }}
+    />
+  </div>
+
+  <div>
+    <Label className="text-sm block mb-1">End Time *</Label>
+    <Input
+      type="time"
+      className="h-9 border-[#e5d7f6]"
+      value={endTime}
+      onChange={(e) => setEndTime(e.target.value)}
+    />
+  </div>
+
+  <div
+    className={
+      validationErrors?.itineraryTypeSelect ? "border border-red-500 rounded-md p-2" : ""
+    }
+    data-field="itineraryTypeSelect"
+  >
+    <Label className="text-sm block mb-1">Itinerary Type *</Label>
+    <Select value={itineraryTypeSelect} onValueChange={setItineraryTypeSelect}>
+      <SelectTrigger className="h-9 border-[#e5d7f6]">
+        <SelectValue placeholder="Customize" />
+      </SelectTrigger>
+      <SelectContent
+        position="popper"
+        side="bottom"
+        align="start"
+        className="max-h-56 overflow-y-auto"
+      >
+        {itineraryTypes.map((item) => (
+          <SelectItem key={item.id} value={String(item.id)}>
+            {item.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+    {validationErrors?.itineraryTypeSelect && (
+      <p className="mt-1 text-xs text-red-500">{validationErrors.itineraryTypeSelect}</p>
+    )}
+  </div>
+</div>
 
         {/* ROW 5 */}
         <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div
+          {/* <div
             className={validationErrors?.arrivalType ? "border border-red-500 rounded-md p-2" : ""}
             data-field="arrivalType"
           >
@@ -653,9 +694,9 @@ const handleHotelFacilityChange = (vals: string[]) => {
             {validationErrors?.arrivalType && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.arrivalType}</p>
             )}
-          </div>
+          </div> */}
 
-          <div
+          {/* <div
             className={validationErrors?.departureType ? "border border-red-500 rounded-md p-2" : ""}
             data-field="departureType"
           >
@@ -680,17 +721,25 @@ const handleHotelFacilityChange = (vals: string[]) => {
             {validationErrors?.departureType && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.departureType}</p>
             )}
-          </div>
+          </div> */}
 
           <div>
-            <Label className="text-sm block mb-1">Number of Nights</Label>
-            <Input defaultValue={0} type="number" className="h-9 border-[#e5d7f6]" />
-          </div>
+  <Label className="text-sm block mb-1">Number of Nights</Label>
+  <Input
+    value={tripStartDateObj ? previewNoOfNights : 0}
+    readOnly
+    className="h-9 border-[#e5d7f6]"
+  />
+</div>
 
-          <div>
-            <Label className="text-sm block mb-1">Number of Days</Label>
-            <Input defaultValue={1} type="number" className="h-9 border-[#e5d7f6]" />
-          </div>
+<div>
+  <Label className="text-sm block mb-1">Number of Days</Label>
+  <Input
+    value={tripStartDateObj ? previewNoOfDays : 1}
+    readOnly
+    className="h-9 border-[#e5d7f6]"
+  />
+</div>
 
           <div
             className={validationErrors?.budget ? "border border-red-500 rounded-md p-2" : ""}
@@ -845,7 +894,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
 
         {/* ROW 7 */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div
+          {/* <div
             className={`md:w-[30%] ${
               validationErrors?.pickupDateTime ? "border border-red-500 rounded-md p-2" : ""
             }`}
@@ -866,19 +915,66 @@ const handleHotelFacilityChange = (vals: string[]) => {
                     {tripStartDate || "DD/MM/YYYY"}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={tripStartDateObj}
-                    onSelect={(date) => {
-                      if (date) setTripStartDate(formatDDMMYYYY(date));
-                      setIsPickupOpen(false);
-                    }}
-                    disabled={disablePastAndToday}
-                    initialFocus
-                    classNames={{ day_today: "" }}
-                  />
-                </PopoverContent>
+                <PopoverContent
+  align="start"
+  className="p-3 bg-white border shadow-lg rounded-xl w-[720px] max-w-[90vw]"
+>
+  <Calendar
+    mode="range"
+    numberOfMonths={2}
+    selected={selectedRange}
+    onSelect={(range) => {
+      const from = range?.from;
+      const to = range?.to;
+
+      if (from) setTripStartDate(formatDDMMYYYY(from));
+      else setTripStartDate("");
+
+      if (to) {
+        setTripEndDate(formatDDMMYYYY(to));
+        setIsTripDatesOpen(false);
+      } else {
+        setTripEndDate("");
+      }
+
+      setHoveredToDate(undefined);
+    }}
+    onDayMouseEnter={(day) => {
+      if (tripStartDateObj && !tripEndDateObj) setHoveredToDate(day);
+    }}
+    disabled={disablePastAndToday}
+    defaultMonth={tripStartDateObj || undefined}
+    initialFocus
+    className="bg-white"
+    classNames={{
+      // ✅ THIS is the key: force horizontal month layout
+      months: "flex flex-col md:flex-row gap-8",
+      month: "space-y-4",
+      caption: "flex justify-between items-center px-2",
+      caption_label: "text-base font-semibold",
+      nav: "flex items-center gap-1",
+      nav_button: "h-7 w-7 bg-transparent p-0 opacity-70 hover:opacity-100",
+      table: "w-full border-collapse space-y-1",
+      head_row: "flex",
+      head_cell: "text-muted-foreground rounded-md w-10 font-normal text-[0.8rem]",
+      row: "flex w-full mt-2",
+      cell: "h-10 w-10 text-center text-sm p-0 relative",
+      day: "h-10 w-10 p-0 font-normal aria-selected:opacity-100",
+      day_today: "",
+      day_outside: "text-muted-foreground opacity-50",
+      day_disabled: "text-muted-foreground opacity-50",
+
+      // ✅ Range styling (keeps your current purple look)
+      day_selected:
+        "bg-[#5b2aa8] text-white hover:bg-[#5b2aa8] hover:text-white",
+      day_range_start:
+        "bg-[#5b2aa8] text-white hover:bg-[#5b2aa8] hover:text-white rounded-l-md",
+      day_range_end:
+        "bg-[#5b2aa8] text-white hover:bg-[#5b2aa8] hover:text-white rounded-r-md",
+      day_range_middle: "aria-selected:bg-[#ede7ff] aria-selected:text-black",
+    }}
+  />
+</PopoverContent>
               </Popover>
 
               <Input
@@ -892,7 +988,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
             {validationErrors?.pickupDateTime && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.pickupDateTime}</p>
             )}
-          </div>
+          </div> */}
 
           <div className="flex-1">
             <Label className="text-sm block mb-1">Special Instructions</Label>

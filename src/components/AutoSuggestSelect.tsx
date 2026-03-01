@@ -61,18 +61,27 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
     );
   }, [options, query]);
 
-  // open → focus search input
-  useEffect(() => {
-    if (open) {
-      const id = setTimeout(() => {
-        inputRef.current?.focus();
-      }, 0);
-      return () => clearTimeout(id);
-    } else {
-      setQuery("");
-      setHighlightIndex(0);
-    }
-  }, [open]);
+ // open → focus search input + auto-scroll to selected option
+useEffect(() => {
+  if (open) {
+    // ✅ When opening, highlight the selected value (so it scrolls into view)
+    const selected = selectedValues[0]; // single mode => first value; multi => first selected
+    const selectedIndex = selected
+      ? options.findIndex((o) => o.value === selected)
+      : -1;
+
+    setHighlightIndex(selectedIndex >= 0 ? selectedIndex : 0);
+
+    const id = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    return () => clearTimeout(id);
+  } else {
+    setQuery("");
+    setHighlightIndex(0);
+  }
+}, [open, options, selectedValues]);
 
   // Close when clicking outside
   useEffect(() => {
@@ -115,27 +124,27 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
 
   const openDropdown = () => setOpen(true);
   const closeDropdown = () => setOpen(false);
-
-  const handleSelect = (opt: AutoSuggestOption) => {
-    if (mode === "single") {
-      onChange(opt.value);
-    } else {
-      const current = Array.isArray(value) ? [...value] : [];
-      if (selectedSet.has(opt.value)) {
-        const next = current.filter((v) => v !== opt.value);
-        onChange(next);
-      } else {
-        if (maxSelected && current.length >= maxSelected) return;
-        current.push(opt.value);
-        onChange(current);
-      }
-    }
-    // always close after selection (required behaviour)
-    closeDropdown();
-    // move focus back to trigger so user can Tab further
+  
+const handleSelect = (opt: AutoSuggestOption) => {
+  if (mode === "single") {
+    onChange(opt.value);
+    closeDropdown(); // close only for single mode
     triggerRef.current?.focus();
-  };
+  } else {
+    const current = Array.isArray(value) ? [...value] : [];
 
+    if (selectedSet.has(opt.value)) {
+      const next = current.filter((v) => v !== opt.value);
+      onChange(next);
+    } else {
+      if (maxSelected && current.length >= maxSelected) return;
+      current.push(opt.value);
+      onChange(current);
+    }
+
+    // 🚫 DO NOT close dropdown in multi mode
+  }
+};
   const handleTriggerKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
     if (
       e.key === "ArrowDown" ||
@@ -177,9 +186,17 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
       closeDropdown();
       triggerRef.current?.focus();
     } else if (e.key === "Tab") {
-      // close and allow focus to move to next field
-      closeDropdown();
-    }
+      const opt = filteredOptions[highlightIndex];
+  if (opt) {
+    handleSelect(opt); // triggers onChange + closes dropdown
+    // IMPORTANT: do NOT preventDefault on Tab
+    // letting Tab continue will move focus naturally to the next field
+    return;
+  }
+
+  // If nothing to select, just close and allow tabbing
+  closeDropdown();
+}
   };
 
   return (
