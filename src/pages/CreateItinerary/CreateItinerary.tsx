@@ -12,6 +12,7 @@ import {
   fetchNationalities,
   fetchFoodPreferences,
   fetchVehicleTypes,
+  fetchEligibleVehicleTypes,
   fetchHotelCategories,
   fetchHotelFacilities,
   LocationOption,
@@ -201,6 +202,7 @@ const getLocationsSortedByDistance = useCallback(
   const [nationalities, setNationalities] = useState<SimpleOption[]>([]);
   const [foodPreferences, setFoodPreferences] = useState<SimpleOption[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<SimpleOption[]>([]);
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<string[]>([]);
   const [hotelCategoryOptions, setHotelCategoryOptions] = useState<SimpleOption[]>([]);
   const [hotelFacilityOptions, setHotelFacilityOptions] = useState<SimpleOption[]>([]);
 
@@ -379,7 +381,6 @@ useEffect(() => {
           guideRes,
           nationalityRes,
           foodRes,
-          vehicleTypesRes,
           hotelCatRes,
           hotelFacilityRes,
         ] = await Promise.all([
@@ -391,7 +392,6 @@ useEffect(() => {
           fetchGuideOptions(),
           fetchNationalities(),
           fetchFoodPreferences(),
-          fetchVehicleTypes(),
           fetchHotelCategories(),
           fetchHotelFacilities(),
         ]);
@@ -404,7 +404,6 @@ useEffect(() => {
         setGuideOptions(guideRes);
         setNationalities(nationalityRes);
         setFoodPreferences(foodRes);
-        setVehicleTypes(vehicleTypesRes);
         setHotelCategoryOptions(hotelCatRes);
         setHotelFacilityOptions(hotelFacilityRes);
 
@@ -538,6 +537,21 @@ useEffect(() => {
       }
     }
   }, [itineraryTypeSelect, itineraryTypes, arrivalLocation, departureLocation, tripStartDate, tripEndDate, routeDetails.length]);
+
+  // ✅ NEW: Fetch eligible vehicle types when arrivalLocation changes
+  useEffect(() => {
+    (async () => {
+      if (arrivalLocation.trim()) {
+        const result = await fetchEligibleVehicleTypes(arrivalLocation, itineraryPlanId ?? null);
+        setVehicleTypes(result.vehicleTypes);
+        setSelectedVehicleIds(result.selectedVehicleIds);
+      } else {
+        // If arrivalLocation is empty, clear vehicle types and selected IDs
+        setVehicleTypes([]);
+        setSelectedVehicleIds([]);
+      }
+    })();
+  }, [arrivalLocation, itineraryPlanId]);
 
   // Handler for route suggestion selection
   const handleRouteSelection = (
@@ -1049,6 +1063,7 @@ const handleSaveWithType = async (
       >
         <VehicleBlock
           vehicleTypes={vehicleTypes}
+          selectedVehicleIds={selectedVehicleIds}
           vehicles={vehicles}
           setVehicles={setVehicles}
           addVehicle={addVehicle}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>DVI Holidays – States</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      background: #f4f4f4;
+      font-family: Arial, sans-serif;
+    }
+
+    .header {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      background: #ffffff;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .iframe-container {
+      height: calc(100vh - 52px);
+      width: 100%;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <strong>DVI Holidays – Interactive Map</strong>
+  </div>
+
+  <div class="iframe-container">
+    <iframe
+      src="https://resonant-beijinho-4013f0.netlify.app/"
+      loading="lazy"
+      allowfullscreen
+    ></iframe>
+  </div>
+
+</body>
+</html>

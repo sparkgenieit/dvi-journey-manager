@@ -161,8 +161,68 @@ export async function fetchFoodPreferences(): Promise<SimpleOption[]> {
   return fetchSimple("/food-preferences");
 }
 
+/**
+ * Fetch vehicle types (legacy endpoint - kept for backward compatibility)
+ * NOTE: This is deprecated. Use fetchEligibleVehicleTypes() instead.
+ */
 export async function fetchVehicleTypes(): Promise<SimpleOption[]> {
   return fetchSimple("/vehicle-types");
+}
+
+/**
+ * Fetch eligible vehicle types based on arrival location.
+ * 
+ * New endpoint: POST /itinerary-dropdowns/eligible-vehicle-types
+ * 
+ * Request body:
+ *   {
+ *     "itineraryPlanId": "<optional>",
+ *     "sourceLocation": ["<arrivalLocation>"],
+ *     "nextVisitingLocation": []
+ *   }
+ * 
+ * Response:
+ *   {
+ *     "vehicleTypes": [{ "id": "33", "label": "BENZ LARGE - 45 SEATER" }, ...],
+ *     "selectedVehicleIds": ["25","30"]
+ *   }
+ */
+export async function fetchEligibleVehicleTypes(
+  arrivalLocation: string,
+  itineraryPlanId?: number | null
+): Promise<{ vehicleTypes: SimpleOption[]; selectedVehicleIds: string[] }> {
+  // If arrivalLocation is empty, return empty result without calling API
+  if (!arrivalLocation || !arrivalLocation.trim()) {
+    return { vehicleTypes: [], selectedVehicleIds: [] };
+  }
+
+  const body = {
+    itineraryPlanId: itineraryPlanId ?? null,
+    sourceLocation: [arrivalLocation],
+    nextVisitingLocation: [],
+  };
+
+  try {
+    const res = await api("/itinerary-dropdowns/eligible-vehicle-types", {
+      method: "POST",
+      body: JSON.stringify(body),
+      auth: true,
+    });
+
+    // Handle response shape
+    const vehicleTypesRaw = res?.vehicleTypes ?? [];
+    const selectedIds = res?.selectedVehicleIds ?? [];
+
+    const vehicleTypes = normalizeSimpleArray(vehicleTypesRaw);
+    const selectedVehicleIds = Array.isArray(selectedIds)
+      ? selectedIds.map((id: any) => String(id ?? "").trim()).filter((s: string) => !!s)
+      : [];
+
+    return { vehicleTypes, selectedVehicleIds };
+  } catch (error) {
+    console.error("Error fetching eligible vehicle types:", error);
+    return { vehicleTypes: [], selectedVehicleIds: [] };
+  }
 }
 
 // ----------------- HOTEL CATEGORY / FACILITY -----------------
