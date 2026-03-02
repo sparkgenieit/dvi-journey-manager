@@ -1,5 +1,5 @@
 // FILE: src/pages/CreateItinerary/VehicleBlock.tsx
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,6 +32,7 @@ type ValidationErrors = {
 
 type VehicleBlockProps = {
   vehicleTypes: SimpleOption[]; // fetched via fetchVehicleTypes()
+  selectedVehicleIds: string[]; // ✅ NEW: pre-selected vehicle IDs from API
   vehicles: VehicleRow[];
   setVehicles: React.Dispatch<React.SetStateAction<VehicleRow[]>>;
 
@@ -49,6 +50,7 @@ export const VehicleBlock = ({
   vehicles,
   setVehicles,
   vehicleTypes,
+  selectedVehicleIds,
   addVehicle,
   removeVehicle,
   validationErrors,
@@ -62,7 +64,24 @@ export const VehicleBlock = ({
     return null;
   }
   const hasVehicleTypes = vehicleTypes && vehicleTypes.length > 0;
-  
+
+  // ✅ NEW: Auto-fill first vehicle with the first selected vehicle ID from API
+  useEffect(() => {
+    if (
+      selectedVehicleIds &&
+      selectedVehicleIds.length > 0 &&
+      vehicles.length > 0 &&
+      !vehicles[0].type
+    ) {
+      setVehicles((prev) =>
+        prev.map((v, idx) =>
+          idx === 0 && !v.type
+            ? { ...v, type: selectedVehicleIds[0] }
+            : v
+        )
+      );
+    }
+  }, [selectedVehicleIds, vehicles.length, setVehicles]);
 
   const internalAddVehicle = () => {
     setVehicles((prev) => [
