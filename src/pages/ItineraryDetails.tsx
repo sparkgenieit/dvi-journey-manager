@@ -469,6 +469,13 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
     costForeignAdult: number;
     costForeignChild: number;
     duration: string | null;
+    timeSlots?: Array<{
+      id: number;
+      type: number;
+      specialDate: string | null;
+      startTime: string | null;
+      endTime: string | null;
+    }>;
   };
 
   const [addActivityModal, setAddActivityModal] = useState<{
@@ -489,6 +496,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
   const [availableActivities, setAvailableActivities] = useState<AvailableActivity[]>([]);
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [isAddingActivity, setIsAddingActivity] = useState(false);
+  const [activityPreview, setActivityPreview] = useState<any>(null);
+  const [previewingActivityId, setPreviewingActivityId] = useState<number | null>(null);
 
   // Delete activity modal state
   const [deleteActivityModal, setDeleteActivityModal] = useState<{
@@ -1154,16 +1163,38 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       return;
     }
 
+    // Check for conflicts in preview
+    let shouldSkipConflictCheck = false;
+    if (activityPreview?.hasConflicts && activityPreview.activity?.id === activityId) {
+      const conflictMessages = activityPreview.conflicts
+        .map((c: any) => c.reason)
+        .join('\n\n');
+      
+      const confirm = window.confirm(
+        `TIMING CONFLICTS DETECTED:\n\n${conflictMessages}\n\nDo you want to add this activity anyway?`
+      );
+      
+      if (!confirm) return;
+      shouldSkipConflictCheck = true; // User confirmed override
+    }
+
     setIsAddingActivity(true);
     try {
-      await ItineraryService.addActivity({
+      const payload: any = {
         planId: addActivityModal.planId,
         routeId: addActivityModal.routeId,
         routeHotspotId: addActivityModal.routeHotspotId,
         hotspotId: addActivityModal.hotspotId,
         activityId,
         amount,
-      });
+      };
+      
+      // Only add skipConflictCheck if user confirmed conflict override
+      if (shouldSkipConflictCheck) {
+        payload.skipConflictCheck = true;
+      }
+      
+      await ItineraryService.addActivity(payload);
 
       toast.success("Activity added successfully");
 
@@ -1176,6 +1207,8 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
         hotspotId: null,
         hotspotName: "",
       });
+      setActivityPreview(null);
+      setPreviewingActivityId(null);
 
       // Reload itinerary data
       if (quoteId) {
@@ -1191,6 +1224,32 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
       toast.error(e?.message || "Failed to add activity");
     } finally {
       setIsAddingActivity(false);
+    }
+  };
+
+  const handlePreviewActivity = async (activityId: number) => {
+    if (!addActivityModal.planId || !addActivityModal.routeId || 
+        !addActivityModal.routeHotspotId || !addActivityModal.hotspotId) {
+      return;
+    }
+
+    setPreviewingActivityId(activityId);
+    try {
+      const preview = await ItineraryService.previewActivityAddition({
+        planId: addActivityModal.planId,
+        routeId: addActivityModal.routeId,
+        routeHotspotId: addActivityModal.routeHotspotId,
+        hotspotId: addActivityModal.hotspotId,
+        activityId,
+      });
+
+      setActivityPreview(preview);
+    } catch (e: any) {
+      console.error("Failed to preview activity", e);
+      toast.error(e?.message || "Failed to preview activity");
+      setActivityPreview(null);
+    } finally {
+      setPreviewingActivityId(null);
     }
   };
 
@@ -3110,7 +3169,11 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
             {!loadingActivities && availableActivities.length > 0 && (
               <div className="grid gap-3">
                 {availableActivities.map((activity) => (
-                  <Card key={activity.id} className="border border-[#e5d9f2]">
+                  <Card key={activity.id} className={`border ${
+                    activityPreview?.activity?.id === activity.id && activityPreview?.hasConflicts
+                      ? 'border-red-500 bg-red-50'
+                      : 'border-[#e5d9f2]'
+                  }`}>
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
@@ -3131,22 +3194,88 @@ export const ItineraryDetails: React.FC<ItineraryDetailsProps> = ({ readOnly = f
                               <span>Duration: {activity.duration}</span>
                             )}
                           </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          className="bg-[#d546ab] hover:bg-[#c03d9f]"
-                          onClick={() => handleAddActivity(activity.id, activity.costAdult)}
-                          disabled={isAddingActivity}
-                        >
-                          {isAddingActivity ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Adding...
-                            </>
-                          ) : (
-                            "Add"
+                          
+                          {/* Show time slots */}
+                          {activity.timeSlots && activity.timeSlots.length > 0 && (
+                            <div className="mt-2 text-xs">
+                              <span className="font-semibold text-[#4a4260]">Available Times:</span>
+                              {activity.timeSlots.map((slot) => {
+                                // Safe time formatting without Date parsing
+                                const formatTime = (timeStr: string) => {
+                                  if (!timeStr) return '';
+                                  // Extract HH:MM from ISO timestamp or time string
+                                  const match = timeStr.match(/(\d{2}):(\d{2})/);
+                                  if (!match) return timeStr;
+                                  const [, hours, minutes] = match;
+                                  const hour = parseInt(hours);
+                                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                                  const hour12 = hour % 12 || 12;
+                                  return `${hour12}:${minutes} ${ampm}`;
+                                };
+                                
+                                // Check if slot crosses midnight (end time < start time)
+                                const crossesMidnight = slot.startTime && slot.endTime && 
+                                  slot.startTime > slot.endTime;
+                                
+                                return (
+                                  <div key={slot.id} className="text-[#6c6c6c] ml-2">
+                                    {slot.startTime && slot.endTime && (
+                                      <span>
+                                        {formatTime(slot.startTime)}
+                                        {' - '}
+                                        {formatTime(slot.endTime)}
+                                        {crossesMidnight && <span className="text-orange-600 ml-1">(next day)</span>}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           )}
-                        </Button>
+                          
+                          {/* Show conflict warning */}
+                          {activityPreview?.activity?.id === activity.id && activityPreview?.hasConflicts && (
+                            <div className="mt-2 text-xs text-red-600 font-semibold">
+                              ⚠️ {activityPreview.conflicts.length} timing conflict(s) detected
+                              {activityPreview.conflicts.map((c: any, idx: number) => (
+                                <div key={idx} className="ml-4 mt-1 text-xs">• {c.reason}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-[#d546ab] border-[#d546ab] hover:bg-[#d546ab] hover:text-white"
+                            onClick={() => handlePreviewActivity(activity.id)}
+                            disabled={previewingActivityId === activity.id || isAddingActivity}
+                          >
+                            {previewingActivityId === activity.id ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Checking...
+                              </>
+                            ) : (
+                              "Preview"
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="bg-[#d546ab] hover:bg-[#c03d9f]"
+                            onClick={() => handleAddActivity(activity.id, activity.costAdult)}
+                            disabled={isAddingActivity}
+                          >
+                            {isAddingActivity ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Adding...
+                              </>
+                            ) : (
+                              "Add"
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
