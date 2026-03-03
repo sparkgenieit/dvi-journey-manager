@@ -165,6 +165,63 @@ export async function fetchVehicleTypes(): Promise<SimpleOption[]> {
   return fetchSimple("/vehicle-types");
 }
 
+/**
+ * Fetch eligible vehicle types based on the provided arrival location.
+ *
+ * Sends the payload expected by the new backend endpoint:
+ *   POST /itinerary-dropdowns/eligible-vehicle-types
+ *
+ * Request body:
+ * {
+ *   itineraryPlanId: "<optional>",
+ *   sourceLocation: ["<arrivalLocation>"],
+ *   nextVisitingLocation: []
+ * }
+ *
+ * Response shape:
+ * {
+ *   vehicleTypes: [{ id, label }, ...],
+ *   selectedVehicleIds: ["25", "30"]
+ * }
+ */
+export async function fetchEligibleVehicleTypes(
+  arrivalLocation: string,
+  itineraryPlanId?: number | null
+): Promise<{ vehicleTypes: SimpleOption[]; selectedVehicleIds: string[] }> {
+  if (!arrivalLocation.trim()) {
+    return { vehicleTypes: [], selectedVehicleIds: [] };
+  }
+
+  const payload = {
+    itineraryPlanId: itineraryPlanId ?? null,
+    sourceLocation: [arrivalLocation],
+    nextVisitingLocation: [],
+  };
+
+  try {
+    const res = await api("/itinerary-dropdowns/eligible-vehicle-types", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      auth: true,
+    });
+
+    const vehicleTypesRaw = res?.vehicleTypes ?? [];
+    const selectedIds = res?.selectedVehicleIds ?? [];
+
+    const vehicleTypes = normalizeSimpleArray(vehicleTypesRaw);
+    const selectedVehicleIds = Array.isArray(selectedIds)
+      ? selectedIds
+          .map((id: any) => String(id ?? "").trim())
+          .filter((id: string) => !!id)
+      : [];
+
+    return { vehicleTypes, selectedVehicleIds };
+  } catch (error) {
+    console.error("Error fetching eligible vehicle types:", error);
+    return { vehicleTypes: [], selectedVehicleIds: [] };
+  }
+}
+
 // ----------------- HOTEL CATEGORY / FACILITY -----------------
 
 /**
