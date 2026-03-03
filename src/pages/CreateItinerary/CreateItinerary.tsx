@@ -11,7 +11,7 @@ import {
   fetchGuideOptions,
   fetchNationalities,
   fetchFoodPreferences,
-  fetchVehicleTypes,
+  fetchEligibleVehicleTypes,
   fetchHotelCategories,
   fetchHotelFacilities,
   LocationOption,
@@ -115,6 +115,7 @@ export const CreateItinerary = () => {
   const [nationalities, setNationalities] = useState<SimpleOption[]>([]);
   const [foodPreferences, setFoodPreferences] = useState<SimpleOption[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<SimpleOption[]>([]);
+  const [selectedVehicleIds, setSelectedVehicleIds] = useState<string[]>([]);
   const [hotelCategoryOptions, setHotelCategoryOptions] = useState<SimpleOption[]>([]);
   const [hotelFacilityOptions, setHotelFacilityOptions] = useState<SimpleOption[]>([]);
 
@@ -282,7 +283,6 @@ useEffect(() => {
           guideRes,
           nationalityRes,
           foodRes,
-          vehicleTypesRes,
           hotelCatRes,
           hotelFacilityRes,
         ] = await Promise.all([
@@ -294,7 +294,6 @@ useEffect(() => {
           fetchGuideOptions(),
           fetchNationalities(),
           fetchFoodPreferences(),
-          fetchVehicleTypes(),
           fetchHotelCategories(),
           fetchHotelFacilities(),
         ]);
@@ -307,7 +306,6 @@ useEffect(() => {
         setGuideOptions(guideRes);
         setNationalities(nationalityRes);
         setFoodPreferences(foodRes);
-        setVehicleTypes(vehicleTypesRes);
         setHotelCategoryOptions(hotelCatRes);
         setHotelFacilityOptions(hotelFacilityRes);
 
@@ -441,6 +439,36 @@ useEffect(() => {
       }
     }
   }, [itineraryTypeSelect, itineraryTypes, arrivalLocation, departureLocation, tripStartDate, tripEndDate, routeDetails.length]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const trimmed = arrivalLocation.trim();
+
+    if (!trimmed) {
+      setVehicleTypes([]);
+      setSelectedVehicleIds([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        const result = await fetchEligibleVehicleTypes(trimmed, itineraryPlanId ?? null);
+        if (!isMounted) return;
+        setVehicleTypes(result.vehicleTypes);
+        setSelectedVehicleIds(result.selectedVehicleIds);
+      } catch (error) {
+        console.error("Failed to load eligible vehicle types", error);
+        if (isMounted) {
+          setVehicleTypes([]);
+          setSelectedVehicleIds([]);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [arrivalLocation, itineraryPlanId]);
 
   // Handler for route suggestion selection
   const handleRouteSelection = (
@@ -941,6 +969,7 @@ const handleSaveWithType = async (
           vehicleTypes={vehicleTypes}
           vehicles={vehicles}
           setVehicles={setVehicles}
+          selectedVehicleIds={selectedVehicleIds}
           addVehicle={addVehicle}
           removeVehicle={removeVehicle}
           itineraryPreference={itineraryPreference}
