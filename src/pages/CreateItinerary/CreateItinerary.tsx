@@ -218,7 +218,6 @@ useEffect(() => {
 
     clearIfOk("itineraryTypeSelect", !!itineraryTypeSelect);
     clearIfOk("arrivalType", !!arrivalType);
-    clearIfOk("departureType", !!departureType);
 
     clearIfOk("budget", budget !== "" && Number(budget) > 0);
 
@@ -517,7 +516,6 @@ useEffect(() => {
 
     if (!itineraryTypeSelect) errors.itineraryTypeSelect = "Please select Itinerary Type";
     if (!arrivalType) errors.arrivalType = "Please select Arrival Type";
-    if (!departureType) errors.departureType = "Please select Departure Type";
 
     if (budget === "" || Number(budget) <= 0) errors.budget = "Please enter a valid Budget";
 
@@ -573,9 +571,6 @@ useEffect(() => {
         break;
       case "arrivalType":
         selector = "[data-field='arrivalType']";
-        break;
-      case "departureType":
-        selector = "[data-field='departureType']";
         break;
       case "budget":
         selector = "[data-field='budget']";
@@ -731,7 +726,7 @@ const buildPayload = () => {
     pick_up_date_and_time,
 
     arrival_type: arrivalType ? Number(arrivalType) : 0,
-    departure_type: departureType ? Number(departureType) : 0,
+    departure_type: arrivalType ? Number(arrivalType) : 0,  // ✅ Auto-default to arrivalType
 
     no_of_nights: noOfNights,
     no_of_days: noOfDays,
