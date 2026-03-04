@@ -238,6 +238,7 @@ export const DefaultRoutesSuggestions: React.FC<DefaultRoutesSuggestionsProps> =
           setRouteDetails={setRouteDetails || (() => {})}
           locations={locations || []}
           onOpenViaRoutes={onOpenViaRoutes}
+          departureLocation={departureLocation}
         />
       </div>
     );

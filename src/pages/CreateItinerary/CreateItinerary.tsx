@@ -952,6 +952,7 @@ const handleSaveWithType = async (
             routeDetails={routeDetails}
             setRouteDetails={setRouteDetails}
             onOpenViaRoutes={openViaRoutes}
+            departureLocation={departureLocation}
           />
         )}
         {validationErrors.firstRouteSource && (
