@@ -144,9 +144,6 @@ export const CreateItinerary = () => {
   const [startTime, setStartTime] = useState<string>("12:00");
   const [endTime, setEndTime] = useState<string>("12:00");
 
-  // Pick Up time (only time part; date is tripStartDate)
-  const [pickupTime, setPickupTime] = useState<string>("");
-
   // Special instructions (goes in payload)
   const [specialInstructions, setSpecialInstructions] = useState<string>("");
 
@@ -232,8 +229,7 @@ useEffect(() => {
       selectedHotelCategoryIds.length > 0;
     clearIfOk("hotelCategory", hotelCategoryOk);
 
-    // Pick up requires tripStartDate + pickupTime
-    clearIfOk("pickupDateTime", !!tripStartDate && !!pickupTime);
+
 
     // First route fields
     const firstRoute = routeDetails?.[0];
@@ -265,7 +261,6 @@ useEffect(() => {
   foodPreference,
   itineraryPreference,
   selectedHotelCategoryIds,
-  pickupTime,
   routeDetails,
   vehicles,
 ]);
@@ -366,10 +361,7 @@ useEffect(() => {
             // ✅ foodPreference state holds option id
             setFoodPreference(p.food_type != null ? String(p.food_type) : "");
 
-            // ✅ pickup time (if your plan has pick_up_date_and_time column)
-            if (p.pick_up_date_and_time) {
-              setPickupTime(safeTimeFromISO(p.pick_up_date_and_time, ""));
-            }
+
 
             setSpecialInstructions(p.special_instructions ?? "");
             // ✅ PREFILL: categories/facilities come as CSV strings from DB
@@ -531,7 +523,7 @@ useEffect(() => {
       errors.hotelCategory = "Please select at least one Hotel Category";
     }
 
-    if (!tripStartDate || !pickupTime) errors.pickupDateTime = "Please select Pick Up Date & Time";
+
 
     const firstRoute = routeDetails[0];
     if (!firstRoute?.source) errors.firstRouteSource = "Please fill first day Source location";
@@ -589,9 +581,6 @@ useEffect(() => {
         break;
       case "hotelCategory":
         selector = "[data-field='hotelCategory']";
-        break;
-      case "pickupDateTime":
-        selector = "[data-field='pickupDateTime']";
         break;
       case "firstRouteSource":
       case "firstRouteNext":
@@ -703,8 +692,8 @@ const buildPayload = () => {
     : undefined;
 
   const pick_up_date_and_time =
-    tripStartDate && pickupTime
-      ? toISOFromDDMMYYYYAndTime(tripStartDate, pickupTime)
+    tripStartDate && startTime
+      ? toISOFromDDMMYYYYAndTime(tripStartDate, startTime)
       : undefined;
 
   // ✅ base plan without id
@@ -906,8 +895,6 @@ const handleSaveWithType = async (
         setEndTime={setEndTime}
         hotelCategoryOptions={hotelCategoryOptions}
         hotelFacilityOptions={hotelFacilityOptions}
-        pickupTime={pickupTime}
-        setPickupTime={setPickupTime}
         specialInstructions={specialInstructions}
         setSpecialInstructions={setSpecialInstructions}
         validationErrors={validationErrors}
