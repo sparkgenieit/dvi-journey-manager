@@ -7,6 +7,8 @@ import React, {
   useState,
   KeyboardEvent,
   MouseEvent,
+  forwardRef,
+  useImperativeHandle,
 } from "react";
 import { Input } from "@/components/ui/input";
 import { ChevronDown } from "lucide-react";
@@ -23,16 +25,29 @@ type AutoSuggestSelectProps = {
   options: AutoSuggestOption[];
   placeholder?: string;
   maxSelected?: number;
+  onSelectionCommit?: (reason: "click" | "enter" | "tab") => void;
+  disabled?: boolean;
+  readOnly?: boolean;
 };
 
-export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
-  mode,
-  value,
-  onChange,
-  options,
-  placeholder = "Select...",
-  maxSelected,
-}) => {
+export const AutoSuggestSelect = forwardRef<
+  { focus: () => void },
+  AutoSuggestSelectProps
+>(
+  (
+    {
+      mode,
+      value,
+      onChange,
+      options,
+      placeholder = "Select...",
+      maxSelected,
+      onSelectionCommit,
+      disabled = false,
+      readOnly = false,
+    },
+    ref
+  ) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightIndex, setHighlightIndex] = useState(0);
@@ -41,6 +56,11 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const optionRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Expose focus method via ref
+  useImperativeHandle(ref, () => ({
+    focus: () => triggerRef.current?.focus(),
+  }), []);
 
   const selectedValues: string[] = useMemo(
     () => (Array.isArray(value) ? value : value ? [value] : []),
@@ -113,14 +133,19 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
       ? selectedValues.map(renderLabelForValue).join(", ")
       : "";
 
-  const openDropdown = () => setOpen(true);
+  const openDropdown = () => {
+    if (!disabled && !readOnly) {
+      setOpen(true);
+    }
+  };
   const closeDropdown = () => setOpen(false);
 
-  const handleSelect = (opt: AutoSuggestOption) => {
+  const handleSelect = (opt: AutoSuggestOption, reason: "click" | "enter" | "tab" = "click") => {
     if (mode === "single") {
       onChange(opt.value);
       closeDropdown(); // close only for single mode
       triggerRef.current?.focus();
+      onSelectionCommit?.(reason);
     } else {
       const current = Array.isArray(value) ? [...value] : [];
 
@@ -170,18 +195,21 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
       e.preventDefault();
       const opt = filteredOptions[highlightIndex];
       if (opt) {
-        handleSelect(opt);
+        handleSelect(opt, "enter");
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
       closeDropdown();
       triggerRef.current?.focus();
     } else if (e.key === "Tab") {
+      // If dropdown is open and we have options, select highlighted option
+      // and prevent default Tab so parent can move focus
       const opt = filteredOptions[highlightIndex];
       if (opt) {
-        handleSelect(opt); // triggers onChange + closes dropdown
-        // IMPORTANT: do NOT preventDefault on Tab
-        // letting Tab continue will move focus naturally to the next field
+        e.preventDefault();
+        handleSelect(opt, "tab");
+        // Parent will be responsible for moving focus to next field
+        // We signal this via onSelectionCommit callback with reason "tab"
         return;
       }
 
@@ -196,12 +224,17 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
       <button
         ref={triggerRef}
         type="button"
-        className="w-full h-9 px-3 flex items-center justify-between rounded-md border border-[#e5d7f6] bg-white text-sm text-left"
-        onClick={openDropdown} // 👈 always open, no toggle
+        disabled={disabled}
+        className={`w-full h-9 px-3 flex items-center justify-between rounded-md border text-sm text-left ${
+          disabled || readOnly
+            ? "border-gray-300 bg-gray-100 cursor-not-allowed text-gray-500 opacity-60"
+            : "border-[#e5d7f6] bg-white text-gray-900 cursor-pointer"
+        }`}
+        onClick={openDropdown}
         onKeyDown={handleTriggerKeyDown}
         onFocus={() => {
-          // When tabbing into the field, open suggestions
-          if (!open) openDropdown();
+          // When tabbing into the field, open suggestions (unless disabled)
+          if (!open && !disabled && !readOnly) openDropdown();
         }}
       >
         <span className={triggerText ? "" : "text-muted-foreground"}>
@@ -264,7 +297,7 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
                     onMouseDown={(e) => {
                       // prevent blur before click
                       e.preventDefault();
-                      handleSelect(opt);
+                      handleSelect(opt, "click");
                     }}
                     className={[
                       "px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between",
@@ -289,6 +322,9 @@ export const AutoSuggestSelect: React.FC<AutoSuggestSelectProps> = ({
       )}
     </div>
   );
-};
+}
+);
+
+AutoSuggestSelect.displayName = "AutoSuggestSelect";
 
 export default AutoSuggestSelect;
