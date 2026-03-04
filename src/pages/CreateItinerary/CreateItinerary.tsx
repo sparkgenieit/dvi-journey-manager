@@ -29,6 +29,7 @@ import {
   toISOFromDDMMYYYY,
   toISOFromDDMMYYYYAndTime,
   splitViaString,
+  calculateNights,
 } from "./helpers/itineraryUtils";
 import { SaveRouteConfirmDialog } from "./helpers/SaveRouteConfirmDialog";
 import { useRoomsAndTravellers } from "./helpers/useRoomsAndTravellers";
@@ -732,8 +733,8 @@ const buildPayload = () => {
     arrival_type: arrivalType ? Number(arrivalType) : 0,
     departure_type: departureType ? Number(departureType) : 0,
 
-    no_of_nights: routeDetails.length > 0 ? routeDetails.length - 1 : 0,
-    no_of_days: routeDetails.length,
+    no_of_nights: noOfNights,
+    no_of_days: noOfDays,
 
     budget: budget === "" ? 0 : Number(budget),
 
@@ -857,6 +858,10 @@ const handleSaveWithType = async (
     return <div className="p-4">Loading...</div>;
   }
 
+  // ✅ COMPUTED DERIVED VALUES (top-level, one source of truth)
+  const noOfNights = calculateNights(tripStartDate, tripEndDate);
+  const noOfDays = tripStartDate && tripEndDate ? Math.max(1, noOfNights + 1) : 1;
+
   return (
     <div className="p-4 space-y-4">
       <ItineraryPlanBlock
@@ -915,7 +920,8 @@ const handleSaveWithType = async (
         setSelectedHotelCategoryIds={setSelectedHotelCategoryIds}
         selectedHotelFacilityIds={selectedHotelFacilityIds}
         setSelectedHotelFacilityIds={setSelectedHotelFacilityIds}
-
+        noOfNights={noOfNights}
+        noOfDays={noOfDays}
       />
 
       <div

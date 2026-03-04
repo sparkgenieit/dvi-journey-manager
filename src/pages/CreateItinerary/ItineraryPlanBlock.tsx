@@ -108,6 +108,10 @@ type ItineraryPlanBlockProps = {
   setSpecialInstructions: (val: string) => void;
 
   validationErrors?: { [key: string]: string };
+  
+  // ✅ Calculated from arrival/departure dates
+  noOfNights: number;
+  noOfDays: number;
 };
 
 
@@ -220,6 +224,8 @@ export const ItineraryPlanBlock = ({
   specialInstructions,
   setSpecialInstructions,
   validationErrors,
+  noOfNights,
+  noOfDays,
 }: ItineraryPlanBlockProps) => {
   const [isTripStartOpen, setIsTripStartOpen] = useState(false);
   const [isTripEndOpen, setIsTripEndOpen] = useState(false);
@@ -684,12 +690,12 @@ const handleHotelFacilityChange = (vals: string[]) => {
 
           <div>
             <Label className="text-sm block mb-1">Number of Nights</Label>
-            <Input defaultValue={0} type="number" className="h-9 border-[#e5d7f6]" />
+            <Input readOnly value={noOfNights} type="number" className="h-9 border-[#e5d7f6]" />
           </div>
 
           <div>
             <Label className="text-sm block mb-1">Number of Days</Label>
-            <Input defaultValue={1} type="number" className="h-9 border-[#e5d7f6]" />
+            <Input readOnly value={noOfDays} type="number" className="h-9 border-[#e5d7f6]" />
           </div>
 
           <div
