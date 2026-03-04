@@ -49,6 +49,7 @@ import GuideFormPage from "./pages/guide/GuideFormPage";
 import GuidePreview from "./pages/guide/GuidePreview";
 import ActivityPreviewPage from "./pages/activity/ActivityPreviewPage";
 import LocationsPage from "./pages/locations/LocationsPage";
+import LocationsPreviewPage from "./pages/locations/LocationsPreviewPage";
 import StaffListPage from "./pages/staff/StaffListPage";
 import StaffFormPage from "./pages/staff/StaffFormPage";
 import StaffPreviewPage from "./pages/staff/StaffPreviewPage";
@@ -581,6 +582,16 @@ const App = () => (
               element={
                 <MainLayout>
                   <LocationsPage />
+                </MainLayout>
+              }
+            />
+
+            {/* Locations Preview */}
+            <Route
+              path="/locations/:id/preview"
+              element={
+                <MainLayout>
+                  <LocationsPreviewPage />
                 </MainLayout>
               }
             />

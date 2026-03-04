@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { toast } from "sonner";
 import { locationsApi, LocationRow, TollRow } from "@/services/locations";
 import { useNavigate } from "react-router-dom";
+import { AddLocationDialog } from "./components/AddLocationDialog";
+import { EditLocationDialog } from "./components/EditLocationDialog";
 
 const PAGE_SIZES = [10, 25, 50];
 
@@ -276,23 +278,19 @@ export default function LocationsPage() {
       </div>
 
       {/* Add Modal */}
-      <LocationFormDialog
+      <AddLocationDialog
         open={addOpen}
-        title="Add Location"
         onClose={() => setAddOpen(false)}
         onSubmit={handleCreate}
       />
 
       {/* Edit Modal */}
-      {editRow && (
-        <LocationFormDialog
-          open
-          title="Edit Location"
-          initial={editRow}
-          onClose={() => setEditRow(null)}
-          onSubmit={(payload) => handleUpdate(payload)}
-        />
-      )}
+      <EditLocationDialog
+        open={!!editRow}
+        initial={editRow}
+        onClose={() => setEditRow(null)}
+        onSubmit={(payload) => handleUpdate(payload)}
+      />
 
       {/* Modify Name */}
       {renameInfo.open && renameInfo.row && (
@@ -404,85 +402,6 @@ function TollDialog(props: { open: boolean; title: string; rows: TollRow[]; onCl
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Close</Button>
           <Button onClick={onSubmit}>Save</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function LocationFormDialog(props: {
-  open: boolean;
-  title: string;
-  initial?: LocationRow;
-  onSubmit: (payload: Omit<LocationRow, "location_ID"> | Partial<LocationRow>) => void;
-  onClose: () => void;
-}) {
-  const { open, title, initial, onSubmit, onClose } = props;
-  const [form, setForm] = useState<Omit<LocationRow, "location_ID">>({
-    source_location: initial?.source_location ?? "",
-    source_city: initial?.source_city ?? "",
-    source_state: initial?.source_state ?? "",
-    source_latitude: initial?.source_latitude ?? "",
-    source_longitude: initial?.source_longitude ?? "",
-
-    destination_location: initial?.destination_location ?? "",
-    destination_city: initial?.destination_city ?? "",
-    destination_state: initial?.destination_state ?? "",
-    destination_latitude: initial?.destination_latitude ?? "",
-    destination_longitude: initial?.destination_longitude ?? "",
-
-    distance_km: initial?.distance_km ?? 0,
-    duration_text: initial?.duration_text ?? "0 hours 0 mins",
-    location_description: initial?.location_description ?? "",
-  });
-
-  function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Source */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Source</div>
-            <Input placeholder="Source Location" value={form.source_location} onChange={(e) => set("source_location", e.target.value)} />
-            <div className="grid grid-cols-3 gap-2">
-              <Input placeholder="City" value={form.source_city} onChange={(e) => set("source_city", e.target.value)} />
-              <Input placeholder="State" value={form.source_state} onChange={(e) => set("source_state", e.target.value)} />
-              <Input placeholder="Latitude" value={form.source_latitude} onChange={(e) => set("source_latitude", e.target.value)} />
-            </div>
-            <Input placeholder="Longitude" value={form.source_longitude} onChange={(e) => set("source_longitude", e.target.value)} />
-          </div>
-
-          {/* Destination */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Destination</div>
-            <Input placeholder="Destination Location" value={form.destination_location} onChange={(e) => set("destination_location", e.target.value)} />
-            <div className="grid grid-cols-3 gap-2">
-              <Input placeholder="City" value={form.destination_city} onChange={(e) => set("destination_city", e.target.value)} />
-              <Input placeholder="State" value={form.destination_state} onChange={(e) => set("destination_state", e.target.value)} />
-              <Input placeholder="Latitude" value={form.destination_latitude} onChange={(e) => set("destination_latitude", e.target.value)} />
-            </div>
-            <Input placeholder="Longitude" value={form.destination_longitude} onChange={(e) => set("destination_longitude", e.target.value)} />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-          <Input placeholder="Distance (KM)" type="number" value={String(form.distance_km)} onChange={(e) => set("distance_km", Number(e.target.value || 0))} />
-          <Input placeholder="Duration (eg: 5 hours 22 mins)" value={form.duration_text} onChange={(e) => set("duration_text", e.target.value)} />
-        </div>
-
-        <div className="mt-2">
-          <Input placeholder="Description" value={form.location_description || ""} onChange={(e) => set("location_description", e.target.value)} />
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={() => onSubmit(form)}>{initial ? "Update" : "Save"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
