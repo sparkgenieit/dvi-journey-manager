@@ -633,7 +633,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
         </div>
 
         {/* ROW 5 */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div
             className={validationErrors?.arrivalType ? "border border-red-500 rounded-md p-2" : ""}
             data-field="arrivalType"
@@ -658,33 +658,6 @@ const handleHotelFacilityChange = (vals: string[]) => {
             </Select>
             {validationErrors?.arrivalType && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.arrivalType}</p>
-            )}
-          </div>
-
-          <div
-            className={validationErrors?.departureType ? "border border-red-500 rounded-md p-2" : ""}
-            data-field="departureType"
-          >
-            <Label className="text-sm block mb-1">Departure Type *</Label>
-            <Select value={departureType} onValueChange={setDepartureType}>
-              <SelectTrigger className="h-9 border-[#e5d7f6]">
-                <SelectValue placeholder="By Flight" />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                side="bottom"
-                align="start"
-                className="max-h-56 overflow-y-auto"
-              >
-                {travelTypes.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {validationErrors?.departureType && (
-              <p className="mt-1 text-xs text-red-500">{validationErrors.departureType}</p>
             )}
           </div>
 
