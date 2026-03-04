@@ -70,7 +70,29 @@ export function toISOFromDDMMYYYYAndTime(dateStr: string, timeStr: string) {
   if (!p || !t) return "";
   return `${p.y}-${pad2(p.m)}-${pad2(p.d)}T${pad2(t.hh)}:${pad2(t.mm)}:00+05:30`;
 }
-
+/**
+ * Calculate number of nights between arrival and departure dates (DD/MM/YYYY format).
+ * nights = departure date - arrival date (in days)
+ * Example: 01/01/2025 to 03/01/2025 = 2 nights
+ * Same day: 01/01/2025 to 01/01/2025 = 0 nights
+ */
+export function calculateNights(arrivalDateStr: string, departureDateStr: string): number {
+  const arrivalParts = parseDDMMYYYYParts(arrivalDateStr);
+  const departureParts = parseDDMMYYYYParts(departureDateStr);
+  
+  if (!arrivalParts || !departureParts) return 0;
+  
+  // Create dates at midnight (start of day, local time)
+  const arrivalDate = new Date(arrivalParts.y, arrivalParts.m - 1, arrivalParts.d, 0, 0, 0, 0);
+  const departureDate = new Date(departureParts.y, departureParts.m - 1, departureParts.d, 0, 0, 0, 0);
+  
+  // Calculate difference in milliseconds and convert to days
+  const diffMs = departureDate.getTime() - arrivalDate.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  
+  // Return 0 if departure is before arrival or same day
+  return diffDays > 0 ? diffDays : 0;
+}
 // ----------------- text / via helpers -----------------
 
 export function splitViaString(via: string | undefined | null): string[] {
