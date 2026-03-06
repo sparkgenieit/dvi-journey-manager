@@ -418,7 +418,6 @@ export const ItineraryService = {
     });
   },
 
-
   async getCancelledItineraries(params: {
     draw?: number;
     start?: number;

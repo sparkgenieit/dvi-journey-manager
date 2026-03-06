@@ -241,34 +241,13 @@ export const RoomsBlock = ({
     });
   };
 
- return (
-  <div className="border border-dashed border-[#c985d7] rounded-lg bg-[#fff9ff] p-3">
-    <div className="sticky top-0 z-20 mb-3 flex items-center justify-end gap-3 bg-[#fff9ff] pb-2">
-      <span className="text-xs text-muted-foreground">Total</span>
-      <Input
-        type="number"
-        min={1}
-        className="w-16 h-8 bg-white"
-        value={totalRooms}
-        onChange={(e) => handleTotalRoomsChange(Number(e.target.value) || 1)}
-      />
-      <Button
-        type="button"
-        variant="link"
-        className="h-8 px-0 text-primary"
-        onClick={addRoom}
-      >
-        <span className="inline-flex items-center text-sm">
-          <span className="mr-1">+</span> Add Rooms
-        </span>
-      </Button>
-    </div>
+  return (
+    <div className="border border-dashed border-[#c985d7] rounded-lg bg-[#fff9ff] p-3">
+      {rooms.map((room, idx) => {
+        const key = String(room.id);
+        const childDetails = childrenDetailsMap[key] || [];
 
-    {rooms.map((room, idx) => {
-      const key = String(room.id);
-      const childDetails = childrenDetailsMap[key] || [];
-
-      return (
+        return (
           <div
             key={room.id}
             className={idx > 0 ? "mt-3 pt-3 border-t border-[#ead1f2]" : ""}
@@ -317,179 +296,214 @@ export const RoomsBlock = ({
               )}
             </div>
 
-            {/* counters + child details row */}
-<div className="flex flex-wrap items-start gap-4 mb-2">
-  {/* Adults */}
-  <div className="flex flex-col items-start gap-1">
-    <div className="flex items-center border rounded-md bg-white">
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 px-2"
-        onClick={() =>
-          tryUpdateCounts(
-            room,
-            Math.max(room.adults - 1, 1),
-            room.children,
-            room.infants
-          )
-        }
-      >
-        -
-      </Button>
-      <span className="px-3 text-sm select-none">{room.adults}</span>
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 px-2"
-        onClick={() =>
-          tryUpdateCounts(
-            room,
-            room.adults + 1,
-            room.children,
-            room.infants
-          )
-        }
-      >
-        +
-      </Button>
-    </div>
-  </div>
+            {/* counters row */}
+            <div className="flex flex-wrap items-start gap-4 mb-2">
+              {/* Adults */}
+              <div className="flex flex-col items-start gap-1">
+                <div className="flex items-center border rounded-md bg-white">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={() =>
+                      tryUpdateCounts(
+                        room,
+                        Math.max(room.adults - 1, 1),
+                        room.children,
+                        room.infants
+                      )
+                    }
+                  >
+                    -
+                  </Button>
+                  <span className="px-3 text-sm select-none">
+                    {room.adults}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={() =>
+                      tryUpdateCounts(
+                        room,
+                        room.adults + 1,
+                        room.children,
+                        room.infants
+                      )
+                    }
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
 
-  
+              {/* Children */}
+              <div className="flex flex-col items-start gap-1">
+                <div className="flex items-center border rounded-md bg-white">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={() =>
+                      tryUpdateCounts(
+                        room,
+                        room.adults,
+                        Math.max(room.children - 1, 0),
+                        room.infants
+                      )
+                    }
+                  >
+                    -
+                  </Button>
+                  <span className="px-3 text-sm select-none">
+                    {room.children}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-7 px-2"
+                    onClick={() =>
+                      tryUpdateCounts(
+                        room,
+                        room.adults,
+                        room.children + 1,
+                        room.infants
+                      )
+                    }
+                  >
+                    +
+                  </Button>
+                </div>
+              </div>
 
-  {/* Children */}
-  <div className="flex flex-col items-start gap-1">
-    <div className="flex items-center border rounded-md bg-white">
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 px-2"
-        onClick={() =>
-          tryUpdateCounts(
-            room,
-            room.adults,
-            Math.max(room.children - 1, 0),
-            room.infants
-          )
-        }
-      >
-        -
-      </Button>
-      <span className="px-3 text-sm select-none">{room.children}</span>
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-7 px-2"
-        onClick={() =>
-          tryUpdateCounts(
-            room,
-            room.adults,
-            room.children + 1,
-            room.infants
-          )
-        }
-      >
-        +
-      </Button>
-    </div>
-  </div>
+              {/* Infant */}
+              <div className="flex flex-col items-start gap-1">
+                {room.infants === 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-7 text-xs border-[#d39ce8]"
+                    onClick={() =>
+                      tryUpdateCounts(room, room.adults, room.children, 1)
+                    }
+                  >
+                    + Add Infant
+                  </Button>
+                ) : (
+                  <div className="flex items-center border rounded-md bg-white">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-7 px-2"
+                      onClick={() =>
+                        // PHP: infant minus doesn't validate, just decreases
+                        tryUpdateCounts(
+                          room,
+                          room.adults,
+                          room.children,
+                          Math.max(room.infants - 1, 0),
+                          { skipValidate: true }
+                        )
+                      }
+                    >
+                      -
+                    </Button>
+                    <span className="px-3 text-sm select-none">
+                      {room.infants}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-7 px-2"
+                      onClick={() =>
+                        tryUpdateCounts(
+                          room,
+                          room.adults,
+                          room.children,
+                          room.infants + 1
+                        )
+                      }
+                    >
+                      +
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
 
-  {childDetails.map((child, cIdx) => (
-    <div
-      key={child.id}
-      className="flex flex-col items-start gap-1 min-w-[170px]"
-    >
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={5}
-          max={10}
-          placeholder="Age 5-10"
-          value={child.age}
-          onChange={(e) =>
-            handleChildAgeChange(room.id, child.id, e.target.value)
-          }
-          className="w-[90px] h-8 text-center px-2 py-1 bg-white"
-        />
-        <select
-          className="h-8 text-xs border border-[#dee0ee] rounded px-2 bg-white"
-          value={child.bedType}
-          onChange={(e) =>
-            handleChildBedTypeChange(
-              room.id,
-              child.id,
-              e.target.value as "Without Bed" | "With Bed"
-            )
-          }
-        >
-          <option value="Without Bed">Without Bed</option>
-          <option value="With Bed">With Bed</option>
-        </select>
-      </div>
-      <div className="text-[11px] text-[#4a4260] ml-1">
-        Children #{cIdx + 1}
-      </div>
-    </div>
-  ))}
-
-  {/* Infant */}
-  <div className="flex flex-col items-start gap-1">
-    {room.infants === 0 ? (
-      <Button
-        type="button"
-        variant="outline"
-        className="h-7 text-xs border-[#d39ce8]"
-        onClick={() =>
-          tryUpdateCounts(room, room.adults, room.children, 1)
-        }
-      >
-        + Add Infant
-      </Button>
-    ) : (
-      <div className="flex items-center border rounded-md bg-white">
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-7 px-2"
-          onClick={() =>
-            tryUpdateCounts(
-              room,
-              room.adults,
-              room.children,
-              Math.max(room.infants - 1, 0),
-              { skipValidate: true }
-            )
-          }
-        >
-          -
-        </Button>
-        <span className="px-3 text-sm select-none">{room.infants}</span>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-7 px-2"
-          onClick={() =>
-            tryUpdateCounts(
-              room,
-              room.adults,
-              room.children,
-              room.infants + 1
-            )
-          }
-        >
-          +
-        </Button>
-      </div>
-    )}
-  </div>
-</div>
+            {/* child age + bed type chips */}
+            {childDetails.length > 0 && (
+              <div className="flex flex-wrap gap-4 mt-1">
+                {childDetails.map((child, cIdx) => (
+                  <div
+                    key={child.id}
+                    className="py-2 flex flex-col items-start gap-1"
+                  >
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min={5}
+                        max={10}
+                        placeholder="Age 5-10"
+                        value={child.age}
+                        onChange={(e) =>
+                          handleChildAgeChange(
+                            room.id,
+                            child.id,
+                            e.target.value
+                          )
+                        }
+                        className="w-[80px] h-8 text-center px-1 py-1"
+                      />
+                      <select
+                        className="h-8 text-xs border border-[#dee0ee] rounded px-2"
+                        value={child.bedType}
+                        onChange={(e) =>
+                          handleChildBedTypeChange(
+                            room.id,
+                            child.id,
+                            e.target.value as "Without Bed" | "With Bed"
+                          )
+                        }
+                      >
+                        <option value="Without Bed">Without Bed</option>
+                        <option value="With Bed">With Bed</option>
+                      </select>
+                    </div>
+                    <div className="text-[11px] text-center text-[#4a4260] ml-1">
+                      Children #{cIdx + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
 
-      {/* bottom spacing only, top sticky controls handle room actions */}
-<div className="mt-2" />
+      {/* total + add rooms */}
+      <div className="mt-3 flex items-center gap-3">
+        <span className="text-xs text-muted-foreground">Total</span>
+        <Input
+          type="number"
+          min={1}
+          className="w-16 h-8"
+          value={totalRooms}
+          onChange={(e) =>
+            handleTotalRoomsChange(Number(e.target.value) || 1)
+          }
+        />
+        <Button
+          type="button"
+          variant="link"
+          className="h-8 px-0 text-primary"
+          onClick={() => handleTotalRoomsChange(totalRooms + 1)}
+        >
+          <span className="inline-flex items-center text-sm">
+            <span className="mr-1">+</span> Add Rooms
+          </span>
+        </Button>
+      </div>
     </div>
   );
 };

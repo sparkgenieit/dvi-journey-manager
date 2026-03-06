@@ -65,14 +65,7 @@ export const ConfirmedItineraryDetails: React.FC<ConfirmedItineraryDetailsProps>
   // Otherwise use URL param directly if it's a number
   // ⚠️ IMPORTANT: When coming from router, propConfirmedPlanId is the confirmed_itinerary_plan_ID (numeric)
   //              NOT the quote ID like "DVI2026011"
- // const confirmedPlanId = propConfirmedPlanId;
-
- const confirmedPlanId =
-  typeof propConfirmedPlanId === "number"
-    ? propConfirmedPlanId
-    : id
-      ? Number(id)
-      : undefined;
+  const confirmedPlanId = propConfirmedPlanId;
   
   console.log('🟢 ConfirmedItineraryDetails MOUNTED');
   console.log('   propConfirmedPlanId (from router):', propConfirmedPlanId);
@@ -99,9 +92,9 @@ export const ConfirmedItineraryDetails: React.FC<ConfirmedItineraryDetailsProps>
   // Cancellation result
   const [cancellationResult, setCancellationResult] = useState<any | null>(null);
 
- useEffect(() => {
-  fetchItineraryDetails();
-}, [confirmedPlanId, id]);
+  useEffect(() => {
+    fetchItineraryDetails();
+  }, [confirmedPlanId]);
 
   const fetchItineraryDetails = async () => {
     if (!confirmedPlanId) {
@@ -138,12 +131,12 @@ export const ConfirmedItineraryDetails: React.FC<ConfirmedItineraryDetailsProps>
       return;
     }
 
-    if (!confirmedPlanId) return;
+    if (!id) return;
 
     setIsCancelling(true);
     try {
       const response = await ItineraryService.cancelItinerary({
-        itinerary_plan_ID: parseInt(confirmedPlanId.toString()),
+        itinerary_plan_ID: parseInt(id),
         reason: cancellationReason,
         cancellation_percentage: 10,
         cancellation_options: {
@@ -219,9 +212,9 @@ export const ConfirmedItineraryDetails: React.FC<ConfirmedItineraryDetailsProps>
   };
 
   const handleExportPDF = () => {
-    if (!confirmedPlanId) return;
+    if (!id) return;
     // Trigger PDF download/export
-    window.location.href = `/api/confirmed-itinerary/${confirmedPlanId}/export-pdf`;
+    window.location.href = `/api/confirmed-itinerary/${id}/export-pdf`;
   };
 
   if (loading) {
@@ -396,7 +389,7 @@ export const ConfirmedItineraryDetails: React.FC<ConfirmedItineraryDetailsProps>
                 }
               ]}
               hotelRatesVisible={true}
-              quoteId={itinerary.quoteId}
+              quoteId={id!}
               readOnly={true}
             />
           </CardContent>
