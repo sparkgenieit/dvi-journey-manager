@@ -39,6 +39,9 @@ type RouteDetailsBlockProps = {
   setRouteDetails: React.Dispatch<React.SetStateAction<RouteDetailRow[]>>;
   locations: LocationOption[];
 
+   // ✅ NEW: nearest-first ordering helper from parent
+  getLocationsSortedByDistance?: (fromLocationKey: string) => LocationOption[];
+
   // optional hooks from parent
   onOpenViaRoutes?: (row: RouteDetailRow) => void;
   addDay?: () => void;
@@ -54,6 +57,7 @@ export const RouteDetailsBlock = ({
   routeDetails,
   setRouteDetails,
   locations,
+  getLocationsSortedByDistance, // ✅ NEW
   onOpenViaRoutes,
   addDay,
   validationErrors,
@@ -253,46 +257,36 @@ export const RouteDetailsBlock = ({
           </TableHeader>
           <TableBody>
             {routeDetails.map((row, idx) => {
-              const isFirstRow = idx === 0;
-              const isLastRow = idx === routeDetails.length - 1;
+  const sourceLocationKey = row.source;
 
-              // For last row, if departure location exists, lock to it
-              let rowSpecificOptions: AutoSuggestOption[];
-              let isLastRowLocked = false;
-              let nextDestinationValue = row.next;
+  // ✅ 1) full list sorted by distance from the row’s source
+  const sortedByDistance = getLocationsSortedByDistance
+    ? getLocationsSortedByDistance(sourceLocationKey)
+    : locations;
 
-              if (isLastRow && departureLocationObj) {
-                // Lock last row to departure location
-                rowSpecificOptions = [
-                  {
-                    value: departureLocationObj.name,
-                    label: departureLocationObj.name,
-                  },
-                ];
-                isLastRowLocked = true;
-                nextDestinationValue = departureLocationObj.name;
+  const sortedByDistanceOptions: AutoSuggestOption[] = sortedByDistance.map((loc) => ({
+    value: loc.name,
+    label: loc.name,
+  }));
 
-                // Sync state if value doesn't match departure
-                if (row.next !== departureLocationObj.name) {
-                  setRouteDetails((prev) => {
-                    const updated = [...prev];
-                    updated[idx] = {
-                      ...updated[idx],
-                      next: departureLocationObj.name,
-                    };
-                    return updated;
-                  });
-                }
-              } else {
-                // Normal row: use provided options or global fallback
-                rowSpecificOptions =
-                  destinationOptionsMap[idx] &&
-                  destinationOptionsMap[idx]!.length > 0
-                    ? destinationOptionsMap[idx]!
-                    : globalLocationOptions;
-              }
+  // ✅ 2) keep your existing "allowed destinations" filtering (if fetchLocations provided a subset),
+  // but reorder that subset using the distance-sorted list.
+  const fetchedSubset = destinationOptionsMap[idx] && destinationOptionsMap[idx]!.length > 0
+    ? destinationOptionsMap[idx]!
+    : null;
 
-              return (
+  const rowSpecificOptions: AutoSuggestOption[] = fetchedSubset
+    ? (() => {
+        const allowed = new Set(fetchedSubset.map((o) => o.value));
+        const filteredByDistance = sortedByDistanceOptions.filter((o) => allowed.has(o.value));
+        // fallback if something mismatches
+        return filteredByDistance.length > 0 ? filteredByDistance : fetchedSubset;
+      })()
+    : sortedByDistanceOptions;
+
+  const isFirstRow = idx === 0;
+
+  return (
                 <TableRow key={idx}>
                   <TableCell>{`DAY ${row.day}`}</TableCell>
 
