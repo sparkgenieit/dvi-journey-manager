@@ -61,10 +61,6 @@ type ItineraryPlanBlockProps = {
   endTime: string;
   setEndTime: (val: string) => void;
 
-  // Pick Up time (time part)
-  pickupTime: string;
-  setPickupTime: (val: string) => void;
-
   itineraryTypes: SimpleOption[];
   itineraryTypeSelect: string;
   setItineraryTypeSelect: (val: string) => void;
@@ -109,6 +105,10 @@ type ItineraryPlanBlockProps = {
   setSpecialInstructions: (val: string) => void;
 
   validationErrors?: { [key: string]: string };
+  
+  // ✅ Calculated from arrival/departure dates
+  noOfNights: number;
+  noOfDays: number;
 };
 
 
@@ -185,8 +185,6 @@ export const ItineraryPlanBlock = ({
   setStartTime,
   endTime,
   setEndTime,
-  pickupTime,
-  setPickupTime,
   itineraryTypes,
   itineraryTypeSelect,
   setItineraryTypeSelect,
@@ -221,6 +219,8 @@ export const ItineraryPlanBlock = ({
   specialInstructions,
   setSpecialInstructions,
   validationErrors,
+  noOfNights,
+  noOfDays,
 }: ItineraryPlanBlockProps) => {
    const [isTripDatesOpen, setIsTripDatesOpen] = useState(false);
   const [isPickupOpen, setIsPickupOpen] = useState(false);
@@ -362,10 +362,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
     if (budget === "" || budget === 0) setBudget(15000);
   }, [budget, setBudget]);
 
-  // Pick Up Time default: mirror Start Time (only if pickupTime is empty)
-  useEffect(() => {
-    if (!pickupTime && startTime) setPickupTime(startTime);
-  }, [pickupTime, startTime, setPickupTime]);
+
 
   return (
     <Card className="border border-[#efdef8] rounded-lg bg-white shadow-none">
@@ -661,7 +658,7 @@ const handleHotelFacilityChange = (vals: string[]) => {
 </div>
 
         {/* ROW 5 */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
           <div
             className={validationErrors?.arrivalType ? "border border-red-500 rounded-md p-2" : ""}
             data-field="arrivalType"
@@ -686,33 +683,6 @@ const handleHotelFacilityChange = (vals: string[]) => {
             </Select>
             {validationErrors?.arrivalType && (
               <p className="mt-1 text-xs text-red-500">{validationErrors.arrivalType}</p>
-            )}
-          </div>
-
-          <div
-            className={validationErrors?.departureType ? "border border-red-500 rounded-md p-2" : ""}
-            data-field="departureType"
-          >
-            <Label className="text-sm block mb-1">Departure Type *</Label>
-            <Select value={departureType} onValueChange={setDepartureType}>
-              <SelectTrigger className="h-9 border-[#e5d7f6]">
-                <SelectValue placeholder="By Flight" />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                side="bottom"
-                align="start"
-                className="max-h-56 overflow-y-auto"
-              >
-                {travelTypes.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {validationErrors?.departureType && (
-              <p className="mt-1 text-xs text-red-500">{validationErrors.departureType}</p>
             )}
           </div>
 
@@ -886,55 +856,6 @@ const handleHotelFacilityChange = (vals: string[]) => {
 
         {/* ROW 7 */}
         <div className="flex flex-col md:flex-row gap-4">
-          <div
-            className={`md:w-[30%] ${
-              validationErrors?.pickupDateTime ? "border border-red-500 rounded-md p-2" : ""
-            }`}
-            data-field="pickupDateTime"
-          >
-            <Label className="text-sm block mb-1">Pick Up Date &amp; Time *</Label>
-
-            <div className="flex items-center gap-2">
-              <Popover open={isPickupOpen} onOpenChange={setIsPickupOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={`flex-1 justify-start h-9 text-left font-normal ${
-                      !tripStartDate ? "text-muted-foreground" : ""
-                    }`}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {tripStartDate || "DD/MM/YYYY"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={tripStartDateObj}
-                    onSelect={(date) => {
-                      if (date) setTripStartDate(formatDDMMYYYY(date));
-                      setIsPickupOpen(false);
-                    }}
-                    disabled={disablePastAndToday}
-                    initialFocus
-                    classNames={{ day_today: "" }}
-                  />
-                </PopoverContent>
-              </Popover>
-
-              <Input
-                type="time"
-                className="h-9 border-[#e5d7f6] w-[90px]"
-                value={pickupTime}
-                onChange={(e) => setPickupTime(e.target.value)}
-              />
-            </div>
-
-            {validationErrors?.pickupDateTime && (
-              <p className="mt-1 text-xs text-red-500">{validationErrors.pickupDateTime}</p>
-            )}
-          </div>
-
           <div className="flex-1">
             <Label className="text-sm block mb-1">Special Instructions</Label>
             <Textarea

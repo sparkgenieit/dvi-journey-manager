@@ -29,6 +29,7 @@ import {
   toISOFromDDMMYYYY,
   toISOFromDDMMYYYYAndTime,
   splitViaString,
+  calculateNights,
 } from "./helpers/itineraryUtils";
 import { SaveRouteConfirmDialog } from "./helpers/SaveRouteConfirmDialog";
 import { useRoomsAndTravellers } from "./helpers/useRoomsAndTravellers";
@@ -239,9 +240,6 @@ export const CreateItinerary = () => {
   const [startTime, setStartTime] = useState<string>("12:00");
   const [endTime, setEndTime] = useState<string>("12:00");
 
-  // Pick Up time (only time part; date is tripStartDate)
-  const [pickupTime, setPickupTime] = useState<string>("");
-
   // Special instructions (goes in payload)
   const [specialInstructions, setSpecialInstructions] = useState<string>("");
 
@@ -324,7 +322,6 @@ useEffect(() => {
 
     clearIfOk("itineraryTypeSelect", !!itineraryTypeSelect);
     clearIfOk("arrivalType", !!arrivalType);
-    clearIfOk("departureType", !!departureType);
 
     clearIfOk("budget", budget !== "" && Number(budget) > 0);
 
@@ -339,8 +336,7 @@ useEffect(() => {
       selectedHotelCategoryIds.length > 0;
     clearIfOk("hotelCategory", hotelCategoryOk);
 
-    // Pick up requires tripStartDate + pickupTime
-    clearIfOk("pickupDateTime", !!tripStartDate && !!pickupTime);
+
 
     // First route fields
     const firstRoute = routeDetails?.[0];
@@ -372,7 +368,6 @@ useEffect(() => {
   foodPreference,
   itineraryPreference,
   selectedHotelCategoryIds,
-  pickupTime,
   routeDetails,
   vehicles,
 ]);
@@ -473,10 +468,7 @@ useEffect(() => {
             // ✅ foodPreference state holds option id
             setFoodPreference(p.food_type != null ? String(p.food_type) : "");
 
-            // ✅ pickup time (if your plan has pick_up_date_and_time column)
-            if (p.pick_up_date_and_time) {
-              setPickupTime(safeTimeFromISO(p.pick_up_date_and_time, ""));
-            }
+
 
             setSpecialInstructions(p.special_instructions ?? "");
             // ✅ PREFILL: categories/facilities come as CSV strings from DB
@@ -623,7 +615,6 @@ useEffect(() => {
 
     if (!itineraryTypeSelect) errors.itineraryTypeSelect = "Please select Itinerary Type";
     if (!arrivalType) errors.arrivalType = "Please select Arrival Type";
-    if (!departureType) errors.departureType = "Please select Departure Type";
 
     if (budget === "" || Number(budget) <= 0) errors.budget = "Please enter a valid Budget";
 
@@ -639,7 +630,7 @@ useEffect(() => {
       errors.hotelCategory = "Please select at least one Hotel Category";
     }
 
-    if (!tripStartDate || !pickupTime) errors.pickupDateTime = "Please select Pick Up Date & Time";
+
 
     const firstRoute = routeDetails[0];
     if (!firstRoute?.source) errors.firstRouteSource = "Please fill first day Source location";
@@ -680,9 +671,6 @@ useEffect(() => {
       case "arrivalType":
         selector = "[data-field='arrivalType']";
         break;
-      case "departureType":
-        selector = "[data-field='departureType']";
-        break;
       case "budget":
         selector = "[data-field='budget']";
         break;
@@ -700,9 +688,6 @@ useEffect(() => {
         break;
       case "hotelCategory":
         selector = "[data-field='hotelCategory']";
-        break;
-      case "pickupDateTime":
-        selector = "[data-field='pickupDateTime']";
         break;
       case "firstRouteSource":
       case "firstRouteNext":
@@ -814,8 +799,8 @@ const buildPayload = () => {
     : undefined;
 
   const pick_up_date_and_time =
-    tripStartDate && pickupTime
-      ? toISOFromDDMMYYYYAndTime(tripStartDate, pickupTime)
+    tripStartDate && startTime
+      ? toISOFromDDMMYYYYAndTime(tripStartDate, startTime)
       : undefined;
 // ✅ derive trip duration from selected trip start/end dates
 //const tripNoOfDays = calculateDaysBetweenDates(tripStartDate, tripEndDate);
@@ -840,7 +825,7 @@ const buildPayload = () => {
     pick_up_date_and_time,
 
     arrival_type: arrivalType ? Number(arrivalType) : 0,
-    departure_type: departureType ? Number(departureType) : 0,
+    departure_type: arrivalType ? Number(arrivalType) : 0,  // ✅ Auto-default to arrivalType
 
    no_of_nights: tripNoOfNights,
    no_of_days: tripNoOfDays,
@@ -967,6 +952,10 @@ const handleSaveWithType = async (
     return <div className="p-4">Loading...</div>;
   }
 
+  // ✅ COMPUTED DERIVED VALUES (top-level, one source of truth)
+  const noOfNights = calculateNights(tripStartDate, tripEndDate);
+  const noOfDays = tripStartDate && tripEndDate ? Math.max(1, noOfNights + 1) : 1;
+
   return (
     <div className="p-4 space-y-4">
       <ItineraryPlanBlock
@@ -1016,8 +1005,6 @@ const handleSaveWithType = async (
         setEndTime={setEndTime}
         hotelCategoryOptions={hotelCategoryOptions}
         hotelFacilityOptions={hotelFacilityOptions}
-        pickupTime={pickupTime}
-        setPickupTime={setPickupTime}
         specialInstructions={specialInstructions}
         setSpecialInstructions={setSpecialInstructions}
         validationErrors={validationErrors}
@@ -1025,7 +1012,8 @@ const handleSaveWithType = async (
         setSelectedHotelCategoryIds={setSelectedHotelCategoryIds}
         selectedHotelFacilityIds={selectedHotelFacilityIds}
         setSelectedHotelFacilityIds={setSelectedHotelFacilityIds}
-
+        noOfNights={noOfNights}
+        noOfDays={noOfDays}
       />
 
       <div

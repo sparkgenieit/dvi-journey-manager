@@ -1,6 +1,6 @@
 // FILE: src/pages/CreateItinerary/RouteDetailsBlock.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,9 @@ type RouteDetailsBlockProps = {
 
   // optional validation from parent
   validationErrors?: ValidationErrors;
+
+  // Departure location to lock last row's Next Destination
+  departureLocation?: string;
 };
 
 export const RouteDetailsBlock = ({
@@ -58,12 +61,18 @@ export const RouteDetailsBlock = ({
   onOpenViaRoutes,
   addDay,
   validationErrors,
+  departureLocation,
 }: RouteDetailsBlockProps) => {
   // Global fallback options (like PHP selectize list)
   const globalLocationOptions: AutoSuggestOption[] = locations.map((loc) => ({
     value: loc.name,
     label: loc.name,
   }));
+
+  // Find the departure location object from locations array
+  const departureLocationObj = departureLocation
+    ? locations.find((loc) => loc.name === departureLocation)
+    : null;
 
   // Row-specific NEXT DESTINATION options (per source)
   const [destinationOptionsMap, setDestinationOptionsMap] = useState<
@@ -76,18 +85,15 @@ export const RouteDetailsBlock = ({
   // After adding a day: focus previous last day's "Next Destination"
   const [focusNextIdx, setFocusNextIdx] = useState<number | null>(null);
 
+  // Refs for Next Destination AutoSuggestSelect components
+  const nextDestinationRefs = useRef<Array<{ focus: () => void } | null>>([]);
+  const addDayButtonRef = useRef<HTMLButtonElement | null>(null);
+
   useEffect(() => {
     if (focusNextIdx === null) return;
 
-    const hostId = `next-destination-${focusNextIdx}`;
     const t = window.setTimeout(() => {
-      const host = document.getElementById(hostId);
-      const focusTarget =
-        (host?.querySelector("input") as HTMLElement | null) ||
-        (host?.querySelector("button") as HTMLElement | null) ||
-        (host?.querySelector("[role='combobox']") as HTMLElement | null);
-
-      focusTarget?.focus();
+      nextDestinationRefs.current[focusNextIdx]?.focus();
       setFocusNextIdx(null);
     }, 0);
 
@@ -145,6 +151,22 @@ export const RouteDetailsBlock = ({
     const mm = String(dt.getMonth() + 1).padStart(2, "0");
     const yyyy = dt.getFullYear();
     return `${dd}/${mm}/${yyyy}`;
+  };
+
+  const moveFocusToNextDestination = (currentRowIdx: number) => {
+    const nextRowIdx = currentRowIdx + 1;
+    
+    // If there's a next row, focus its Next Destination
+    if (nextRowIdx < routeDetails.length) {
+      setTimeout(() => {
+        nextDestinationRefs.current[nextRowIdx]?.focus();
+      }, 0);
+    } else {
+      // Otherwise, focus the "Add Day" button
+      setTimeout(() => {
+        addDayButtonRef.current?.focus();
+      }, 0);
+    }
   };
 
   const handleAddDay = () => {
@@ -271,6 +293,7 @@ export const RouteDetailsBlock = ({
                   {/* DATE – read-only from selected range */}
                   <TableCell>
                     <Input
+                      tabIndex={-1}
                       readOnly
                       placeholder="DD/MM/YYYY"
                       value={row.date}
@@ -293,6 +316,7 @@ export const RouteDetailsBlock = ({
                       }
                     >
                       <Input
+                        tabIndex={-1}
                         readOnly
                         placeholder="Source Location"
                         value={row.source}
@@ -322,9 +346,15 @@ export const RouteDetailsBlock = ({
                       }
                     >
                       <AutoSuggestSelect
+                        ref={(el) => {
+                          nextDestinationRefs.current[idx] = el;
+                        }}
                         mode="single"
-                        value={row.next}
-                        onChange={(val) =>
+                        value={nextDestinationValue}
+                        onChange={(val) => {
+                          // Don't allow changes on last row
+                          if (isLastRowLocked) return;
+
                           setRouteDetails((prev) => {
                             const updated = [...prev];
                             const chosen = (val as string) || "";
@@ -343,8 +373,17 @@ export const RouteDetailsBlock = ({
                             }
 
                             return updated;
-                          })
-                        }
+                          });
+                        }}
+                        onSelectionCommit={(reason) => {
+                          // Don't move focus on last row (or do nothing)
+                          if (isLastRowLocked) return;
+                          // After selection, move focus to next row's Next Destination
+                          // This handles click, enter, and tab selections
+                          moveFocusToNextDestination(idx);
+                        }}
+                        disabled={isLastRowLocked}
+                        readOnly={isLastRowLocked}
                         options={rowSpecificOptions}
                         placeholder="Next Destination"
                       />
@@ -398,6 +437,7 @@ export const RouteDetailsBlock = ({
         </Table>
 
         <Button
+          ref={addDayButtonRef}
           onClick={handleAddDay}
           className="mt-4 bg-[#f054b5] hover:bg-[#e249a9]"
         >
