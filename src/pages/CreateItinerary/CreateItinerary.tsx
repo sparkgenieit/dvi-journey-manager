@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ItineraryService } from "@/services/itinerary";
@@ -58,6 +58,48 @@ function safeTimeFromISO(iso?: string | null, fallback = ""): string {
   return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
 }
 
+// ----------------- distance helpers -----------------
+
+type Coords = { lat: number; lng: number };
+
+// NOTE: LocationOption shape may differ based on your mock/backend.
+// This tries common key names safely.
+function getCoordsFromLocation(loc: any): Coords | null {
+  if (!loc) return null;
+
+  const lat =
+    Number(loc.lat ?? loc.latitude ?? loc.location_latitude ?? loc.geoLat);
+  const lng =
+    Number(loc.lng ?? loc.longitude ?? loc.location_longitude ?? loc.geoLng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function haversineKm(a: Coords, b: Coords): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+
+  const R = 6371; // km
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const sinDLat = Math.sin(dLat / 2);
+  const sinDLng = Math.sin(dLng / 2);
+
+  const h =
+    sinDLat * sinDLat +
+    Math.cos(lat1) * Math.cos(lat2) * (sinDLng * sinDLng);
+
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function getLocationKey(loc: any): string {
+  // Try common identifiers; fallback to label
+  return String(loc?.value ?? loc?.id ?? loc?.location_id ?? loc?.label ?? "");
+}
 
 function csvToStringArray(v: unknown): string[] {
   if (!v) return [];
@@ -74,22 +116,27 @@ function csvToNumberArray(v: unknown): number[] {
 }
 
 
-// Helper function to calculate number of days between two DD/MM/YYYY date strings
+// Helper function to calculate number of days between two DD/MM/YYYY date strings (inclusive)
 function calculateDaysBetweenDates(startDate: string, endDate: string): number {
   if (!startDate || !endDate) return 1;
+
   try {
-    // Parse DD/MM/YYYY format
-    const [startDay, startMonth, startYear] = startDate.split("/").map(Number);
-    const [endDay, endMonth, endYear] = endDate.split("/").map(Number);
-    
-    const start = new Date(startYear, startMonth - 1, startDay);
-    const end = new Date(endYear, endMonth - 1, endDay);
-    
+    const [sd, sm, sy] = startDate.split("/").map(Number);
+    const [ed, em, ey] = endDate.split("/").map(Number);
+
+    // Use midnight times to avoid partial-day/timezone quirks
+    const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+    const end = new Date(ey, em - 1, ed, 0, 0, 0, 0);
+
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 1;
-    
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    return Math.max(1, diffDays);
+
+    // If end date is before start date, keep it safe (1 day trip)
+    if (end.getTime() < start.getTime()) return 1;
+
+    const MS_PER_DAY = 1000 * 60 * 60 * 24;
+    const diffDaysInclusive = Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY) + 1;
+
+    return Math.max(1, diffDaysInclusive);
   } catch {
     return 1;
   }
@@ -108,6 +155,53 @@ export const CreateItinerary = () => {
   // agents / dropdown data
   const [agents, setAgents] = useState<AgentOption[]>([]);
   const [locations, setLocations] = useState<LocationOption[]>([]);
+  // Map for quick lookup
+  const locationByKey = useMemo(() => {
+    const m = new Map<string, LocationOption>();
+    for (const l of locations) {
+      m.set(getLocationKey(l), l);
+    }
+    return m;
+  }, [locations]);
+
+  /**
+   * Returns locations sorted by nearest distance from the given "source" location key.
+   * If we cannot resolve coordinates, it falls back to original order (NO breaking changes).
+   */
+  const getLocationsSortedByDistance = useCallback(
+    (fromLocationKey: string) => {
+      const fromLoc = locationByKey.get(String(fromLocationKey));
+      const fromCoords = getCoordsFromLocation(fromLoc);
+
+      // If no coords on source, keep current behavior
+      if (!fromCoords) return locations;
+
+      // Sort candidates by distance (keep only those with coords at top; rest appended)
+      const withCoords: { loc: LocationOption; dist: number }[] = [];
+      const withoutCoords: LocationOption[] = [];
+
+      for (const candidate of locations) {
+        // Optional: avoid suggesting the same location as "next"
+        if (getLocationKey(candidate) === String(fromLocationKey)) continue;
+
+        const cCoords = getCoordsFromLocation(candidate);
+        if (!cCoords) {
+          withoutCoords.push(candidate);
+          continue;
+        }
+
+        withCoords.push({
+          loc: candidate,
+          dist: haversineKm(fromCoords, cCoords),
+        });
+      }
+
+      withCoords.sort((a, b) => a.dist - b.dist);
+
+      return [...withCoords.map((x) => x.loc), ...withoutCoords];
+    },
+    [locations, locationByKey]
+  );
   const [itineraryTypes, setItineraryTypes] = useState<SimpleOption[]>([]);
   const [travelTypes, setTravelTypes] = useState<SimpleOption[]>([]);
   const [entryTicketOptions, setEntryTicketOptions] = useState<SimpleOption[]>([]);
@@ -195,6 +289,17 @@ export const CreateItinerary = () => {
     useState(false);
 
   const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
+
+   // ✅ LIVE trip duration (used by UI + payload)
+  const tripNoOfDays = useMemo(
+    () => calculateDaysBetweenDates(tripStartDate, tripEndDate),
+    [tripStartDate, tripEndDate]
+  );
+
+  const tripNoOfNights = useMemo(
+    () => Math.max(0, tripNoOfDays - 1),
+    [tripNoOfDays]
+  );
 
   // ----------------- effects -----------------
 
@@ -712,45 +817,46 @@ const buildPayload = () => {
       : undefined;
 
   // ✅ base plan without id
-  const planBase: any = {
-    agent_id: (agentId as number) ?? 0,
-    staff_id: 0,
-    location_id: 0,
+const planBase: any = {
+  agent_id: (agentId as number) ?? 0,
+  staff_id: 0,
+  location_id: 0,
 
-    arrival_point: arrivalLocation || "",
-    departure_point: departureLocation || "",
+  arrival_point: arrivalLocation || "",
+  departure_point: departureLocation || "",
 
-    itinerary_preference,
-    itinerary_type,
-    preferred_hotel_category,
-    hotel_facilities,
+  itinerary_preference,
+  itinerary_type,
+  preferred_hotel_category,
+  hotel_facilities,
 
-    trip_start_date,
-    trip_end_date,
-    pick_up_date_and_time,
+  trip_start_date,
+  trip_end_date,
+  pick_up_date_and_time,
 
-    arrival_type: arrivalType ? Number(arrivalType) : 0,
-    departure_type: departureType ? Number(departureType) : 0,
+  arrival_type: arrivalType ? Number(arrivalType) : 0,
+  departure_type: departureType ? Number(departureType) : 0,
 
-    no_of_nights: routeDetails.length > 0 ? routeDetails.length - 1 : 0,
-    no_of_days: routeDetails.length,
+  // ✅ correct values (based on dates)
+  no_of_nights: tripNoOfNights,
+  no_of_days: tripNoOfDays,
 
-    budget: budget === "" ? 0 : Number(budget),
+  budget: budget === "" ? 0 : Number(budget),
 
-    entry_ticket_required: entryTicketRequired
-      ? Number(entryTicketRequired)
-      : 0,
-    guide_for_itinerary: guideRequired ? Number(guideRequired) : 0,
-    nationality: nationality ? Number(nationality) : 0,
+  entry_ticket_required: entryTicketRequired
+    ? Number(entryTicketRequired)
+    : 0,
+  guide_for_itinerary: guideRequired ? Number(guideRequired) : 0,
+  nationality: nationality ? Number(nationality) : 0,
 
-    food_type: food_type_id,
+  food_type: food_type_id,
 
-    adult_count: totalAdults,
-    child_count: totalChildren,
-    infant_count: totalInfants,
+  adult_count: totalAdults,
+  child_count: totalChildren,
+  infant_count: totalInfants,
 
-    special_instructions: specialInstructions || "",
-  };
+  special_instructions: specialInstructions || "",
+};
 
   // ✅ inject itinerary_plan_id ONLY when editing
   const plan = itineraryPlanId
@@ -915,6 +1021,9 @@ const handleSaveWithType = async (
         setSelectedHotelCategoryIds={setSelectedHotelCategoryIds}
         selectedHotelFacilityIds={selectedHotelFacilityIds}
         setSelectedHotelFacilityIds={setSelectedHotelFacilityIds}
+        // ✅ NEW: derived duration (UI can show instantly)
+       //tripNoOfDays={tripNoOfDays}
+       // tripNoOfNights={tripNoOfNights}
 
       />
 
@@ -928,31 +1037,35 @@ const handleSaveWithType = async (
       >
         {/* Show default routes if itinerary type is "Default" */}
         {itineraryTypeSelect && itineraryTypes.find((t) => t.id === itineraryTypeSelect)?.label === "Default" ? (
-          <DefaultRoutesSuggestions
-            arrivalLocation={arrivalLocation}
-            departureLocation={departureLocation}
-            noOfDays={calculateDaysBetweenDates(tripStartDate, tripEndDate)}
-            startDate={tripStartDate}
-            endDate={tripEndDate}
-            onNoRoutesFound={() => {
-              const customizeType = itineraryTypes.find((t) => t.label === "Customize");
-              if (customizeType) {
-                setItineraryTypeSelect(customizeType.id);
-              }
-            }}
-            locations={locations}
-            routeDetails={routeDetails}
-            setRouteDetails={setRouteDetails}
-            onOpenViaRoutes={openViaRoutes}
-          />
-        ) : (
-          <RouteDetailsBlock
-            locations={locations}
-            routeDetails={routeDetails}
-            setRouteDetails={setRouteDetails}
-            onOpenViaRoutes={openViaRoutes}
-          />
-        )}
+  <DefaultRoutesSuggestions
+    arrivalLocation={arrivalLocation}
+    departureLocation={departureLocation}
+    noOfDays={calculateDaysBetweenDates(tripStartDate, tripEndDate)}
+    startDate={tripStartDate}
+    endDate={tripEndDate}
+    onNoRoutesFound={() => {
+      const customizeType = itineraryTypes.find((t) => t.label === "Customize");
+      if (customizeType) {
+        setItineraryTypeSelect(customizeType.id);
+      }
+    }}
+    locations={locations}
+    // ✅ NEW: allow child to order options by proximity
+    getLocationsSortedByDistance={getLocationsSortedByDistance}
+    routeDetails={routeDetails}
+    setRouteDetails={setRouteDetails}
+    onOpenViaRoutes={openViaRoutes}
+  />
+) : (
+  <RouteDetailsBlock
+    locations={locations}
+    // ✅ NEW: allow child to order Next Destination options by proximity
+    getLocationsSortedByDistance={getLocationsSortedByDistance}
+    routeDetails={routeDetails}
+    setRouteDetails={setRouteDetails}
+    onOpenViaRoutes={openViaRoutes}
+  />
+)}
         {validationErrors.firstRouteSource && (
           <p className="mt-1 text-xs text-red-500">{validationErrors.firstRouteSource}</p>
         )}
