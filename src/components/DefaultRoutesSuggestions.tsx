@@ -43,14 +43,11 @@ interface DefaultRoutesSuggestionsProps {
   endDate: string;
   onNoRoutesFound?: () => void;
   locations?: any[];
-
-  // ✅ NEW: allows CreateItinerary to provide distance-sorted options
-  getLocationsSortedByDistance?: (fromLocationKey: string) => any[];
-
   routeDetails?: any[];
   setRouteDetails?: (routes: any[]) => void;
   onOpenViaRoutes?: (row: any) => void;
 }
+
 export const DefaultRoutesSuggestions: React.FC<DefaultRoutesSuggestionsProps> = ({
   arrivalLocation,
   departureLocation,
@@ -59,7 +56,6 @@ export const DefaultRoutesSuggestions: React.FC<DefaultRoutesSuggestionsProps> =
   endDate,
   onNoRoutesFound,
   locations,
-  getLocationsSortedByDistance, // ✅ NEW
   routeDetails,
   setRouteDetails,
   onOpenViaRoutes,
