@@ -39,6 +39,9 @@ type RouteDetailsBlockProps = {
   setRouteDetails: React.Dispatch<React.SetStateAction<RouteDetailRow[]>>;
   locations: LocationOption[];
 
+   // ✅ NEW: nearest-first ordering helper from parent
+  getLocationsSortedByDistance?: (fromLocationKey: string) => LocationOption[];
+
   // optional hooks from parent
   onOpenViaRoutes?: (row: RouteDetailRow) => void;
   addDay?: () => void;
@@ -51,6 +54,7 @@ export const RouteDetailsBlock = ({
   routeDetails,
   setRouteDetails,
   locations,
+  getLocationsSortedByDistance, // ✅ NEW
   onOpenViaRoutes,
   addDay,
   validationErrors,
@@ -231,15 +235,36 @@ export const RouteDetailsBlock = ({
           </TableHeader>
           <TableBody>
             {routeDetails.map((row, idx) => {
-              const rowSpecificOptions =
-                destinationOptionsMap[idx] &&
-                destinationOptionsMap[idx]!.length > 0
-                  ? destinationOptionsMap[idx]!
-                  : globalLocationOptions;
+  const sourceLocationKey = row.source;
 
-              const isFirstRow = idx === 0;
+  // ✅ 1) full list sorted by distance from the row’s source
+  const sortedByDistance = getLocationsSortedByDistance
+    ? getLocationsSortedByDistance(sourceLocationKey)
+    : locations;
 
-              return (
+  const sortedByDistanceOptions: AutoSuggestOption[] = sortedByDistance.map((loc) => ({
+    value: loc.name,
+    label: loc.name,
+  }));
+
+  // ✅ 2) keep your existing "allowed destinations" filtering (if fetchLocations provided a subset),
+  // but reorder that subset using the distance-sorted list.
+  const fetchedSubset = destinationOptionsMap[idx] && destinationOptionsMap[idx]!.length > 0
+    ? destinationOptionsMap[idx]!
+    : null;
+
+  const rowSpecificOptions: AutoSuggestOption[] = fetchedSubset
+    ? (() => {
+        const allowed = new Set(fetchedSubset.map((o) => o.value));
+        const filteredByDistance = sortedByDistanceOptions.filter((o) => allowed.has(o.value));
+        // fallback if something mismatches
+        return filteredByDistance.length > 0 ? filteredByDistance : fetchedSubset;
+      })()
+    : sortedByDistanceOptions;
+
+  const isFirstRow = idx === 0;
+
+  return (
                 <TableRow key={idx}>
                   <TableCell>{`DAY ${row.day}`}</TableCell>
 
