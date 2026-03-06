@@ -20,6 +20,15 @@ export type LocationRow = {
   location_description?: string | null;
 };
 
+/** Source-only payload for creating a new location (Add Location modal) */
+export type CreateLocationPayload = {
+  source_location: string;
+  source_city: string;
+  source_state: string;
+  source_latitude: string;
+  source_longitude: string;
+};
+
 export type TollRow = {
   vehicle_type_id: number;
   vehicle_type_name: string;
@@ -116,7 +125,7 @@ export const locationsApi = {
     };
   },
 
-  async create(payload: Omit<LocationRow, "location_ID">) {
+  async create(payload: CreateLocationPayload) {
     const data = (await api(`/locations`, { method: "POST", body: payload })) as any;
     return toLocationRow(data);
   },

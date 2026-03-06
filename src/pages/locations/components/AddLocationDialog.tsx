@@ -1,0 +1,105 @@
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CreateLocationPayload } from "@/services/locations";
+
+interface AddLocationDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (payload: CreateLocationPayload) => void;
+}
+
+export function AddLocationDialog({ open, onClose, onSubmit }: AddLocationDialogProps) {
+  const [form, setForm] = useState<CreateLocationPayload>({
+    source_location: "",
+    source_city: "",
+    source_state: "",
+    source_latitude: "",
+    source_longitude: "",
+  });
+
+  const handleChange = (field: string, value: string | number) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = () => {
+    onSubmit(form);
+    setForm({
+      source_location: "",
+      source_city: "",
+      source_state: "",
+      source_latitude: "",
+      source_longitude: "",
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-center text-xl">Add Location</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          {/* Row 1: Source Location, City, State (3 columns) */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source Location *</label>
+              <Input
+                placeholder="Enter Source Location"
+                value={form.source_location}
+                onChange={(e) => handleChange("source_location", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source Location City *</label>
+              <Input
+                placeholder="Enter Source City"
+                value={form.source_city}
+                onChange={(e) => handleChange("source_city", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source Location State *</label>
+              <Input
+                placeholder="Enter Source State"
+                value={form.source_state}
+                onChange={(e) => handleChange("source_state", e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Latitude, Longitude (2 columns) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source Location Latitude *</label>
+              <Input
+                type="number"
+                placeholder="Enter Latitude"
+                value={form.source_latitude}
+                onChange={(e) => handleChange("source_latitude", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source Location Longitude *</label>
+              <Input
+                type="number"
+                placeholder="Enter Longitude"
+                value={form.source_longitude}
+                onChange={(e) => handleChange("source_longitude", e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="flex justify-between pt-4">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
